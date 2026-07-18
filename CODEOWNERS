@@ -1,15 +1,33 @@
-# Placeholder handles for the four hackathon members; replace after team accounts are known.
-/services/api/app/api/ @member-1
-/services/api/app/orchestration/ @member-1
-/services/api/app/repositories/ @member-1
-/services/api/app/integrations/tavily/ @member-1
-/agents/ @member-2
-/services/api/app/integrations/elevenlabs/ @member-2
-/services/api/app/contracts/ @member-3
-/services/api/app/integrations/openai/ @member-3
-/packages/contracts/ @member-3
-/supabase/ @member-3
-/data/ @member-3
-/evals/ @member-3
-/apps/web/ @member-4
-/docs/demo-ux.md @member-4
+# Ownership by real role instead of generic member numbers.
+# @Olacode01 = Toheeb (backend/orchestration/voice) · @zukhriddingit = Zukhriuddin (data/OpenAI)
+# @ars2711 = Arsalan (product narrative/submission) · @northeastern-teammate = TBD, swap in once known.
+
+# Backend, orchestration, and voice — one person's subsystem, was split across
+# "member-1" and "member-2" before; merged here to match who actually owns it.
+/services/api/app/api/ @Olacode01
+/services/api/app/orchestration/ @Olacode01
+/services/api/app/repositories/ @Olacode01
+/services/api/app/integrations/tavily/ @Olacode01
+/agents/ @Olacode01
+/services/api/app/integrations/elevenlabs/ @Olacode01
+
+# Data & intelligence layer — schema, OpenAI logic, dataset, evals.
+/services/api/app/contracts/ @zukhriddingit
+/services/api/app/integrations/openai/ @zukhriddingit
+/packages/contracts/ @zukhriddingit
+/supabase/ @zukhriddingit
+/data/ @zukhriddingit
+/evals/ @zukhriddingit
+
+# Frontend.
+/apps/web/ @northeastern-teammate
+
+# Product narrative, submission, and everything a judge reads/watches/hears.
+# This did not have an owner before — it does now.
+/docs/submission/ @ars2711
+/docs/demo-ux.md @ars2711 @northeastern-teammate
+
+# README is the single most judge-facing file in the repo. Any change needs
+# sign-off from both the technical owner making it and the narrative owner
+# who has to defend it on camera.
+/README.md @ars2711 @Olacode01

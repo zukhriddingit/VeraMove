@@ -29,21 +29,21 @@ an evidence-backed ranked recommendation.
 
 ## Temporary directory ownership
 
-### Member 1
+Ownership is by role, not by an arbitrary member number — a prior draft of this file split one
+person's work (backend + voice) across two "members" and left the narrative/submission role with no
+directory at all. Fixed below.
+
+### Toheeb (@Olacode01) — backend orchestration & voice
 
 - `services/api/app/api`
 - `services/api/app/orchestration`
 - `services/api/app/repositories`
 - `services/api/app/integrations/tavily`
-- scripts related to orchestration
-
-### Member 2
-
 - `agents`
 - `services/api/app/integrations/elevenlabs`
 - voice-related tests and fixtures
 
-### Member 3
+### Zukhriuddin (@zukhriddingit) — data & intelligence layer
 
 - `services/api/app/contracts`
 - `services/api/app/integrations/openai`
@@ -52,11 +52,22 @@ an evidence-backed ranked recommendation.
 - `data`
 - `evals`
 
-### Member 4
+### Northeastern teammate — frontend
 
 - `apps/web`
 - frontend tests
-- demo UX documentation
+
+### Arsalan (@ars2711) — product narrative & submission
+
+- `docs/submission/` (project summary, video scripts, claim ledger, requirements mapping,
+  final checklist — see that folder for the full list)
+- `docs/demo-ux.md` (narrative pass; Northeastern teammate owns the underlying UX build)
+- `README.md`, jointly with the relevant technical owner for setup-command accuracy
+- Final review on any wording that will appear in a video, the Project Summary, or the
+  submission portal, regardless of which directory it lives in. No claim about what the
+  product does moves into a video or the Project Summary until it is marked verified in
+  `docs/submission/claim-ledger.md` by its technical owner, and Arsalan signs off on the
+  final wording before it's recorded or submitted.
 
 Do not rewrite another member's subsystem. Propose cross-boundary changes to the owner and keep
 unrelated refactors out of your branch.

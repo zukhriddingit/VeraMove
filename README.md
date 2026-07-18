@@ -30,6 +30,19 @@ optional Supabase migration stores versioned payloads as JSONB, but no local dat
 See [architecture details](docs/architecture.md), [API contract rules](docs/api-contract.md), and
 [integration boundaries](docs/integration-boundaries.md).
 
+## Team & roles
+
+| Person | Owns |
+| --- | --- |
+| Toheeb ([@Olacode01](https://github.com/Olacode01)) | Backend orchestration, ElevenLabs voice/negotiation system |
+| Zukhriuddin ([@zukhriddingit](https://github.com/zukhriddingit)) | Data & intelligence layer — schema, OpenAI parsing/comparison/recommendation, dataset |
+| Northeastern teammate | Frontend (`apps/web`) |
+| Arsalan ([@ars2711](https://github.com/ars2711)) | Product narrative & submission — everything in `docs/submission/`, final sign-off on the Project Summary, videos, and portal copy |
+
+Full ownership boundaries and the claim-verification workflow are in [`AGENTS.md`](AGENTS.md) and
+[`CODEOWNERS`](CODEOWNERS). Submission materials — scripts, claim ledger, requirements mapping,
+final checklist — live in [`docs/submission/`](docs/submission).
+
 ## Repository structure
 
 ```text
@@ -43,6 +56,7 @@ evals/                       Mock workflow evaluation cases
 supabase/migrations/         Optional PostgreSQL schema
 scripts/                     Bootstrap, dev, check, and contract export
 docs/                        Architecture and contributor documentation
+docs/submission/             Project Summary, video scripts, claim ledger, submission checklist
 .github/                     CI and pull-request template
 ```
 
@@ -117,11 +131,12 @@ Illegal state transitions return HTTP 409 with a domain error code. Unknown jobs
 
 ## Team branch conventions
 
-Branch from `main`, keep work inside temporary ownership boundaries, and use names such as
-`member-1/orchestration`, `member-2/voice`, `member-3/contracts`, or `member-4/demo-ui`. Rebase or
-merge `main` before requesting review; do not rewrite another member's subsystem to resolve a local
-preference. Contract changes require coordinated backend and frontend generation described in
-`AGENTS.md`.
+Branch from `main`, keep work inside the ownership boundaries in `AGENTS.md` and `CODEOWNERS`, and
+use names such as `toheeb/orchestration`, `zukhriuddin/data-layer`, `frontend/demo-ui`, or
+`arsalan/submission`. Rebase or merge `main` before requesting review; do not rewrite another
+member's subsystem to resolve a local preference. Contract changes require coordinated backend and
+frontend generation described in `AGENTS.md`. `AGENTS.md` is the source of truth for who owns what,
+including the product-narrative and submission ownership in `docs/submission/`.
 
 ## Known limitations
 
