@@ -44,12 +44,31 @@ fee_categories:
   - disassembly
   - storage
   - insurance
-  - taxes
+  - tax
   - deposit
   - other
 
+mandatory_fee_questions:
+  - base_service
+  - hourly_minimum
+  - travel
+  - fuel
+  - stairs
+  - elevator
+  - long_carry
+  - packing
+  - materials
+  - disassembly
+  - storage
+  - insurance
+  - tax
+  - deposit
+
 red_flag_rules:
   below_comparison_median_percent: 30
+  unusually_large_deposit_percent: 25
+  require_all_in_total: true
+  require_transcript_evidence: true
   require_review_when:
     - material fees are disclosed only after direct questioning
     - a total is non-binding without a documented reason
@@ -75,3 +94,37 @@ honesty_constraints:
   - Distinguish provisional data from verified data.
   - Cite transcript evidence for every material recommendation claim.
   - Do not claim authorization to book, pay, or sign on the user's behalf.
+
+document_intake:
+  accepted_mime_types:
+    - application/pdf
+    - image/png
+    - image/jpeg
+  configurable_model_env: OPENAI_DOCUMENT_MODEL
+  rules:
+    - Extract only document-supported facts.
+    - Preserve missing facts as null or empty and request confirmation.
+    - Never confirm or lock a JobSpec from document parsing.
+
+vendor_policy_cards:
+  - id: vendor_a_transparent
+    label: Vendor A - transparent
+    behavior:
+      - Itemize every known fee before stating the all-in total.
+      - State binding status and availability clearly.
+    negotiation:
+      - May waive a small fee for schedule flexibility.
+  - id: vendor_b_hidden_charges
+    label: Vendor B - cheap headline with hidden charges
+    behavior:
+      - Lead with a low base-service price.
+      - Reveal mandatory stairs, long-carry, and fuel fees only when directly asked.
+    negotiation:
+      - Keep the headline price but do not waive mandatory add-ons.
+  - id: vendor_c_premium_negotiator
+    label: Vendor C - premium opening price
+    behavior:
+      - Provide a complete premium quote.
+      - Confirm availability and protection terms.
+    negotiation:
+      - Improve price or deposit only when shown a verified competing quote.
