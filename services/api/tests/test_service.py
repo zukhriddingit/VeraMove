@@ -2,7 +2,7 @@
 
 import pytest
 
-from services.api.app.contracts import JobState
+from services.api.app.contracts import CallStatus, JobState
 from services.api.app.core.errors import DomainConflict, InvalidStateTransition
 
 
@@ -22,8 +22,13 @@ def test_mock_workflow(service, job_spec):
 
     completed = service.negotiate(job_spec.job_id)
     assert completed.state is JobState.COMPLETED
+    assert len(completed.calls) == 4
     assert len(completed.quotes) == 4
     assert completed.quotes[-1].negotiated_total < completed.quotes[-1].original_total
+
+    repeated = service.negotiate(job_spec.job_id)
+    assert repeated == completed
+    assert len(service.list_call_attempts(job_spec.job_id)) == 4
 
     report = service.get_report(job_spec.job_id)
     assert report.rankings[0].evidence_ids
@@ -33,13 +38,87 @@ def test_mock_workflow(service, job_spec):
         str(evidence.recording_url).startswith("https://recordings.example.com/")
         for evidence in report.transcript_evidence
     )
+    stored_evidence = {
+        evidence.evidence_id: evidence
+        for quote in completed.quotes
+        for evidence in quote.transcript_evidence
+    }
+    assert {item.evidence_id: item for item in report.transcript_evidence} == stored_evidence
 
 
-def test_confirmation_locks_state(service, job_spec):
+def test_confirmation_is_idempotent_and_defensive(service, job_spec):
+    service.create_job(job_spec)
+    first = service.confirm_job(job_spec.job_id)
+    second = service.confirm_job(job_spec.job_id)
+    assert second == first
+
+    first.job_spec.origin.address_summary = "Mutated outside repository"
+    stored = service.get_job(job_spec.job_id)
+    assert stored.job_spec.origin.address_summary != "Mutated outside repository"
+
+
+def test_document_intake_creates_fresh_document_job(service, job_spec):
+    created = service.create_job_from_document("Synthetic inventory document.")
+
+    assert created.job_spec.job_id != job_spec.job_id
+    assert created.job_spec.source_context.intake_method == "document"
+    assert created.state is JobState.INTAKE_COMPLETE
+
+
+def test_single_quote_call_persists_attempt_before_canonical_result(
+    service,
+    fixtures,
+    job_spec,
+):
+    service.create_job(job_spec)
+    confirmed = service.confirm_job(job_spec.job_id)
+
+    attempt = service.initiate_single_quote_call(
+        job_spec.job_id,
+        fixtures.load_vendors()[0],
+    )
+
+    assert attempt.status is CallStatus.COMPLETED
+    assert attempt.reference is not None
+    assert attempt.job_spec_snapshot == confirmed.job_spec
+    stored = service.get_job(job_spec.job_id)
+    assert len(stored.calls) == 1
+    assert len(stored.quotes) == 1
+
+
+def test_batch_uses_exact_confirmed_snapshot_and_does_not_redial(
+    service,
+    job_spec,
+):
+    service.create_job(job_spec)
+    confirmed = service.confirm_job(job_spec.job_id)
+
+    first = service.initiate_quote_batch(job_spec.job_id)
+    second = service.initiate_quote_batch(job_spec.job_id)
+
+    assert first == second
+    assert first.state is JobState.QUOTES_READY
+    assert len(first.calls) == 3
+    attempts = service.list_call_attempts(job_spec.job_id)
+    assert len(attempts) == 3
+    assert all(item.job_spec_snapshot == confirmed.job_spec for item in attempts)
+    assert len({item.call_id for item in attempts}) == 3
+
+
+def test_batch_completes_remaining_vendors_after_single_call(
+    service,
+    fixtures,
+    job_spec,
+):
     service.create_job(job_spec)
     service.confirm_job(job_spec.job_id)
-    with pytest.raises(InvalidStateTransition):
-        service.confirm_job(job_spec.job_id)
+    service.initiate_single_quote_call(job_spec.job_id, fixtures.load_vendors()[0])
+
+    called = service.initiate_quote_batch(job_spec.job_id)
+
+    assert called.state is JobState.QUOTES_READY
+    assert len(called.calls) == 3
+    assert len(service.list_call_attempts(job_spec.job_id)) == 3
 
 
 def test_calls_require_confirmation(service, job_spec):

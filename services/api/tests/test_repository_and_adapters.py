@@ -4,17 +4,13 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from services.api.app.contracts import (
-    CallOutcomeType,
+    CallRecord,
     CallStatus,
     JobRecord,
     JobState,
     VerificationStatus,
 )
-from services.api.app.integrations.elevenlabs.mock import (
-    MockTwilioTransport,
-    MockVoiceProvider,
-    MockVoiceVendorGateway,
-)
+from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
@@ -100,8 +96,27 @@ def test_repository_aggregates_calls_and_quotes(fixtures, job_spec):
     repository = InMemoryRepository()
     record = make_confirmed_record(job_spec)
     repository.create(record)
-    call = MockVoiceVendorGateway(fixtures).create_calls(record.job_spec)[0]
-    quote = call.outcome.quote
+    vendor = fixtures.load_vendors()[0]
+    call_id = uuid4()
+    result = MockVoiceProvider(fixtures).initiate_quote_call(
+        record.job_spec,
+        vendor,
+        call_id,
+    )
+    assert result.outcome is not None
+    assert result.completed_at is not None
+    assert result.recording_url is not None
+    call = CallRecord(
+        call_id=call_id,
+        job_id=job_spec.job_id,
+        vendor=vendor,
+        status=CallStatus.COMPLETED,
+        started_at=datetime(2026, 7, 18, 16, 0, tzinfo=UTC),
+        completed_at=result.completed_at,
+        outcome=result.outcome,
+        recording_url=result.recording_url,
+    )
+    quote = result.outcome.quote
     assert quote is not None
 
     repository.save_call(call)
@@ -195,20 +210,6 @@ def test_verified_competitor_excludes_target_and_unverified_quotes(fixtures, job
     )
 
 
-def test_mock_voice_gateway_returns_three_itemized_calls(fixtures, job_spec):
-    calls = MockVoiceVendorGateway(fixtures).create_calls(job_spec)
-    assert len(calls) == 3
-    assert all(call.outcome.type is CallOutcomeType.ITEMIZED_QUOTE for call in calls)
-    assert all(call.outcome.quote is not None for call in calls)
-    assert all(
-        call.outcome.quote.provisional_data["twilio_transport_reference"].startswith(
-            "synthetic-twilio-"
-        )
-        for call in calls
-        if call.outcome.quote is not None
-    )
-
-
 def test_new_mock_provider_boundaries_are_structurally_compatible(fixtures):
     voice: VoiceProvider = MockVoiceProvider(fixtures)
     intelligence: IntelligenceProvider = MockIntelligenceProvider(
@@ -219,13 +220,6 @@ def test_new_mock_provider_boundaries_are_structurally_compatible(fixtures):
     assert voice.initial_call_limit == 3
     extracted = intelligence.extract_document("Synthetic demo document.")
     assert extracted.source_context.intake_method == "document"
-
-
-def test_mock_twilio_transport_never_requires_a_phone_number(fixtures, job_spec):
-    vendor = fixtures.load_vendors()[0]
-    reference = MockTwilioTransport().create_call_reference(vendor, job_spec)
-    assert reference.endswith("clearpath-movers")
-    assert reference.startswith("synthetic-twilio-")
 
 
 def test_mock_negotiation_improves_total(fixtures, job_spec):

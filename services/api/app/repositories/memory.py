@@ -116,12 +116,6 @@ class InMemoryRepository:
             self._webhook_keys.add(idempotency_key)
             return True
 
-    def record_webhook(self, idempotency_key: str, payload: dict[str, Any]) -> bool:
-        """Temporary compatibility shim for the pre-migration service."""
-
-        del payload
-        return self.reserve_webhook(idempotency_key)
-
     def append_event(self, event: JobEvent) -> JobEvent:
         with self._lock:
             self._require_job(event.job_id)
@@ -203,7 +197,3 @@ class InMemoryRepository:
     @staticmethod
     def _copy_quote(quote: QuoteV1) -> QuoteV1:
         return QuoteV1.model_validate(deepcopy(quote.model_dump(mode="json")))
-
-
-# Temporary compatibility alias until orchestration service composition migrates.
-InMemoryJobRepository = InMemoryRepository
