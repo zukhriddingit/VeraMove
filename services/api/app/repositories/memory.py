@@ -8,7 +8,7 @@ from typing import Any
 from uuid import UUID
 
 from services.api.app.contracts import JobRecord
-from services.api.app.core.errors import DuplicateResource, ResourceNotFound
+from services.api.app.core.errors import DomainConflict, DuplicateResource, ResourceNotFound
 
 
 class InMemoryJobRepository:
@@ -32,11 +32,17 @@ class InMemoryJobRepository:
 
     def save(self, record: JobRecord) -> JobRecord:
         job_id = record.job_spec.job_id
+        candidate = self._copy(record)
         with self._lock:
             if job_id not in self._jobs:
                 raise ResourceNotFound(f"Job {job_id} was not found")
-            self._jobs[job_id] = deepcopy(record.model_dump(mode="json"))
-        return self._copy(record)
+            current = JobRecord.model_validate(self._jobs[job_id])
+            if current.job_spec.confirmed and candidate.job_spec.model_dump(
+                mode="json"
+            ) != current.job_spec.model_dump(mode="json"):
+                raise DomainConflict("Confirmed JobSpec version is locked and cannot be changed")
+            self._jobs[job_id] = deepcopy(candidate.model_dump(mode="json"))
+        return self._copy(candidate)
 
     def record_webhook(self, idempotency_key: str, payload: dict[str, Any]) -> bool:
         del payload

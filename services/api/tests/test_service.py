@@ -48,6 +48,17 @@ def test_calls_require_confirmation(service, job_spec):
         service.start_calls(job_spec.job_id)
 
 
+def test_confirmation_rejects_incomplete_job_spec_without_changing_state(
+    service,
+    job_spec,
+):
+    incomplete = job_spec.model_copy(update={"move_date": None})
+    service.create_job(incomplete)
+    with pytest.raises(DomainConflict, match="move_date"):
+        service.confirm_job(incomplete.job_id)
+    assert service.get_job(incomplete.job_id).state is JobState.INTAKE_COMPLETE
+
+
 def test_report_requires_completed_negotiation(service, job_spec):
     service.create_job(job_spec)
     with pytest.raises(DomainConflict, match="only after negotiation"):

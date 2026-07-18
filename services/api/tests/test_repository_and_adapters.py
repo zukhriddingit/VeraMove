@@ -2,7 +2,10 @@
 
 from datetime import UTC, datetime
 
+import pytest
+
 from services.api.app.contracts import CallOutcomeType, JobRecord, JobState, VerificationStatus
+from services.api.app.core.errors import DomainConflict
 from services.api.app.integrations.elevenlabs.mock import (
     MockTwilioTransport,
     MockVoiceVendorGateway,
@@ -34,6 +37,24 @@ def test_webhook_idempotency_is_process_local():
     repository = InMemoryJobRepository()
     assert repository.record_webhook("synthetic-event-1", {}) is True
     assert repository.record_webhook("synthetic-event-1", {}) is False
+
+
+def test_repository_rejects_changes_to_locked_job_spec(job_spec):
+    repository = InMemoryJobRepository()
+    now = datetime.now(UTC)
+    confirmed = job_spec.model_copy(
+        update={"confirmed": True, "confirmed_at": now, "locked_version": "1.0"}
+    )
+    record = JobRecord(
+        job_spec=confirmed,
+        state=JobState.CONFIRMED,
+        created_at=now,
+        updated_at=now,
+    )
+    repository.create(record)
+    record.job_spec = record.job_spec.model_copy(update={"bedroom_count": 3})
+    with pytest.raises(DomainConflict, match="locked"):
+        repository.save(record)
 
 
 def test_mock_voice_gateway_returns_three_itemized_calls(fixtures, job_spec):

@@ -62,9 +62,19 @@ class VeraMoveService:
     def confirm_job(self, job_id: UUID) -> JobRecord:
         record = self.get_job(job_id)
         validate_transition(record.state, JobState.CONFIRMED)
+        missing = record.job_spec.missing_required_fields()
+        if missing:
+            fields = ", ".join(missing)
+            raise DomainConflict(
+                f"JobSpec cannot be confirmed until required fields are complete: {fields}"
+            )
         now = datetime.now(UTC)
         record.job_spec = record.job_spec.model_copy(
-            update={"confirmed": True, "confirmed_at": now},
+            update={
+                "confirmed": True,
+                "confirmed_at": now,
+                "locked_version": record.job_spec.version,
+            },
         )
         record.state = JobState.CONFIRMED
         record.updated_at = now
@@ -96,7 +106,10 @@ class VeraMoveService:
         ]
         if not competitors:
             raise DomainConflict("Negotiation requires a verified competing quote")
-        verified_competitor = min(competitors, key=lambda quote: quote.negotiated_total)
+        verified_competitor = min(
+            competitors,
+            key=lambda quote: quote.comparable_total or quote.negotiated_total,
+        )
 
         record.state = JobState.NEGOTIATING
         record.updated_at = datetime.now(UTC)
@@ -138,4 +151,9 @@ class VeraMoveService:
 
     @staticmethod
     def _is_improved(quote: QuoteV1) -> bool:
-        return quote.negotiated_total < quote.original_total or bool(quote.concessions)
+        price_improved = (
+            quote.negotiated_total is not None
+            and quote.original_total is not None
+            and quote.negotiated_total < quote.original_total
+        )
+        return price_improved or bool(quote.concessions)
