@@ -1,15 +1,15 @@
 # Ownership by real role instead of generic member numbers.
-# @Olacode01 = Toheeb (backend/orchestration/voice) · @zukhriddingit = Zukhriuddin (data/OpenAI)
-# @ars2711 = Arsalan (product narrative/submission) · @northeastern-teammate = TBD, swap in once known.
+# @Olacode01 = Toheeb (frontend/data/OpenAI) · @zukhriddingit = Zukhriuddin (backend/orchestration/voice)
+# @ars2711 = Arsalan (product narrative/submission) · @prathmesh-handle-tbd = TBD, swap in once known.
 
 # Backend, orchestration, and voice — one person's subsystem, was split across
 # "member-1" and "member-2" before; merged here to match who actually owns it.
-/services/api/app/api/ @Olacode01
-/services/api/app/orchestration/ @Olacode01
-/services/api/app/repositories/ @Olacode01
-/services/api/app/integrations/tavily/ @Olacode01
-/agents/ @Olacode01
-/services/api/app/integrations/elevenlabs/ @Olacode01
+/services/api/app/api/ @prathmesh-handle-tbd
+/services/api/app/orchestration/ @prathmesh-handle-tbd
+/services/api/app/repositories/ @prathmesh-handle-tbd
+/services/api/app/integrations/tavily/ @prathmesh-handle-tbd
+/agents/ @prathmesh-handle-tbd
+/services/api/app/integrations/elevenlabs/ @prathmesh-handle-tbd
 
 # Data & intelligence layer — schema, OpenAI logic, dataset, evals.
 /services/api/app/contracts/ @zukhriddingit
@@ -20,14 +20,14 @@
 /evals/ @zukhriddingit
 
 # Frontend.
-/apps/web/ @northeastern-teammate
+/apps/web/ @Olacode01
 
 # Product narrative, submission, and everything a judge reads/watches/hears.
 # This did not have an owner before — it does now.
 /docs/submission/ @ars2711
-/docs/demo-ux.md @ars2711 @northeastern-teammate
+/docs/demo-ux.md @ars2711 @Olacode01
 
 # README is the single most judge-facing file in the repo. Any change needs
 # sign-off from both the technical owner making it and the narrative owner
 # who has to defend it on camera.
-/README.md @ars2711 @Olacode01
+/README.md @ars2711 @prathmesh-handle-tbd
