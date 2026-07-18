@@ -1,0 +1,38 @@
+[
+  {
+    "evidence_id": "30000000-0000-4000-8000-000000000001",
+    "call_id": "10000000-0000-4000-8000-000000000001",
+    "excerpt": "This synthetic quote includes travel, stairs, long carry, disassembly, and protection materials.",
+    "start_seconds": "42.00",
+    "end_seconds": "51.50",
+    "claim": "All expected fees were disclosed before the total.",
+    "recording_url": "https://recordings.example.com/synthetic/clearpath-call"
+  },
+  {
+    "evidence_id": "30000000-0000-4000-8000-000000000002",
+    "call_id": "10000000-0000-4000-8000-000000000002",
+    "excerpt": "After your question, the synthetic estimate also needs stairs, long-carry, and fuel fees.",
+    "start_seconds": "78.25",
+    "end_seconds": "90.00",
+    "claim": "Three material fees were disclosed only after direct questioning.",
+    "recording_url": "https://recordings.example.com/synthetic/budgetlift-call"
+  },
+  {
+    "evidence_id": "30000000-0000-4000-8000-000000000003",
+    "call_id": "10000000-0000-4000-8000-000000000003",
+    "excerpt": "The synthetic premium estimate is complete, and we can revisit it with a verified competitor.",
+    "start_seconds": "58.00",
+    "end_seconds": "67.75",
+    "claim": "The vendor invited an evidence-backed follow-up negotiation.",
+    "recording_url": "https://recordings.example.com/synthetic/northstar-call"
+  },
+  {
+    "evidence_id": "30000000-0000-4000-8000-000000000004",
+    "call_id": "10000000-0000-4000-8000-000000000003",
+    "excerpt": "Using the verified ClearPath total, the synthetic price drops by five hundred dollars and the deposit is reduced.",
+    "start_seconds": "121.00",
+    "end_seconds": "134.00",
+    "claim": "A verified competitor produced measurable price and deposit improvements.",
+    "recording_url": "https://recordings.example.com/synthetic/northstar-follow-up"
+  }
+]

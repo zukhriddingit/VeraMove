@@ -1,0 +1,10 @@
+{
+  "synthetic": true,
+  "cases": [
+    {"name": "three_vendor_calls", "expected_call_count": 3},
+    {"name": "negotiated_quote_added", "expected_quote_count_after_negotiation": 4},
+    {"name": "measurable_improvement", "expected_price_reduction_usd": "500.00"},
+    {"name": "hidden_fee_detection", "expected_vendor_slug": "budgetlift-moving", "expected_fee_categories": ["stairs", "long_carry", "fuel"]},
+    {"name": "evidence_backed_ranking", "minimum_evidence_count": 4}
+  ]
+}

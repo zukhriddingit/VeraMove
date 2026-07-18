@@ -166,7 +166,7 @@ No secrets or credentials are committed. `.env.example` contains names and safe 
 
 ## Assumptions
 
-- Python 3.11 or newer and Node.js 20 or newer are acceptable local prerequisites.
+- Python 3.11 or newer and Node.js 20.19 or newer are acceptable local prerequisites.
 - The empty workspace should be initialized as a Git repository with `main` as its initial branch.
 - Mock call and negotiation operations may complete synchronously because the starter proves contracts and flow, not telephony timing.
 - `POST /api/jobs` accepts a complete `JobSpecV1` and therefore enters `intake_complete` immediately; `draft` remains a supported domain state for future incremental intake.

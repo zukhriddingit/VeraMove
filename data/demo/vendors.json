@@ -1,0 +1,26 @@
+[
+  {
+    "vendor_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "name": "ClearPath Movers",
+    "slug": "clearpath-movers",
+    "behavior_summary": "Transparent synthetic vendor that itemizes every expected charge up front.",
+    "contact_label": "Synthetic vendor channel A",
+    "service_areas": ["Greater Boston synthetic demo area"]
+  },
+  {
+    "vendor_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "name": "BudgetLift Moving",
+    "slug": "budgetlift-moving",
+    "behavior_summary": "Low synthetic headline price; stairs, long-carry, and fuel charges appear only when questioned.",
+    "contact_label": "Synthetic vendor channel B",
+    "service_areas": ["Greater Boston synthetic demo area"]
+  },
+  {
+    "vendor_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "name": "Northstar Relocation",
+    "slug": "northstar-relocation",
+    "behavior_summary": "Premium synthetic opening price that improves after a verified competing quote.",
+    "contact_label": "Synthetic vendor channel C",
+    "service_areas": ["Greater Boston synthetic demo area"]
+  }
+]

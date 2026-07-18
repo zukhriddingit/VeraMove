@@ -1,0 +1,1 @@
+"""VeraMove FastAPI application."""

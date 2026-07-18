@@ -1,0 +1,77 @@
+version: 1
+synthetic_demo: true
+
+intake_questions:
+  - id: move_date
+    prompt: What date do you want to move, and is that date flexible?
+  - id: origin_access
+    prompt: Describe the origin dwelling, floors, stairs, elevator, parking, and carry distance.
+  - id: destination_access
+    prompt: Describe the destination dwelling, floors, stairs, elevator, parking, and carry distance.
+  - id: bedroom_count
+    prompt: How many bedrooms are included in the move?
+  - id: inventory
+    prompt: List furniture, boxes, quantities, rooms, and any special handling needs.
+  - id: special_items
+    prompt: Which items are oversized, fragile, unusually heavy, or high value?
+  - id: services
+    prompt: Do you need packing, disassembly, storage, or related services?
+  - id: insurance
+    prompt: What protection or insurance coverage do you prefer?
+
+required_job_spec_fields:
+  - move_date
+  - date_flexible
+  - origin
+  - destination
+  - bedroom_count
+  - inventory
+  - oversized_or_fragile_items
+  - services
+  - insurance_preference
+  - source_context
+
+fee_categories:
+  - base_service
+  - hourly_minimum
+  - travel
+  - fuel
+  - stairs
+  - elevator
+  - long_carry
+  - packing
+  - materials
+  - disassembly
+  - storage
+  - insurance
+  - taxes
+  - deposit
+  - other
+
+red_flag_rules:
+  below_comparison_median_percent: 30
+  require_review_when:
+    - material fees are disclosed only after direct questioning
+    - a total is non-binding without a documented reason
+    - transcript evidence does not support a quoted claim
+
+negotiation_levers:
+  - verified_competitor_price_match
+  - deposit_reduction
+  - fee_waiver
+  - scheduling_flexibility
+  - service_upgrade
+  - binding_total_commitment
+
+required_call_outcomes:
+  - itemized_quote
+  - callback_commitment
+  - documented_decline
+  - failed
+
+honesty_constraints:
+  - Never invent a competing quote, transcript statement, recording, or vendor policy.
+  - Identify all demo records as synthetic.
+  - Distinguish provisional data from verified data.
+  - Cite transcript evidence for every material recommendation claim.
+  - Do not claim authorization to book, pay, or sign on the user's behalf.

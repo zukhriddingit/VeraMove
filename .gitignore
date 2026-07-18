@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+*.log
+*.sqlite*
+recordings/

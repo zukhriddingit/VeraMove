@@ -1,0 +1,20 @@
+[
+  {
+    "synthetic": true,
+    "vendor_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "disclosure_policy": "Itemizes access, travel, materials, and deposit before quoting a total.",
+    "negotiation_policy": "May waive materials when dates are flexible."
+  },
+  {
+    "synthetic": true,
+    "vendor_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "disclosure_policy": "Requires direct questions before naming stairs, long-carry, and fuel fees.",
+    "negotiation_policy": "Headline rate is firm; add-on fees remain variable."
+  },
+  {
+    "synthetic": true,
+    "vendor_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "disclosure_policy": "Provides a complete premium estimate.",
+    "negotiation_policy": "Will match evidence-backed competitors and reduce the deposit."
+  }
+]

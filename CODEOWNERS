@@ -1,0 +1,15 @@
+# Placeholder handles for the four hackathon members; replace after team accounts are known.
+/services/api/app/api/ @member-1
+/services/api/app/orchestration/ @member-1
+/services/api/app/repositories/ @member-1
+/services/api/app/integrations/tavily/ @member-1
+/agents/ @member-2
+/services/api/app/integrations/elevenlabs/ @member-2
+/services/api/app/contracts/ @member-3
+/services/api/app/integrations/openai/ @member-3
+/packages/contracts/ @member-3
+/supabase/ @member-3
+/data/ @member-3
+/evals/ @member-3
+/apps/web/ @member-4
+/docs/demo-ux.md @member-4
