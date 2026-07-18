@@ -78,6 +78,8 @@ Copy `.env.example` only if you want to override safe defaults.
 | `API_HOST` | `127.0.0.1` | Documented API bind host |
 | `API_PORT` | `8000` | Documented API port |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Browser API base URL |
+| `OPENAI_DOCUMENT_MODEL` | `gpt-4.1-mini` | Unwired document parser model override |
+| `OPENAI_RECOMMENDATION_MODEL` | `gpt-4.1-mini` | Unwired grounded narrator model override |
 
 The remaining empty names in `.env.example` reserve future adapter configuration. The starter does
 not read them or call those services. Never commit a populated `.env` file.
@@ -98,6 +100,7 @@ than silently attempting a real integration.
 | `python scripts/check.py` | Runs Ruff, pytest, contract generation, typecheck, frontend tests, and production build |
 | `python scripts/export_openapi.py` | Regenerates `packages/contracts/openapi.json` |
 | `npm --prefix apps/web run generate:api` | Regenerates `apps/web/src/api/schema.d.ts` |
+| `python -m evals.run` | Runs deterministic synthetic intelligence evaluations |
 
 ## API routes
 
@@ -125,7 +128,9 @@ preference. Contract changes require coordinated backend and frontend generation
 
 ## Known limitations
 
-- No real voice interview, document parsing, outbound calls, model inference, or web search.
+- No real voice interview, outbound calls, model inference, or web search.
+- Strict document parsing and narration boundaries are implemented but no live provider or API route
+  is wired in mock mode.
 - No Supabase runtime adapter, persistence, authentication, authorization, payment, or booking.
 - Mock calls and negotiation complete synchronously.
 - The frontend is a functional route scaffold, not a polished production interface.

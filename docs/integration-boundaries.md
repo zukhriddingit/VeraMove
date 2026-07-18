@@ -11,13 +11,18 @@ accepts typed mock events and deduplicates their idempotency keys in memory.
 
 ## OpenAI
 
-`NegotiationGateway` receives a locked JobSpec, all structured quotes, and one verified competitor.
-The mock loads a fixed improved quote and records the competing quote ID. It performs no model call.
+`DocumentIntakeGateway` returns a strict `DocumentParseResult` containing the same `JobSpecV1` used
+by voice intake. `OpenAIDocumentParser` accepts an injected structured-output client and revalidates
+the response with Pydantic. `OpenAIRecommendationNarrator` can explain a deterministic ranking but
+cannot change its order or findings. `NegotiationGateway` remains compatible with the seeded mock.
+No provider is wired and no model call occurs in mock mode.
 
 ## Tavily
 
-`VendorDiscoveryGateway` accepts origin and destination context. The mock ignores those strings and
-returns the three committed fictional vendors. It performs no search request.
+`VendorDiscoveryGateway` preserves the original origin/destination method and adds cached call-list
+sourcing by city, state, service type, and radius. The mock returns the three committed fictional
+vendors. The optional normalizer accepts an injected Tavily client and stores no direct contact
+details. Mock mode performs no search request.
 
 ## Supabase/PostgreSQL
 
