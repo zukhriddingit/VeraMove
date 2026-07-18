@@ -18,7 +18,12 @@ from services.api.app.contracts import (
     Vendor,
     WebhookAck,
 )
-from services.api.app.core.errors import DomainConflict, ResourceNotFound
+from services.api.app.core.errors import (
+    DomainConflict,
+    ProviderConfigurationError,
+    ProviderRequestError,
+    ResourceNotFound,
+)
 from services.api.app.core.state_machine import validate_transition
 from services.api.app.integrations.tavily.base import VendorDiscoveryGateway
 from services.api.app.orchestration.fixtures import DemoFixtures
@@ -129,11 +134,15 @@ class VeraMoveService:
             return existing
 
         attempt = self._new_attempt(record, vendor, CallKind.QUOTE)
-        result = self._voice.initiate_quote_call(
-            attempt.job_spec_snapshot,
-            vendor,
-            attempt.call_id,
-        )
+        try:
+            result = self._voice.initiate_quote_call(
+                attempt.job_spec_snapshot,
+                vendor,
+                attempt.call_id,
+            )
+        except (ProviderConfigurationError, ProviderRequestError):
+            self._record_provider_failure(attempt)
+            raise
         return self._record_provider_result(attempt, result)
 
     def initiate_quote_batch(self, job_id: UUID) -> JobRecord:
@@ -197,13 +206,17 @@ class VeraMoveService:
         record.updated_at = self._clock()
         record = self._jobs.save(record)
         attempt = self._new_attempt(record, target_quote.vendor, CallKind.NEGOTIATION)
-        result = self._voice.initiate_negotiation_call(
-            attempt.job_spec_snapshot,
-            target_quote.vendor,
-            competitor,
-            planned,
-            attempt.call_id,
-        )
+        try:
+            result = self._voice.initiate_negotiation_call(
+                attempt.job_spec_snapshot,
+                target_quote.vendor,
+                competitor,
+                planned,
+                attempt.call_id,
+            )
+        except (ProviderConfigurationError, ProviderRequestError):
+            self._record_provider_failure(attempt)
+            raise
         attempt = self._record_provider_reference(attempt, result)
 
         if not self._is_complete(result):
@@ -292,6 +305,24 @@ class VeraMoveService:
             deep=True,
         )
         return self._calls.save_attempt(in_progress)
+
+    def _record_provider_failure(self, attempt: CallAttempt) -> None:
+        """Preserve a failed attempt without inventing a canonical call record."""
+
+        failed_at = self._clock()
+        self._calls.save_attempt(
+            attempt.model_copy(
+                update={
+                    "status": CallStatus.FAILED,
+                    "completed_at": failed_at,
+                },
+                deep=True,
+            )
+        )
+        record = self.get_job(attempt.job_id)
+        record.state = JobState.FAILED
+        record.updated_at = failed_at
+        self._jobs.save(record)
 
     def _build_recommendation(self, record: JobRecord) -> RecommendationV1:
         template = self._fixtures.load_recommendation()

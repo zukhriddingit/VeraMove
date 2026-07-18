@@ -1,5 +1,15 @@
-"""Shared transport boundaries for ElevenLabs adapters.
+"""Shared transport boundaries for ElevenLabs adapters."""
 
-The provider-neutral voice protocol lives in orchestration. The live HTTP transport
-is added here in the separately reviewed live-adapter task.
-"""
+from typing import Any, Protocol
+
+
+class JsonHttpTransport(Protocol):
+    """Small injectable JSON boundary that keeps orchestration network-free."""
+
+    def post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        timeout_seconds: float,
+    ) -> dict[str, Any]: ...
