@@ -22,7 +22,8 @@ an evidence-backed ranked recommendation.
 - `services/api/app/contracts` owns Pydantic domain and API contracts.
 - `services/api/app/orchestration` coordinates workflows but does not call external SDKs directly.
 - `services/api/app/repositories` isolates persistence and defaults to in-memory behavior.
-- `services/api/app/integrations` contains protocols and adapters; only mocks are wired.
+- `services/api/app/integrations` contains protocols and adapters; mock adapters are wired by
+  default, and live voice is fail-closed behind explicit settings.
 - `apps/web` uses one client and OpenAPI-generated types, never parallel handwritten domain models.
 - `configs/moving.yaml` owns moving-specific questions, thresholds, fee categories, and honesty rules.
 - `data/demo` contains synthetic fixtures; versioned domain payloads may later persist as JSONB.
@@ -75,8 +76,8 @@ unrelated refactors out of your branch.
 ## No-secrets rule
 
 Never commit API keys, auth tokens, populated `.env` files, database credentials, recordings, or
-local database files. Mock mode must remain the default. Real adapters require a separate reviewed
-change and may not silently activate from this starter.
+local database files. Mock mode must remain the default. Real adapters may never silently activate;
+they require explicit reviewed settings and must preserve credential-free mock behavior.
 
 ## No-real-PII rule
 

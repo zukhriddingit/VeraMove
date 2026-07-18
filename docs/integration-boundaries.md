@@ -1,31 +1,45 @@
 # Integration boundaries
 
-All integrations are interfaces plus deterministic mock adapters. No production SDK is installed or
-called.
+Deterministic mock providers remain the default and are the only providers exercised by normal
+development, demos, automated tests, and CI. Optional live voice stays behind the same orchestration
+protocol and fails closed unless its explicit runtime settings are complete.
 
 ## ElevenLabs and Twilio
 
-`VoiceVendorGateway` is the future boundary for ElevenLabs conversation behavior and Twilio call
-transport. The current adapter constructs three synthetic completed call records. The webhook route
-accepts typed mock events and deduplicates their idempotency keys in memory.
+`VoiceProvider` is the provider-neutral call boundary. The mock provider completes synthetic quote
+and negotiation calls deterministically. The optional live adapter sends one HTTP request through
+HTTPX to ElevenLabs' native Twilio outbound endpoint and records provider conversation/call
+identifiers in an internal `CallAttempt`. It requires `APP_MODE=live`, explicit live-call enablement,
+all required ElevenLabs configuration, and one externally supplied test destination.
+
+VeraMove sends the imported ElevenLabs phone-number identifier with the request. Twilio account
+credentials are managed during the number import and are not sent by VeraMove to the outbound
+endpoint.
+
+The webhook adapter authenticates the exact raw body with a timestamped HMAC before parsing,
+normalizes only allowlisted provider identifiers/status, and atomically rejects replays. Raw
+transcripts, phone numbers, and arbitrary provider payloads are not retained in job events.
 
 ## OpenAI
 
-`NegotiationGateway` receives a locked JobSpec, all structured quotes, and one verified competitor.
-The mock loads a fixed improved quote and records the competing quote ID. It performs no model call.
+`IntelligenceProvider` isolates document intake and negotiation planning. This slice wires the
+deterministic implementation in both mock and live voice modes; the existing OpenAI integration is
+not called or rewritten.
 
 ## Tavily
 
-`VendorDiscoveryGateway` accepts origin and destination context. The mock ignores those strings and
-returns the three committed fictional vendors. It performs no search request.
+`VendorDiscoveryGateway` accepts origin and destination context. The deterministic mock ignores
+those strings and returns three committed fictional vendors. This slice performs no Tavily search.
 
 ## Supabase/PostgreSQL
 
-The SQL migration describes optional future persistence. `InMemoryJobRepository` is the only runtime
-implementation. No Supabase client package or local instance is required.
+The SQL migration describes optional future persistence. `InMemoryRepository` implements the job,
+call, and quote repository protocols at runtime. Supabase remains unwired, so mock mode needs neither
+a Supabase client nor a local instance.
 
-## Future adapter rules
+## Adapter rules
 
-A real adapter must remain behind the existing protocol, require an explicit non-mock mode, protect
-credentials, redact personal data in logs, preserve idempotency, and add contract plus failure tests.
-It must not change mock-mode acceptance behavior.
+A live adapter must remain behind an injected protocol, require explicit non-mock mode and
+enablement, protect credentials, redact personal data in logs, preserve idempotency, and include
+contract and failure tests with no external request. It may never silently activate or change
+mock-mode acceptance behavior.
