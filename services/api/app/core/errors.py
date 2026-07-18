@@ -27,3 +27,11 @@ class ProviderConfigurationError(DomainError):
 
 class ProviderRequestError(DomainError):
     code = "provider_request_error"
+
+
+class WebhookAuthenticationError(DomainError):
+    code = "webhook_authentication_error"
+
+
+class WebhookPayloadError(DomainError):
+    code = "webhook_payload_error"

@@ -25,9 +25,17 @@ from services.api.app.core.errors import (
     ResourceNotFound,
 )
 from services.api.app.core.state_machine import validate_transition
+from services.api.app.integrations.elevenlabs.webhook import (
+    ElevenLabsWebhookProcessor,
+)
 from services.api.app.integrations.tavily.base import VendorDiscoveryGateway
 from services.api.app.orchestration.fixtures import DemoFixtures
-from services.api.app.orchestration.models import CallAttempt, CallKind, VoiceCallResult
+from services.api.app.orchestration.models import (
+    CallAttempt,
+    CallKind,
+    JobEvent,
+    VoiceCallResult,
+)
 from services.api.app.orchestration.providers import IntelligenceProvider, VoiceProvider
 from services.api.app.orchestration.tools import VoiceTools
 from services.api.app.repositories.base import (
@@ -54,6 +62,7 @@ class VeraMoveService:
         voice: VoiceProvider,
         intelligence: IntelligenceProvider,
         discovery: VendorDiscoveryGateway,
+        webhooks: ElevenLabsWebhookProcessor,
         fixtures: DemoFixtures,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
@@ -63,6 +72,7 @@ class VeraMoveService:
         self._voice = voice
         self._intelligence = intelligence
         self._discovery = discovery
+        self._webhooks = webhooks
         self._fixtures = fixtures
         self._tools = VoiceTools(calls, quotes, clock=clock)
         self._clock = clock
@@ -253,9 +263,57 @@ class VeraMoveService:
             raise DomainConflict("Report is available only after negotiation completes")
         return record.recommendation
 
-    def handle_elevenlabs_webhook(self, event: ElevenLabsWebhookEvent) -> WebhookAck:
-        accepted = self._calls.reserve_webhook(event.idempotency_key)
-        return WebhookAck(accepted=accepted, duplicate=not accepted)
+    def handle_elevenlabs_webhook(
+        self,
+        raw_body: bytes | ElevenLabsWebhookEvent,
+        signature_header: str | None = None,
+    ) -> WebhookAck:
+        """Authenticate raw provider bytes and apply their safe normalized event."""
+
+        # TODO(Task 7): remove this direct-model compatibility branch when the
+        # FastAPI route forwards the cached raw body and signature header.
+        if isinstance(raw_body, ElevenLabsWebhookEvent):
+            accepted = self._calls.reserve_webhook(raw_body.idempotency_key)
+            return WebhookAck(accepted=accepted, duplicate=not accepted)
+
+        event = self._webhooks.process(raw_body, signature_header)
+        if not self._calls.reserve_webhook(event.idempotency_key):
+            return WebhookAck(accepted=False, duplicate=True)
+        attempt = self._calls.get_attempt(event.call_id) if event.call_id else None
+        if attempt is None and event.conversation_id:
+            attempt = self._calls.find_attempt_by_conversation_id(
+                event.conversation_id
+            )
+        if attempt and event.call_status:
+            attempt = attempt.model_copy(
+                update={
+                    "status": event.call_status,
+                    "completed_at": (
+                        event.event_timestamp
+                        if event.call_status
+                        in {CallStatus.COMPLETED, CallStatus.FAILED}
+                        else None
+                    ),
+                }
+            )
+            self._calls.save_attempt(attempt)
+        if attempt:
+            self._calls.append_event(
+                JobEvent(
+                    job_id=attempt.job_id,
+                    call_id=attempt.call_id,
+                    event_type=event.event_type,
+                    occurred_at=event.event_timestamp,
+                    metadata={"provider_status": event.provider_status},
+                )
+            )
+        return WebhookAck(accepted=True, duplicate=False)
+
+    def get_events(self, job_id: UUID) -> list[JobEvent]:
+        """Return safe normalized events after verifying the job exists."""
+
+        self.get_job(job_id)
+        return self._calls.list_events(job_id)
 
     def discover_vendors(self, origin: str | None, destination: str | None) -> list[Vendor]:
         return self._discovery.discover(origin, destination)

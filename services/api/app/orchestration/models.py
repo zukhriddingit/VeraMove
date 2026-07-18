@@ -70,3 +70,17 @@ class JobEvent(BaseModel):
     event_type: str = Field(min_length=1, max_length=120)
     occurred_at: datetime
     metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+class NormalizedVoiceEvent(BaseModel):
+    """Authenticated provider event stripped of transcript and arbitrary metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    event_type: str = Field(min_length=1, max_length=120)
+    event_timestamp: datetime
+    conversation_id: str | None = Field(default=None, max_length=200)
+    call_id: UUID | None = None
+    call_status: CallStatus | None = None
+    provider_status: str | None = Field(default=None, max_length=80)

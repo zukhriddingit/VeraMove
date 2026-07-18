@@ -11,6 +11,9 @@ from services.api.app.integrations.elevenlabs.live import (
     HttpxJsonTransport,
 )
 from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
+from services.api.app.integrations.elevenlabs.webhook import (
+    ElevenLabsWebhookProcessor,
+)
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.orchestration.fixtures import DemoFixtures
@@ -57,6 +60,16 @@ def build_service(
         )
     else:
         raise ProviderConfigurationError("APP_MODE must be either mock or live")
+    webhooks = (
+        ElevenLabsWebhookProcessor(
+            secret="synthetic-webhook-secret",
+            clock=mock_now,
+        )
+        if settings.app_mode == "mock"
+        else ElevenLabsWebhookProcessor(
+            secret=settings.live_voice.webhook_secret,
+        )
+    )
     return VeraMoveService(
         jobs=repository,
         calls=repository,
@@ -67,6 +80,7 @@ def build_service(
             MockNegotiationGateway(fixtures),
         ),
         discovery=MockVendorDiscoveryGateway(fixtures),
+        webhooks=webhooks,
         fixtures=fixtures,
         clock=mock_now,
     )

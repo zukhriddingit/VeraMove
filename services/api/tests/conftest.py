@@ -8,6 +8,9 @@ from fastapi.testclient import TestClient
 
 from services.api.app.api.dependencies import get_repository
 from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
+from services.api.app.integrations.elevenlabs.webhook import (
+    ElevenLabsWebhookProcessor,
+)
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.main import app
@@ -47,6 +50,10 @@ def service(fixtures: DemoFixtures) -> VeraMoveService:
             MockNegotiationGateway(fixtures),
         ),
         discovery=MockVendorDiscoveryGateway(fixtures),
+        webhooks=ElevenLabsWebhookProcessor(
+            secret="synthetic-webhook-secret",
+            clock=lambda: FIXED_NOW,
+        ),
         fixtures=fixtures,
         clock=lambda: FIXED_NOW,
     )
