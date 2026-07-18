@@ -11,8 +11,10 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
     assert document["info"]["title"] == "VeraMove API"
     for path in (
         "/health",
+        "/api/intake/document",
         "/api/jobs",
         "/api/jobs/{job_id}",
+        "/api/jobs/{job_id}/events",
         "/api/jobs/{job_id}/confirm",
         "/api/jobs/{job_id}/calls",
         "/api/jobs/{job_id}/negotiate",
@@ -22,4 +24,12 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
     ):
         assert path in document["paths"]
     for schema in ("JobSpecV1", "QuoteV1", "CallRecord", "RecommendationV1"):
+        assert schema in document["components"]["schemas"]
+    for schema in (
+        "DocumentIntakeRequest",
+        "HealthResponse",
+        "RuntimeHealthResponse",
+        "JobEventsResponse",
+        "ElevenLabsPostCallWebhook",
+    ):
         assert schema in document["components"]["schemas"]

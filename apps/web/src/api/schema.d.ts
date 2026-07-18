@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/intake/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Job From Document */
+        post: operations["create_job_from_document_api_intake_document_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -66,6 +83,23 @@ export interface paths {
         put?: never;
         /** Confirm Job */
         post: operations["confirm_job_api_jobs__job_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job Events */
+        get: operations["get_job_events_api_jobs__job_id__events_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -214,10 +248,34 @@ export interface components {
          */
         CallStatus: "pending" | "in_progress" | "completed" | "failed";
         /**
+         * DocumentIntakeRequest
+         * @description Bound the unstructured document text accepted by the intake route.
+         */
+        DocumentIntakeRequest: {
+            /** Document Text */
+            document_text: string;
+        };
+        /**
          * DwellingType
          * @enum {string}
          */
         DwellingType: "apartment" | "condo" | "townhouse" | "house" | "storage_unit" | "other";
+        /**
+         * ElevenLabsPostCallWebhook
+         * @description Typed public shape for the ElevenLabs post-call webhook.
+         */
+        ElevenLabsPostCallWebhook: {
+            data: components["schemas"]["PostCallWebhookData"];
+            /** Event Timestamp */
+            event_timestamp: number;
+            /**
+             * Type
+             * @constant
+             */
+            type: "post_call_transcription";
+        } & {
+            [key: string]: unknown;
+        };
         /** ElevenLabsWebhookEvent */
         ElevenLabsWebhookEvent: {
             /** Call Id */
@@ -303,6 +361,43 @@ export interface components {
             quantity: number;
             /** Room */
             room: string;
+        };
+        /**
+         * JobEvent
+         * @description Safe provider-neutral event exposed by orchestration.
+         */
+        JobEvent: {
+            /** Call Id */
+            call_id?: string | null;
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id?: string;
+            /** Event Type */
+            event_type: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: string | number | boolean | null;
+            };
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
+        /**
+         * JobEventsResponse
+         * @description Envelope safe normalized events for a single job.
+         */
+        JobEventsResponse: {
+            /** Events */
+            events: components["schemas"]["JobEvent"][];
         };
         /** JobRecord */
         JobRecord: {
@@ -420,6 +515,20 @@ export interface components {
              */
             stairs: number;
         };
+        /**
+         * PostCallWebhookData
+         * @description Allowlisted fields used from ElevenLabs post-call data.
+         */
+        PostCallWebhookData: {
+            /** Agent Id */
+            agent_id: string;
+            /** Conversation Id */
+            conversation_id: string;
+            /** Status */
+            status: string;
+        } & {
+            [key: string]: unknown;
+        };
         /** QuoteV1 */
         QuoteV1: {
             /** Availability */
@@ -535,6 +644,29 @@ export interface components {
              */
             winning_vendor_id: string;
         };
+        /**
+         * RuntimeHealthResponse
+         * @description Expose the selected runtime mode without revealing configuration values.
+         */
+        RuntimeHealthResponse: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "mock" | "live";
+            /**
+             * Service
+             * @default veramove-api
+             * @constant
+             */
+            service: "veramove-api";
+            /**
+             * Status
+             * @default ok
+             * @constant
+             */
+            status: "ok";
+        };
         /** SourceContext */
         SourceContext: {
             /**
@@ -637,6 +769,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_job_from_document_api_intake_document_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentIntakeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_job_api_jobs_post: {
         parameters: {
             query?: never;
@@ -763,6 +928,37 @@ export interface operations {
             };
         };
     };
+    get_job_events_api_jobs__job_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobEventsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     negotiate_api_jobs__job_id__negotiate_post: {
         parameters: {
             query?: never;
@@ -866,7 +1062,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ElevenLabsWebhookEvent"];
+                "application/json": components["schemas"]["ElevenLabsWebhookEvent"] | components["schemas"]["ElevenLabsPostCallWebhook"];
             };
         };
         responses: {
@@ -905,7 +1101,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthResponse"];
+                    "application/json": components["schemas"]["HealthResponse"] | components["schemas"]["RuntimeHealthResponse"];
                 };
             };
         };

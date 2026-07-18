@@ -8,7 +8,6 @@ from uuid import UUID, uuid4
 
 from services.api.app.contracts import (
     CallStatus,
-    ElevenLabsWebhookEvent,
     JobRecord,
     JobSpecV1,
     JobState,
@@ -265,16 +264,10 @@ class VeraMoveService:
 
     def handle_elevenlabs_webhook(
         self,
-        raw_body: bytes | ElevenLabsWebhookEvent,
-        signature_header: str | None = None,
+        raw_body: bytes,
+        signature_header: str | None,
     ) -> WebhookAck:
         """Authenticate raw provider bytes and apply their safe normalized event."""
-
-        # TODO(Task 7): remove this direct-model compatibility branch when the
-        # FastAPI route forwards the cached raw body and signature header.
-        if isinstance(raw_body, ElevenLabsWebhookEvent):
-            accepted = self._calls.reserve_webhook(raw_body.idempotency_key)
-            return WebhookAck(accepted=accepted, duplicate=not accepted)
 
         event = self._webhooks.process(raw_body, signature_header)
         if not self._calls.reserve_webhook(event.idempotency_key):

@@ -135,6 +135,23 @@
         "title": "CallStatus",
         "type": "string"
       },
+      "DocumentIntakeRequest": {
+        "additionalProperties": false,
+        "description": "Bound the unstructured document text accepted by the intake route.",
+        "properties": {
+          "document_text": {
+            "maxLength": 50000,
+            "minLength": 1,
+            "title": "Document Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_text"
+        ],
+        "title": "DocumentIntakeRequest",
+        "type": "object"
+      },
       "DwellingType": {
         "enum": [
           "apartment",
@@ -146,6 +163,31 @@
         ],
         "title": "DwellingType",
         "type": "string"
+      },
+      "ElevenLabsPostCallWebhook": {
+        "additionalProperties": true,
+        "description": "Typed public shape for the ElevenLabs post-call webhook.",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PostCallWebhookData"
+          },
+          "event_timestamp": {
+            "title": "Event Timestamp",
+            "type": "integer"
+          },
+          "type": {
+            "const": "post_call_transcription",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "event_timestamp",
+          "data"
+        ],
+        "title": "ElevenLabsPostCallWebhook",
+        "type": "object"
       },
       "ElevenLabsWebhookEvent": {
         "additionalProperties": false,
@@ -332,6 +374,93 @@
           "room"
         ],
         "title": "InventoryItem",
+        "type": "object"
+      },
+      "JobEvent": {
+        "additionalProperties": false,
+        "description": "Safe provider-neutral event exposed by orchestration.",
+        "properties": {
+          "call_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Call Id"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "event_type",
+          "occurred_at"
+        ],
+        "title": "JobEvent",
+        "type": "object"
+      },
+      "JobEventsResponse": {
+        "additionalProperties": false,
+        "description": "Envelope safe normalized events for a single job.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/JobEvent"
+            },
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "JobEventsResponse",
         "type": "object"
       },
       "JobRecord": {
@@ -584,6 +713,31 @@
           "dwelling_type"
         ],
         "title": "OriginDestinationAccess",
+        "type": "object"
+      },
+      "PostCallWebhookData": {
+        "additionalProperties": true,
+        "description": "Allowlisted fields used from ElevenLabs post-call data.",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "conversation_id",
+          "status"
+        ],
+        "title": "PostCallWebhookData",
         "type": "object"
       },
       "QuoteV1": {
@@ -842,6 +996,37 @@
         "title": "RecommendationV1",
         "type": "object"
       },
+      "RuntimeHealthResponse": {
+        "additionalProperties": false,
+        "description": "Expose the selected runtime mode without revealing configuration values.",
+        "properties": {
+          "mode": {
+            "enum": [
+              "mock",
+              "live"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "service": {
+            "const": "veramove-api",
+            "default": "veramove-api",
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "RuntimeHealthResponse",
+        "type": "object"
+      },
       "SourceContext": {
         "additionalProperties": false,
         "properties": {
@@ -1087,6 +1272,47 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/intake/document": {
+      "post": {
+        "operationId": "create_job_from_document_api_intake_document_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentIntakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Job From Document",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
     "/api/jobs": {
       "post": {
         "operationId": "create_job_api_jobs_post",
@@ -1257,6 +1483,49 @@
         ]
       }
     },
+    "/api/jobs/{job_id}/events": {
+      "get": {
+        "operationId": "get_job_events_api_jobs__job_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEventsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Job Events",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
     "/api/jobs/{job_id}/negotiate": {
       "post": {
         "operationId": "negotiate_api_jobs__job_id__negotiate_post",
@@ -1417,7 +1686,15 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ElevenLabsWebhookEvent"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ElevenLabsWebhookEvent"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ElevenLabsPostCallWebhook"
+                  }
+                ],
+                "title": " Event"
               }
             }
           },
@@ -1459,7 +1736,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HealthResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/HealthResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RuntimeHealthResponse"
+                    }
+                  ],
+                  "title": "Response Health Health Get"
                 }
               }
             },

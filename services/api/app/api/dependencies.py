@@ -3,6 +3,8 @@
 from datetime import UTC, datetime
 from functools import lru_cache
 
+from fastapi import Request
+
 from services.api.app.core.config import Settings
 from services.api.app.core.errors import ProviderConfigurationError
 from services.api.app.integrations.elevenlabs.base import JsonHttpTransport
@@ -26,6 +28,12 @@ _repository = InMemoryRepository()
 
 def get_repository() -> InMemoryRepository:
     return _repository
+
+
+def get_settings(request: Request) -> Settings:
+    """Return the settings snapshot used to create the current application."""
+
+    return request.app.state.settings
 
 
 def mock_now() -> datetime:

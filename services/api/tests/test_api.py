@@ -1,6 +1,23 @@
 """HTTP contract and mock-flow tests."""
 
+import hashlib
+import hmac
+import json
+from datetime import UTC, datetime
 from uuid import uuid4
+
+from fastapi.testclient import TestClient
+
+from services.api.app.main import create_app
+
+WEBHOOK_SECRET = "synthetic-webhook-secret"
+WEBHOOK_TIMESTAMP = int(datetime(2026, 7, 18, 16, 0, tzinfo=UTC).timestamp())
+
+
+def sign_webhook(body: bytes) -> str:
+    signed = str(WEBHOOK_TIMESTAMP).encode() + b"." + body
+    digest = hmac.new(WEBHOOK_SECRET.encode(), signed, hashlib.sha256).hexdigest()
+    return f"t={WEBHOOK_TIMESTAMP},v0={digest}"
 
 
 def test_health(client):
@@ -9,6 +26,21 @@ def test_health(client):
     assert response.json() == {
         "status": "ok",
         "mode": "mock",
+        "service": "veramove-api",
+    }
+
+
+def test_health_reflects_live_runtime_mode_without_dialing(monkeypatch):
+    monkeypatch.setenv("APP_MODE", "live")
+    live_app = create_app()
+
+    with TestClient(live_app) as test_client:
+        response = test_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "mode": "live",
         "service": "veramove-api",
     }
 
@@ -57,16 +89,56 @@ def test_unknown_job_is_not_found(client):
     assert response.json()["error"]["code"] == "resource_not_found"
 
 
+def test_document_intake_and_events_routes(client):
+    intake = client.post(
+        "/api/intake/document",
+        json={"document_text": "Synthetic two-bedroom move inventory."},
+    )
+    assert intake.status_code == 201
+    job_id = intake.json()["job_spec"]["job_id"]
+    assert intake.json()["job_spec"]["source_context"]["intake_method"] == "document"
+
+    events = client.get(f"/api/jobs/{job_id}/events")
+    assert events.status_code == 200
+    assert events.json() == {"events": []}
+
+
 def test_elevenlabs_webhook_is_idempotent(client):
     payload = {
         "idempotency_key": "synthetic-webhook-1",
         "event_type": "synthetic.call.completed",
         "payload": {"synthetic": True},
     }
-    first = client.post("/api/webhooks/elevenlabs", json=payload)
-    second = client.post("/api/webhooks/elevenlabs", json=payload)
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    headers = {
+        "content-type": "application/json",
+        "elevenlabs-signature": sign_webhook(body),
+    }
+    first = client.post("/api/webhooks/elevenlabs", content=body, headers=headers)
+    second = client.post("/api/webhooks/elevenlabs", content=body, headers=headers)
+    assert first.status_code == 200
+    assert second.status_code == 200
     assert first.json() == {"accepted": True, "duplicate": False}
     assert second.json() == {"accepted": False, "duplicate": True}
+
+
+def test_invalid_webhook_signature_is_401(client):
+    payload = {
+        "idempotency_key": "synthetic-webhook-invalid-signature",
+        "event_type": "synthetic.call.completed",
+        "payload": {"synthetic": True},
+    }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    response = client.post(
+        "/api/webhooks/elevenlabs",
+        content=body,
+        headers={
+            "content-type": "application/json",
+            "elevenlabs-signature": "bad",
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "webhook_authentication_error"
 
 
 def test_vendor_discovery_returns_three_synthetic_vendors(client):
