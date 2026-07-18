@@ -1,9 +1,10 @@
-"""Persistence protocol consumed by orchestration."""
+"""Persistence protocols consumed by orchestration."""
 
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID
 
-from services.api.app.contracts import JobRecord
+from services.api.app.contracts import CallRecord, JobRecord, QuoteV1
+from services.api.app.orchestration.models import CallAttempt, JobEvent
 
 
 class JobRepository(Protocol):
@@ -13,6 +14,42 @@ class JobRepository(Protocol):
 
     def save(self, record: JobRecord) -> JobRecord: ...
 
-    def record_webhook(self, idempotency_key: str, payload: dict[str, Any]) -> bool: ...
-
     def reset(self) -> None: ...
+
+
+class CallRepository(Protocol):
+    def create_attempt(self, attempt: CallAttempt) -> CallAttempt: ...
+
+    def save_attempt(self, attempt: CallAttempt) -> CallAttempt: ...
+
+    def get_attempt(self, call_id: UUID) -> CallAttempt | None: ...
+
+    def list_attempts(self, job_id: UUID) -> list[CallAttempt]: ...
+
+    def find_attempt_by_conversation_id(
+        self,
+        conversation_id: str,
+    ) -> CallAttempt | None: ...
+
+    def save_call(self, call: CallRecord) -> CallRecord: ...
+
+    def list_calls(self, job_id: UUID) -> list[CallRecord]: ...
+
+    def reserve_webhook(self, idempotency_key: str) -> bool: ...
+
+    def append_event(self, event: JobEvent) -> JobEvent: ...
+
+    def list_events(self, job_id: UUID) -> list[JobEvent]: ...
+
+
+class QuoteRepository(Protocol):
+    def save_quote(self, quote: QuoteV1) -> QuoteV1: ...
+
+    def list_quotes(self, job_id: UUID) -> list[QuoteV1]: ...
+
+    def get_verified_competing_quote(
+        self,
+        job_id: UUID,
+        target_vendor_id: UUID,
+        job_spec_version: str,
+    ) -> QuoteV1 | None: ...
