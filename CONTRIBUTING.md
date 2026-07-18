@@ -1,7 +1,8 @@
 # Contributing to VeraMove
 
-Run `python scripts/bootstrap.py` after cloning, create a member-scoped branch from `main`, and read
-`AGENTS.md` before editing. Keep changes within temporary directory ownership and open a focused PR.
+Run `python scripts/bootstrap.py` after cloning, create a role-scoped branch from `main`, and
+read `AGENTS.md` before editing. Keep changes within the named directory ownership and request
+review from every affected owner.
 
 For contract changes, update Pydantic first, regenerate OpenAPI and TypeScript types, and include all
 affected tests. For fixture changes, keep every record clearly synthetic and preserve the three

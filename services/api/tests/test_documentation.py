@@ -7,6 +7,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[3]
 README = (ROOT / "README.md").read_text(encoding="utf-8")
 AGENTS = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+CONTRIBUTING = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+INTAKE_AGENT = (ROOT / "agents/intake/README.md").read_text(encoding="utf-8")
+NEGOTIATOR_AGENT = (ROOT / "agents/negotiator/README.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -31,14 +34,25 @@ def test_readme_has_required_sections(heading):
     assert f"## {heading}" in README
 
 
-def test_agents_declares_all_member_ownership_and_boundaries():
-    for member in range(1, 5):
-        assert f"Member {member}" in AGENTS
+def test_agents_declares_final_role_ownership_and_boundaries():
+    for owner in (
+        "Toheeb (@Olacode01)",
+        "Zukhriuddin (@zukhriddingit)",
+        "Northeastern teammate",
+        "Arsalan (@ars2711)",
+    ):
+        assert owner in AGENTS
     assert "Do not rewrite another member's subsystem" in AGENTS
     assert "No-secrets rule" in AGENTS
     assert "No-real-PII rule" in AGENTS
     assert "Contract-change process" in AGENTS
     assert "python scripts/check.py" in AGENTS
+
+
+def test_contributor_and_agent_docs_use_role_ownership():
+    assert "role-scoped branch" in CONTRIBUTING
+    assert "Owner: Toheeb (@Olacode01)" in INTAKE_AGENT
+    assert "Owner: Toheeb (@Olacode01)" in NEGOTIATOR_AGENT
 
 
 def test_ci_has_no_deployment_or_secret_context():
