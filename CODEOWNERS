@@ -1,15 +1,23 @@
 # Ownership by real role instead of generic member numbers.
-# @Olacode01 = Toheeb (frontend/data/OpenAI) · @zukhriddingit = Zukhriuddin (backend/orchestration/voice)
-# @ars2711 = Arsalan (product narrative/submission) · @prathmesh-handle-tbd = TBD, swap in once known.
+# @Olacode01 = Toheeb (frontend) · @zukhriddingit = Zukhriuddin (data & intelligence layer)
+# @ars2711 = Arsalan (product narrative/submission)
+#
+# Prathmesh owns backend orchestration & voice (see AGENTS.md) but has no GitHub account yet,
+# so those paths are listed below WITHOUT a @handle — GitHub rejects any owner that isn't a
+# real account with repo access, so a placeholder here breaks validation for the whole file.
+# Add "@his-real-handle" to each line below once he's on GitHub. Until then, AGENTS.md is the
+# enforceable source of truth for this subsystem; PRs into it should still be routed to him
+# manually.
 
 # Backend, orchestration, and voice — one person's subsystem, was split across
 # "member-1" and "member-2" before; merged here to match who actually owns it.
-/services/api/app/api/ @prathmesh-handle-tbd
-/services/api/app/orchestration/ @prathmesh-handle-tbd
-/services/api/app/repositories/ @prathmesh-handle-tbd
-/services/api/app/integrations/tavily/ @prathmesh-handle-tbd
-/agents/ @prathmesh-handle-tbd
-/services/api/app/integrations/elevenlabs/ @prathmesh-handle-tbd
+# Owner: Prathmesh — no GitHub handle yet, see note above.
+/services/api/app/api/
+/services/api/app/orchestration/
+/services/api/app/repositories/
+/services/api/app/integrations/tavily/
+/agents/
+/services/api/app/integrations/elevenlabs/
 
 # Data & intelligence layer — schema, OpenAI logic, dataset, evals.
 /services/api/app/contracts/ @zukhriddingit
@@ -29,5 +37,6 @@
 
 # README is the single most judge-facing file in the repo. Any change needs
 # sign-off from both the technical owner making it and the narrative owner
-# who has to defend it on camera.
-/README.md @ars2711 @prathmesh-handle-tbd
+# who has to defend it on camera. Prathmesh co-owns this per AGENTS.md but is
+# omitted here for the same no-GitHub-account reason as above.
+/README.md @ars2711
