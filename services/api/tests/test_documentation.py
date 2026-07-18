@@ -32,8 +32,8 @@ def test_readme_has_required_sections(heading):
 
 
 def test_agents_declares_all_member_ownership_and_boundaries():
-    for member in range(1, 5):
-        assert f"Member {member}" in AGENTS
+    for name in ["Prathmesh", "Zukhriuddin", "Toheeb", "Arsalan"]:
+        assert name in AGENTS
     assert "Do not rewrite another member's subsystem" in AGENTS
     assert "No-secrets rule" in AGENTS
     assert "No-real-PII rule" in AGENTS
