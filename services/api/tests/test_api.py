@@ -75,6 +75,48 @@ def test_api_happy_path(client, job_spec_payload):
     assert all(item["recording_url"] for item in report.json()["transcript_evidence"])
 
 
+def test_complete_document_to_report_flow_is_idempotent(client):
+    intake = client.post(
+        "/api/intake/document",
+        json={"document_text": "Synthetic inventory for the VeraMove demo."},
+    )
+    assert intake.status_code == 201
+    job_id = intake.json()["job_spec"]["job_id"]
+
+    first_confirm = client.post(f"/api/jobs/{job_id}/confirm")
+    second_confirm = client.post(f"/api/jobs/{job_id}/confirm")
+    assert first_confirm.status_code == 200
+    assert first_confirm.json() == second_confirm.json()
+
+    first_calls = client.post(f"/api/jobs/{job_id}/calls")
+    second_calls = client.post(f"/api/jobs/{job_id}/calls")
+    assert first_calls.status_code == 200
+    assert first_calls.json() == second_calls.json()
+    assert len(first_calls.json()["calls"]) == 3
+    assert {
+        item["outcome"]["type"] for item in first_calls.json()["calls"]
+    } == {"itemized_quote"}
+    assert {
+        item["outcome"]["quote"]["job_spec_version"]
+        for item in first_calls.json()["calls"]
+    } == {"1.0"}
+
+    completed = client.post(f"/api/jobs/{job_id}/negotiate")
+    assert completed.status_code == 200
+    assert completed.json()["state"] == "completed"
+    assert len(completed.json()["quotes"]) == 4
+    repeated = client.post(f"/api/jobs/{job_id}/negotiate")
+    assert repeated.status_code == 200
+    assert repeated.json() == completed.json()
+
+    report = client.get(f"/api/jobs/{job_id}/report")
+    assert report.status_code == 200
+    assert report.json()["rankings"][0]["evidence_ids"]
+    assert all(
+        item["recording_url"] for item in report.json()["transcript_evidence"]
+    )
+
+
 def test_illegal_api_transition_is_conflict(client, job_spec_payload):
     created = client.post("/api/jobs", json=job_spec_payload)
     job_id = created.json()["job_spec"]["job_id"]

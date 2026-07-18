@@ -46,12 +46,16 @@ def processor() -> ElevenLabsWebhookProcessor:
 
 
 @pytest.fixture
-def service_with_webhook(fixtures, job_spec) -> VeraMoveService:
-    repository = InMemoryRepository()
+def webhook_repository() -> InMemoryRepository:
+    return InMemoryRepository()
+
+
+@pytest.fixture
+def service_with_webhook(fixtures, job_spec, webhook_repository) -> VeraMoveService:
     service = VeraMoveService(
-        jobs=repository,
-        calls=repository,
-        quotes=repository,
+        jobs=webhook_repository,
+        calls=webhook_repository,
+        quotes=webhook_repository,
         voice=MockVoiceProvider(fixtures),
         intelligence=MockIntelligenceProvider(
             fixtures,
@@ -225,6 +229,76 @@ def test_webhook_replay_creates_one_safe_event(
     serialized = json.dumps([event.model_dump(mode="json") for event in events])
     assert "Synthetic transcript" not in serialized
     assert "Synthetic sensitive field" not in serialized
+
+
+def test_unknown_status_is_safe_idempotent_and_does_not_change_attempt(
+    service_with_webhook,
+    webhook_repository,
+    job_spec,
+):
+    attempt = service_with_webhook.list_call_attempts(job_spec.job_id)[0]
+    assert attempt.reference is not None
+    unchanged = webhook_repository.save_attempt(
+        attempt.model_copy(
+            update={"status": CallStatus.IN_PROGRESS, "completed_at": None},
+            deep=True,
+        )
+    )
+    body = json.dumps(
+        {
+            "type": "post_call_transcription",
+            "event_timestamp": WEBHOOK_UNIX_TIME,
+            "data": {
+                "conversation_id": attempt.reference.conversation_id,
+                "status": "synthetic_unknown_status",
+                "phone": "+1-202-555-0100",
+                "transcript": "Synthetic sensitive transcript must be discarded.",
+                "analysis": {"summary": "Synthetic sensitive analysis."},
+            },
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    signature = sign(body, WEBHOOK_SECRET, WEBHOOK_UNIX_TIME)
+
+    first = service_with_webhook.handle_elevenlabs_webhook(body, signature)
+    second = service_with_webhook.handle_elevenlabs_webhook(body, signature)
+
+    assert first == WebhookAck(accepted=True, duplicate=False)
+    assert second == WebhookAck(accepted=False, duplicate=True)
+    assert webhook_repository.get_attempt(attempt.call_id) == unchanged
+    events = service_with_webhook.get_events(job_spec.job_id)
+    assert len(events) == 1
+    assert events[0].metadata == {"provider_status": "synthetic_unknown_status"}
+    serialized = json.dumps([event.model_dump(mode="json") for event in events])
+    assert '"transcript"' not in serialized
+    assert '"phone"' not in serialized
+    assert "Synthetic sensitive" not in serialized
+
+
+def test_signed_malformed_json_cannot_reserve_a_replay_key(
+    service_with_webhook,
+):
+    malformed = b'{"idempotency_key":"synthetic-malformed"'
+    with pytest.raises(WebhookPayloadError):
+        service_with_webhook.handle_elevenlabs_webhook(
+            malformed,
+            sign(malformed, WEBHOOK_SECRET, WEBHOOK_UNIX_TIME),
+        )
+
+    valid = json.dumps(
+        {
+            "idempotency_key": "synthetic-malformed",
+            "event_type": "synthetic.call.processing",
+        },
+        separators=(",", ":"),
+    ).encode()
+    accepted = service_with_webhook.handle_elevenlabs_webhook(
+        valid,
+        sign(valid, WEBHOOK_SECRET, WEBHOOK_UNIX_TIME),
+    )
+
+    assert accepted == WebhookAck(accepted=True, duplicate=False)
 
 
 def test_signed_unmatched_conversation_is_reserved_without_event(

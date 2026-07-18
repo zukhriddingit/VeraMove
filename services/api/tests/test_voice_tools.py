@@ -409,3 +409,89 @@ def test_tools_reject_when_verified_competing_quote_is_unavailable(
             fixtures.load_vendors()[2].vendor_id,
             confirmed_record.job_spec.version,
         )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "same_target_vendor",
+        "partially_verified",
+        "empty_evidence",
+        "empty_verified_data",
+        "wrong_job_id",
+        "wrong_job_spec_version",
+    ],
+)
+def test_tools_reject_every_ineligible_leverage_case(
+    case,
+    monkeypatch,
+    repository,
+    confirmed_record,
+    fixtures,
+):
+    repository.create(confirmed_record)
+    vendors = fixtures.load_vendors()
+    candidate = fixtures.load_initial_quotes()[0].model_copy(
+        update={"job_id": confirmed_record.job_spec.job_id},
+        deep=True,
+    )
+    target_vendor_id = vendors[2].vendor_id
+
+    if case == "same_target_vendor":
+        target_vendor_id = candidate.vendor.vendor_id
+    elif case == "partially_verified":
+        candidate = candidate.model_copy(
+            update={"verification_status": VerificationStatus.PARTIALLY_VERIFIED},
+            deep=True,
+        )
+    elif case == "empty_evidence":
+        candidate = candidate.model_copy(
+            update={"transcript_evidence": []},
+            deep=True,
+        )
+    elif case == "empty_verified_data":
+        candidate = candidate.model_copy(update={"verified_data": {}}, deep=True)
+    elif case == "wrong_job_id":
+        candidate = candidate.model_copy(update={"job_id": uuid4()}, deep=True)
+    else:
+        # model_copy deliberately does not revalidate Literal["1.0"], which lets
+        # this regression test exercise the repository's defensive predicate.
+        candidate = candidate.model_copy(
+            update={"job_spec_version": "0.9"},
+            deep=True,
+        )
+
+    if case == "wrong_job_id":
+        other_job = confirmed_record.model_copy(
+            update={
+                "job_spec": confirmed_record.job_spec.model_copy(
+                    update={"job_id": candidate.job_id},
+                    deep=True,
+                )
+            },
+            deep=True,
+        )
+        repository.create(other_job)
+        repository.save_quote(candidate)
+    elif case == "wrong_job_spec_version":
+        monkeypatch.setattr(repository, "list_quotes", lambda _job_id: [candidate])
+    else:
+        repository.save_quote(candidate)
+
+    assert (
+        repository.get_verified_competing_quote(
+            confirmed_record.job_spec.job_id,
+            target_vendor_id,
+            confirmed_record.job_spec.version,
+        )
+        is None
+    )
+    with pytest.raises(
+        DomainConflict,
+        match="Negotiation requires a verified competing quote",
+    ):
+        VoiceTools(repository, repository).get_verified_competing_quote(
+            confirmed_record.job_spec.job_id,
+            target_vendor_id,
+            confirmed_record.job_spec.version,
+        )
