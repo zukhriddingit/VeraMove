@@ -1,0 +1,30 @@
+version: 1
+tools:
+  - name: save_quote
+    description: Save one structured quote for the active call.
+    required: [call_id, quote]
+    properties:
+      call_id: {type: string, format: uuid}
+      quote: {type: object}
+  - name: save_call_outcome
+    description: Complete one call with a supported structured outcome.
+    required: [call_id, outcome, completed_at, recording_url]
+    properties:
+      call_id: {type: string, format: uuid}
+      outcome: {type: object}
+      completed_at: {type: string, format: date-time}
+      recording_url: {type: string, format: uri}
+  - name: get_verified_competing_quote
+    description: Retrieve eligible evidence-backed leverage for a different vendor.
+    required: [job_id, target_vendor_id, job_spec_version]
+    properties:
+      job_id: {type: string, format: uuid}
+      target_vendor_id: {type: string, format: uuid}
+      job_spec_version: {type: string, const: "1.0"}
+  - name: request_callback
+    description: Complete a call with a callback commitment.
+    required: [call_id, callback_at, recording_url]
+    properties:
+      call_id: {type: string, format: uuid}
+      callback_at: {type: string, format: date-time}
+      recording_url: {type: string, format: uri}

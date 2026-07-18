@@ -1,0 +1,11 @@
+version: 1
+agent:
+  name: veramove-negotiator
+  prompt_file: prompt.md
+  tools_file: ../tools.yaml
+  tool_names:
+    - save_quote
+    - save_call_outcome
+    - get_verified_competing_quote
+    - request_callback
+  structured_output: CallOutcome

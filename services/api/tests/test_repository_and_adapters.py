@@ -12,16 +12,19 @@ from services.api.app.contracts import (
 )
 from services.api.app.integrations.elevenlabs.mock import (
     MockTwilioTransport,
+    MockVoiceProvider,
     MockVoiceVendorGateway,
 )
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
+from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
 from services.api.app.orchestration.models import (
     CallAttempt,
     CallKind,
     JobEvent,
     VoiceCallReference,
 )
+from services.api.app.orchestration.providers import IntelligenceProvider, VoiceProvider
 from services.api.app.repositories.memory import InMemoryRepository
 
 
@@ -204,6 +207,18 @@ def test_mock_voice_gateway_returns_three_itemized_calls(fixtures, job_spec):
         for call in calls
         if call.outcome.quote is not None
     )
+
+
+def test_new_mock_provider_boundaries_are_structurally_compatible(fixtures):
+    voice: VoiceProvider = MockVoiceProvider(fixtures)
+    intelligence: IntelligenceProvider = MockIntelligenceProvider(
+        fixtures,
+        MockNegotiationGateway(fixtures),
+    )
+
+    assert voice.initial_call_limit == 3
+    extracted = intelligence.extract_document("Synthetic demo document.")
+    assert extracted.source_context.intake_method == "document"
 
 
 def test_mock_twilio_transport_never_requires_a_phone_number(fixtures, job_spec):

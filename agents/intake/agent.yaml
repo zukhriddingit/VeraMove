@@ -1,0 +1,7 @@
+version: 1
+agent:
+  name: veramove-intake
+  prompt_file: prompt.md
+  tools_file: ../tools.yaml
+  tool_names: []
+  structured_output: JobSpecV1
