@@ -9,38 +9,96 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as IntakeRouteImport } from './routes/intake'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ReportJobIdRouteImport } from './routes/report.$jobId'
+import { Route as ConfirmJobIdRouteImport } from './routes/confirm.$jobId'
+import { Route as CallsJobIdRouteImport } from './routes/calls.$jobId'
 
+const IntakeRoute = IntakeRouteImport.update({
+  id: '/intake',
+  path: '/intake',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportJobIdRoute = ReportJobIdRouteImport.update({
+  id: '/report/$jobId',
+  path: '/report/$jobId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfirmJobIdRoute = ConfirmJobIdRouteImport.update({
+  id: '/confirm/$jobId',
+  path: '/confirm/$jobId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CallsJobIdRoute = CallsJobIdRouteImport.update({
+  id: '/calls/$jobId',
+  path: '/calls/$jobId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/intake': typeof IntakeRoute
+  '/calls/$jobId': typeof CallsJobIdRoute
+  '/confirm/$jobId': typeof ConfirmJobIdRoute
+  '/report/$jobId': typeof ReportJobIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/intake': typeof IntakeRoute
+  '/calls/$jobId': typeof CallsJobIdRoute
+  '/confirm/$jobId': typeof ConfirmJobIdRoute
+  '/report/$jobId': typeof ReportJobIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/intake': typeof IntakeRoute
+  '/calls/$jobId': typeof CallsJobIdRoute
+  '/confirm/$jobId': typeof ConfirmJobIdRoute
+  '/report/$jobId': typeof ReportJobIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/intake'
+    | '/calls/$jobId'
+    | '/confirm/$jobId'
+    | '/report/$jobId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to: '/' | '/intake' | '/calls/$jobId' | '/confirm/$jobId' | '/report/$jobId'
+  id:
+    | '__root__'
+    | '/'
+    | '/intake'
+    | '/calls/$jobId'
+    | '/confirm/$jobId'
+    | '/report/$jobId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  IntakeRoute: typeof IntakeRoute
+  CallsJobIdRoute: typeof CallsJobIdRoute
+  ConfirmJobIdRoute: typeof ConfirmJobIdRoute
+  ReportJobIdRoute: typeof ReportJobIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/intake': {
+      id: '/intake'
+      path: '/intake'
+      fullPath: '/intake'
+      preLoaderRoute: typeof IntakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,22 +106,37 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/report/$jobId': {
+      id: '/report/$jobId'
+      path: '/report/$jobId'
+      fullPath: '/report/$jobId'
+      preLoaderRoute: typeof ReportJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/confirm/$jobId': {
+      id: '/confirm/$jobId'
+      path: '/confirm/$jobId'
+      fullPath: '/confirm/$jobId'
+      preLoaderRoute: typeof ConfirmJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/calls/$jobId': {
+      id: '/calls/$jobId'
+      path: '/calls/$jobId'
+      fullPath: '/calls/$jobId'
+      preLoaderRoute: typeof CallsJobIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  IntakeRoute: IntakeRoute,
+  CallsJobIdRoute: CallsJobIdRoute,
+  ConfirmJobIdRoute: ConfirmJobIdRoute,
+  ReportJobIdRoute: ReportJobIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
