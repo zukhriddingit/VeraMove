@@ -38,8 +38,9 @@ function ReportPage() {
 
   return (
     <div className="space-y-10">
+      <Stepper current="report" jobId={jobId} />
       <header>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 5 · Recommendation</div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 4 · Recommendation</div>
         <h1 className="mt-1 font-display text-4xl text-ink">Final report</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Job <code className="rounded bg-muted px-1 py-0.5 text-xs">{jobId}</code> · report{" "}
