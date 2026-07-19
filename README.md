@@ -26,7 +26,7 @@ FastAPI owns the canonical Pydantic contracts and generated OpenAPI schema. A sm
 service depends on repository, voice, negotiation, and discovery protocols. `APP_MODE=mock` wires
 an in-memory repository and deterministic fixtures, so no external SDK or account is needed.
 
-The Vite/React frontend has one API client and imports types generated from FastAPI OpenAPI.
+The TanStack Start/React frontend has one API client and imports types generated from FastAPI OpenAPI.
 Optional OpenAI, Tavily, and Supabase adapters are independently enabled and fail closed. Live voice
 uses the two reviewed agent roles, asynchronous signed provider events, durable Supabase
 materialization, and signed recording capabilities. No provider credential is required for the
@@ -51,7 +51,7 @@ final checklist — live in [`docs/submission/`](docs/submission).
 ## Repository structure
 
 ```text
-apps/web/                    Vite + React + TypeScript demo UI
+apps/web/                    TanStack Start + React + TypeScript workflow UI
 services/api/                FastAPI app, contracts, mocks, and tests
 agents/                      Intake and negotiator ownership boundaries
 packages/contracts/          Generated OpenAPI contract
@@ -97,6 +97,7 @@ Copy `.env.example` only if you want to override safe defaults.
 | `API_HOST` | `127.0.0.1` | Documented API bind host |
 | `API_PORT` | `8000` | Documented API port |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Browser API base URL |
+| `VITE_DEMO_MODE` | `false` | Explicitly selects the synthetic browser demo adapter when `true` |
 | `CORS_ALLOW_ORIGINS` | local Vite origins | Comma-separated exact browser origins allowed to call the API |
 | `LIVE_CALLS_ENABLED` | `false` | Independent switch required before a controlled live call |
 | `ELEVENLABS_API_KEY` | empty | Backend-only ElevenLabs credential |
@@ -230,7 +231,7 @@ including the product-narrative and submission ownership in `docs/submission/`.
 - VeraMove intentionally does not retain raw transcripts or audio bytes. Recording playback depends
   on the configured short, nonzero provider retention window.
 - Mock calls and negotiation complete synchronously.
-- The frontend is a functional route scaffold, not a polished production interface.
+- Live-mode draft edits are review-only until the backend exposes a canonical draft-update route.
 
 ## Synthetic data
 

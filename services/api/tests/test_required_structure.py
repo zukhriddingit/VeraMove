@@ -67,9 +67,16 @@ def test_openapi_contains_every_required_core_contract():
 
 
 def test_frontend_declares_all_required_routes_and_generated_contract_usage():
-    routes = (ROOT / "apps/web/src/App.tsx").read_text(encoding="utf-8")
-    for route in ("/intake", "/confirm/:jobId", "/calls/:jobId", "/report/:jobId"):
-        assert f'path="{route}"' in routes
+    route_files = {
+        "apps/web/src/routes/intake.tsx": "/intake",
+        "apps/web/src/routes/confirm.$jobId.tsx": "/confirm/$jobId",
+        "apps/web/src/routes/calls.$jobId.tsx": "/calls/$jobId",
+        "apps/web/src/routes/negotiate.$jobId.tsx": "/negotiate/$jobId",
+        "apps/web/src/routes/report.$jobId.tsx": "/report/$jobId",
+    }
+    for path, route in route_files.items():
+        source = (ROOT / path).read_text(encoding="utf-8")
+        assert f'createFileRoute("{route}")' in source
     client = (ROOT / "apps/web/src/api/client.ts").read_text(encoding="utf-8")
     assert 'from "./schema"' in client
     assert "components[\"schemas\"]" in client
@@ -79,7 +86,7 @@ def test_only_necessary_frontend_package_manifest_exists():
     manifests = [
         path.relative_to(ROOT).as_posix()
         for path in ROOT.rglob("package.json")
-        if "node_modules" not in path.parts
+        if not {"node_modules", ".output", ".git"}.intersection(path.parts)
     ]
     assert manifests == ["apps/web/package.json"]
 
