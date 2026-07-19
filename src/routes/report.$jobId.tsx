@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, formatCurrency } from "@/lib/api";
-import { ErrorBox } from "./confirm.$jobId";
+import { ErrorBox, LoadingCard, Stepper } from "@/components/flow";
 
 export const Route = createFileRoute("/report/$jobId")({
   head: () => ({
@@ -20,14 +20,27 @@ function ReportPage() {
     queryFn: () => api.getReport(jobId),
   });
 
-  if (isLoading) return <div className="py-16 text-center text-muted-foreground">Loading report…</div>;
-  if (error) return <ErrorBox message={(error as Error).message} />;
+  if (isLoading)
+    return (
+      <div className="space-y-6">
+        <Stepper current="report" jobId={jobId} />
+        <LoadingCard label="Loading report…" />
+      </div>
+    );
+  if (error)
+    return (
+      <div className="space-y-6">
+        <Stepper current="report" jobId={jobId} />
+        <ErrorBox message={(error as Error).message} />
+      </div>
+    );
   if (!data) return null;
 
   return (
     <div className="space-y-10">
+      <Stepper current="report" jobId={jobId} />
       <header>
-        <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 5 · Recommendation</div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 4 · Recommendation</div>
         <h1 className="mt-1 font-display text-4xl text-ink">Final report</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Job <code className="rounded bg-muted px-1 py-0.5 text-xs">{jobId}</code> · report{" "}

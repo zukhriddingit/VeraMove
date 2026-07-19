@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type JobRecord, type LocationSpec } from "@/lib/api";
+import { ErrorBox, LoadingCard, Stepper } from "@/components/flow";
 
 export const Route = createFileRoute("/confirm/$jobId")({
   head: () => ({
@@ -25,8 +26,20 @@ function ConfirmPage() {
     onSuccess: (job) => qc.setQueryData(["job", jobId], job),
   });
 
-  if (isLoading) return <PageSkel title="Loading job…" />;
-  if (error) return <ErrorBox message={(error as Error).message} />;
+  if (isLoading)
+    return (
+      <div className="space-y-6">
+        <Stepper current="confirm" jobId={jobId} />
+        <LoadingCard label="Loading job…" />
+      </div>
+    );
+  if (error)
+    return (
+      <div className="space-y-6">
+        <Stepper current="confirm" jobId={jobId} />
+        <ErrorBox message={(error as Error).message} />
+      </div>
+    );
   if (!data) return null;
 
   const job = data;
@@ -35,6 +48,7 @@ function ConfirmPage() {
 
   return (
     <div className="space-y-8">
+      <Stepper current="confirm" jobId={jobId} />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 2 · Confirm spec</div>
@@ -182,14 +196,3 @@ export function StatePill({ state }: { state: JobRecord["state"] }) {
   );
 }
 
-function PageSkel({ title }: { title: string }) {
-  return <div className="py-16 text-center text-muted-foreground">{title}</div>;
-}
-
-export function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-      {message}
-    </div>
-  );
-}

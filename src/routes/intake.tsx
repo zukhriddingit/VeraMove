@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { buildDocumentIntakeSpec, buildVoiceIntakeSpec } from "@/lib/mock-specs";
+import { ErrorBox, Stepper } from "@/components/flow";
 
 export const Route = createFileRoute("/intake")({
   head: () => ({
@@ -40,6 +41,7 @@ function IntakePage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
+      <Stepper current="intake" />
       <div>
         <h1 className="font-display text-4xl text-ink">Start a demo intake</h1>
         <p className="mt-2 text-muted-foreground">
@@ -105,11 +107,7 @@ function IntakePage() {
         </div>
       )}
 
-      {error && (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
+      {error && <ErrorBox message={error} />}
 
       <div className="flex items-center justify-between">
         <div className="text-xs text-muted-foreground">

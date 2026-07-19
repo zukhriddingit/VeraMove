@@ -2,7 +2,8 @@ import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, formatCurrency, type QuoteV1 } from "@/lib/api";
-import { ErrorBox, StatePill } from "./confirm.$jobId";
+import { ErrorBox, LoadingCard, Stepper } from "@/components/flow";
+import { StatePill } from "./confirm.$jobId";
 
 export const Route = createFileRoute("/calls/$jobId")({
   head: () => ({
@@ -31,14 +32,28 @@ function CallsPage() {
     onSuccess: (j) => qc.setQueryData(["job", jobId], j),
   });
 
-  if (isLoading) return <div className="py-16 text-center text-muted-foreground">Loading job…</div>;
-  if (error) return <ErrorBox message={(error as Error).message} />;
+  if (isLoading)
+    return (
+      <div className="space-y-6">
+        <Stepper current="calls" jobId={jobId} />
+        <LoadingCard label="Loading job…" />
+      </div>
+    );
+  if (error)
+    return (
+      <div className="space-y-6">
+        <Stepper current="calls" jobId={jobId} />
+        <ErrorBox message={(error as Error).message} />
+      </div>
+    );
+  if (!data) return null;
   if (!data) return null;
 
   const { state, quotes } = data;
 
   return (
     <div className="space-y-8">
+      <Stepper current="calls" jobId={jobId} />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 3 · Vendor calls</div>
