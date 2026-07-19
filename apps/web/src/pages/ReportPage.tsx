@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-
 import { api, type RecommendationV1 } from "../api/client";
 import { ErrorState, LoadingState } from "../components/AsyncState";
 
@@ -24,17 +23,30 @@ export function ReportPage() {
         <p className="mt-4">{report.summary}</p>
       </div>
       <ol className="space-y-4">
-        {report.rankings.map((ranking) => (
-          <li className="card" key={ranking.quote_id}>
-            <p className="text-sm font-semibold text-teal">Rank {ranking.rank}</p>
-            <h2 className="text-xl font-bold">{ranking.vendor.name}</h2>
-            <p>USD {ranking.total}</p>
-            <ul className="mt-3 list-disc pl-5">
-              {ranking.rationale.map((reason) => <li key={reason}>{reason}</li>)}
-            </ul>
-            <p className="mt-3 text-sm">Evidence references: {ranking.evidence_ids.length}</p>
-          </li>
-        ))}
+        {report.rankings.map((ranking) => {
+          const redFlags = ranking.red_flags ?? [];
+          return (
+            <li className="card" key={ranking.quote_id}>
+              <p className="text-sm font-semibold text-teal">Rank {ranking.rank}</p>
+              <h2 className="text-xl font-bold">{ranking.vendor.name}</h2>
+              <p>USD {ranking.total}</p>
+              <ul className="mt-3 list-disc pl-5">
+                {ranking.rationale.map((reason) => <li key={reason}>{reason}</li>)}
+              </ul>
+              {redFlags.length ? (
+                <div className="mt-3 rounded-lg bg-red-50 p-3">
+                  <p className="text-sm font-semibold text-red-700">Red flags</p>
+                  <ul className="mt-1 space-y-1 text-sm text-red-700">
+                    {redFlags.map((flag) => (
+                      <li key={flag}>{flag}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              <p className="mt-3 text-sm">Evidence references: {ranking.evidence_ids.length}</p>
+            </li>
+          );
+        })}
       </ol>
       <div className="card">
         <h2 className="text-xl font-bold">Transcript and recording evidence</h2>
