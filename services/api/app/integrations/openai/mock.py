@@ -1,6 +1,6 @@
-"""Deterministic negotiation fixture with no model API calls."""
+"""Deterministic OpenAI-boundary fixtures with no model API calls."""
 
-from services.api.app.contracts import JobSpecV1, QuoteV1
+from services.api.app.contracts import DocumentParseResult, JobSpecV1, QuoteV1
 from services.api.app.orchestration.fixtures import DemoFixtures
 
 
@@ -21,3 +21,17 @@ class MockNegotiationGateway:
         return quote.model_copy(
             update={"job_id": job_spec.job_id, "verified_data": verified},
         )
+
+
+class MockDocumentIntakeGateway:
+    def __init__(self, result: DocumentParseResult) -> None:
+        self._result = result
+
+    def parse_document(
+        self,
+        content: bytes,
+        mime_type: str,
+        source_id: str,
+    ) -> DocumentParseResult:
+        del content, mime_type, source_id
+        return self._result.model_copy(deep=True)

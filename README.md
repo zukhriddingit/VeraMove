@@ -88,20 +88,27 @@ Copy `.env.example` only if you want to override safe defaults.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `APP_MODE` | `mock` | Only supported runtime mode in this starter |
+| `APP_MODE` | `mock` | Selects credential-free `mock` or fail-closed `live` voice mode |
 | `API_HOST` | `127.0.0.1` | Documented API bind host |
 | `API_PORT` | `8000` | Documented API port |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Browser API base URL |
+| `LIVE_CALLS_ENABLED` | `false` | Independent switch required before a controlled live call |
+| `ELEVENLABS_*` | empty | Live agent, phone-number, webhook, and API configuration |
+| `LIVE_TEST_TO_NUMBER` | empty | Externally supplied, opted-in live test destination |
+| `OPENAI_DOCUMENT_MODEL` | `gpt-4.1-mini` | Unwired document parser model override |
+| `OPENAI_RECOMMENDATION_MODEL` | `gpt-4.1-mini` | Unwired grounded narrator model override |
 
-The remaining empty names in `.env.example` reserve future adapter configuration. The starter does
-not read them or call those services. Never commit a populated `.env` file.
+OpenAI, Tavily, and Supabase credential names remain reserved for unwired adapters. ElevenLabs
+values are read only by the controlled live voice path and are validated when a call is initiated;
+startup itself never dials. Never commit a populated `.env` file.
 
 ## Mock mode
 
-Mock mode is the default and only implemented mode. It uses process-local memory, so jobs disappear
-when the API restarts. Calls, quotes, transcripts, recordings, discovery results, and negotiation
-results are deterministic synthetic fixtures. Setting `APP_MODE` to another value fails fast rather
-than silently attempting a real integration.
+Mock mode is the default complete demo mode. It uses process-local memory, so jobs disappear when
+the API restarts. Calls, quotes, transcripts, recordings, discovery results, intelligence findings,
+and negotiation results are deterministic synthetic fixtures. `APP_MODE=live` selects only the
+controlled one-call voice adapter; it remains disabled without `LIVE_CALLS_ENABLED=true` and the
+complete reviewed configuration documented in `docs/backend-voice-runbook.md`.
 
 ## Commands
 
@@ -112,19 +119,22 @@ than silently attempting a real integration.
 | `python scripts/check.py` | Runs Ruff, pytest, contract generation, typecheck, frontend tests, and production build |
 | `python scripts/export_openapi.py` | Regenerates `packages/contracts/openapi.json` |
 | `npm --prefix apps/web run generate:api` | Regenerates `apps/web/src/api/schema.d.ts` |
+| `python -m evals.run` | Runs deterministic synthetic intelligence evaluations |
 
 ## API routes
 
 | Method | Route | Mock behavior |
 | --- | --- | --- |
-| GET | `/health` | Reports service and mock mode |
+| GET | `/health` | Reports service and selected runtime mode |
+| POST | `/api/intake/document` | Creates a fresh unconfirmed job from deterministic document intake |
 | POST | `/api/jobs` | Creates an in-memory job at `intake_complete` |
 | GET | `/api/jobs/{job_id}` | Returns the typed job aggregate |
+| GET | `/api/jobs/{job_id}/events` | Returns safe normalized provider events |
 | POST | `/api/jobs/{job_id}/confirm` | Locks the JobSpec and advances to `confirmed` |
 | POST | `/api/jobs/{job_id}/calls` | Creates three completed synthetic calls and quotes |
 | POST | `/api/jobs/{job_id}/negotiate` | Adds a measurably improved synthetic quote |
 | GET | `/api/jobs/{job_id}/report` | Returns the evidence-backed final recommendation |
-| POST | `/api/webhooks/elevenlabs` | Records an idempotent mock webhook event |
+| POST | `/api/webhooks/elevenlabs` | Authenticates, normalizes, and deduplicates a signed webhook |
 | GET | `/api/vendors/discover` | Returns three synthetic vendors |
 
 Illegal state transitions return HTTP 409 with a domain error code. Unknown jobs return HTTP 404.
@@ -140,7 +150,11 @@ including the product-narrative and submission ownership in `docs/submission/`.
 
 ## Known limitations
 
-- No real voice interview, document parsing, outbound calls, model inference, or web search.
+- No production voice interview, model inference, or web search is wired.
+- The controlled live adapter can initiate at most one opted-in test call; it does not convert live
+  post-call data into a canonical quote or complete a live report.
+- Strict document parsing and narration boundaries are implemented but no live provider or API route
+  is wired in mock mode.
 - No Supabase runtime adapter, persistence, authentication, authorization, payment, or booking.
 - Mock calls and negotiation complete synchronously.
 - The frontend is a functional route scaffold, not a polished production interface.

@@ -1,10 +1,29 @@
 {
   "components": {
     "schemas": {
+      "AmountStatus": {
+        "enum": [
+          "known",
+          "unknown",
+          "not_applicable"
+        ],
+        "title": "AmountStatus",
+        "type": "string"
+      },
+      "AvailabilityStatus": {
+        "enum": [
+          "available",
+          "unavailable",
+          "unknown"
+        ],
+        "title": "AvailabilityStatus",
+        "type": "string"
+      },
       "BindingType": {
         "enum": [
           "binding",
-          "non_binding"
+          "non_binding",
+          "unknown"
         ],
         "title": "BindingType",
         "type": "string"
@@ -135,6 +154,15 @@
         "title": "CallStatus",
         "type": "string"
       },
+      "DataClassification": {
+        "enum": [
+          "synthetic",
+          "role_play",
+          "real_redacted"
+        ],
+        "title": "DataClassification",
+        "type": "string"
+      },
       "DocumentIntakeRequest": {
         "additionalProperties": false,
         "description": "Bound the unstructured document text accepted by the intake route.",
@@ -243,7 +271,7 @@
           "disassembly",
           "storage",
           "insurance",
-          "taxes",
+          "tax",
           "deposit",
           "other"
         ],
@@ -254,9 +282,20 @@
         "additionalProperties": false,
         "properties": {
           "amount": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
-            "title": "Amount",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "amount_status": {
+            "$ref": "#/components/schemas/AmountStatus",
+            "default": "known"
           },
           "category": {
             "$ref": "#/components/schemas/FeeCategory"
@@ -271,15 +310,72 @@
             "default": true,
             "title": "Disclosed Upfront",
             "type": "boolean"
+          },
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "mandatory": {
+            "default": false,
+            "title": "Mandatory",
+            "type": "boolean"
+          },
+          "minimum_units": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Units"
+          },
+          "unit_rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Rate"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
           }
         },
         "required": [
           "category",
-          "description",
-          "amount"
+          "description"
         ],
         "title": "FeeLineItem",
         "type": "object"
+      },
+      "FindingSeverity": {
+        "enum": [
+          "info",
+          "warning",
+          "critical"
+        ],
+        "title": "FindingSeverity",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -317,6 +413,89 @@
           }
         },
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "IntakeSource": {
+        "enum": [
+          "voice",
+          "document",
+          "merged",
+          "demo"
+        ],
+        "title": "IntakeSource",
+        "type": "string"
+      },
+      "IntelligenceFinding": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[a-z0-9_]+$",
+            "title": "Code",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "deterministic": {
+            "default": true,
+            "title": "Deterministic",
+            "type": "boolean"
+          },
+          "evidence_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "fee_category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeeCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quote_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote Id"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/FindingSeverity"
+          },
+          "vendor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Id"
+          }
+        },
+        "required": [
+          "code",
+          "severity",
+          "description"
+        ],
+        "title": "IntelligenceFinding",
         "type": "object"
       },
       "InventoryItem": {
@@ -520,10 +699,17 @@
         "additionalProperties": false,
         "properties": {
           "bedroom_count": {
-            "maximum": 20.0,
-            "minimum": 0.0,
-            "title": "Bedroom Count",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 20.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bedroom Count"
           },
           "confirmed": {
             "default": false,
@@ -542,25 +728,44 @@
             ],
             "title": "Confirmed At"
           },
+          "data_classification": {
+            "$ref": "#/components/schemas/DataClassification",
+            "default": "synthetic"
+          },
           "date_flexible": {
-            "default": false,
-            "title": "Date Flexible",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Flexible"
           },
           "destination": {
             "$ref": "#/components/schemas/OriginDestinationAccess"
           },
           "insurance_preference": {
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Insurance Preference",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Insurance Preference"
+          },
+          "intake_source": {
+            "$ref": "#/components/schemas/IntakeSource"
           },
           "inventory": {
             "items": {
               "$ref": "#/components/schemas/InventoryItem"
             },
-            "minItems": 1,
             "title": "Inventory",
             "type": "array"
           },
@@ -569,10 +774,29 @@
             "title": "Job Id",
             "type": "string"
           },
+          "locked_version": {
+            "anyOf": [
+              {
+                "const": "1.0",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Version"
+          },
           "move_date": {
-            "format": "date",
-            "title": "Move Date",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Move Date"
           },
           "origin": {
             "$ref": "#/components/schemas/OriginDestinationAccess"
@@ -598,12 +822,9 @@
           }
         },
         "required": [
-          "move_date",
+          "intake_source",
           "origin",
-          "destination",
-          "bedroom_count",
-          "inventory",
-          "insurance_preference"
+          "destination"
         ],
         "title": "JobSpecV1",
         "type": "object"
@@ -626,19 +847,37 @@
         "additionalProperties": false,
         "properties": {
           "disassembly": {
-            "default": false,
-            "title": "Disassembly",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disassembly"
           },
           "packing": {
-            "default": false,
-            "title": "Packing",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packing"
           },
           "storage": {
-            "default": false,
-            "title": "Storage",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage"
           },
           "storage_days": {
             "anyOf": [
@@ -673,45 +912,79 @@
             "title": "Access Notes"
           },
           "address_summary": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Address Summary",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address Summary"
           },
           "dwelling_type": {
-            "$ref": "#/components/schemas/DwellingType"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DwellingType"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "elevator_access": {
-            "default": false,
-            "title": "Elevator Access",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elevator Access"
           },
           "floors": {
-            "default": 1,
-            "maximum": 100.0,
-            "minimum": 0.0,
-            "title": "Floors",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Floors"
           },
           "parking_distance_feet": {
-            "default": 0,
-            "maximum": 5000.0,
-            "minimum": 0.0,
-            "title": "Parking Distance Feet",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 5000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parking Distance Feet"
           },
           "stairs": {
-            "default": 0,
-            "maximum": 500.0,
-            "minimum": 0.0,
-            "title": "Stairs",
-            "type": "integer"
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stairs"
           }
         },
-        "required": [
-          "address_summary",
-          "dwelling_type"
-        ],
         "title": "OriginDestinationAccess",
         "type": "object"
       },
@@ -740,6 +1013,62 @@
         "title": "PostCallWebhookData",
         "type": "object"
       },
+      "ProvenanceReference": {
+        "additionalProperties": false,
+        "properties": {
+          "excerpt": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "source_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_type": {
+            "$ref": "#/components/schemas/ProvenanceType"
+          }
+        },
+        "required": [
+          "source_type",
+          "source_id"
+        ],
+        "title": "ProvenanceReference",
+        "type": "object"
+      },
+      "ProvenanceType": {
+        "enum": [
+          "document",
+          "voice_intake",
+          "agent_tool",
+          "transcript",
+          "demo_fixture",
+          "tavily"
+        ],
+        "title": "ProvenanceType",
+        "type": "string"
+      },
       "QuoteV1": {
         "additionalProperties": false,
         "properties": {
@@ -749,8 +1078,24 @@
             "title": "Availability",
             "type": "string"
           },
+          "availability_status": {
+            "$ref": "#/components/schemas/AvailabilityStatus",
+            "default": "unknown"
+          },
           "binding_type": {
             "$ref": "#/components/schemas/BindingType"
+          },
+          "comparable_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comparable Total"
           },
           "concessions": {
             "items": {
@@ -765,10 +1110,21 @@
             "title": "Currency",
             "type": "string"
           },
+          "data_classification": {
+            "$ref": "#/components/schemas/DataClassification",
+            "default": "synthetic"
+          },
           "deposit": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
-            "title": "Deposit",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deposit"
           },
           "fee_line_items": {
             "items": {
@@ -777,6 +1133,25 @@
             "minItems": 1,
             "title": "Fee Line Items",
             "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/IntelligenceFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "headline_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headline Total"
           },
           "job_id": {
             "format": "uuid",
@@ -789,15 +1164,41 @@
             "title": "Job Spec Version",
             "type": "string"
           },
+          "manually_fabricated": {
+            "default": false,
+            "title": "Manually Fabricated",
+            "type": "boolean"
+          },
           "negotiated_total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
-            "title": "Negotiated Total",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Negotiated Total"
           },
           "original_total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
-            "title": "Original Total",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Total"
+          },
+          "provenance": {
+            "items": {
+              "$ref": "#/components/schemas/ProvenanceReference"
+            },
+            "title": "Provenance",
+            "type": "array"
           },
           "provisional_data": {
             "additionalProperties": true,
@@ -847,9 +1248,6 @@
           "job_id",
           "vendor",
           "fee_line_items",
-          "original_total",
-          "negotiated_total",
-          "deposit",
           "binding_type",
           "availability",
           "verification_status",
@@ -896,9 +1294,16 @@
             "type": "array"
           },
           "total": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
-            "title": "Total",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           },
           "vendor": {
             "$ref": "#/components/schemas/Vendor"
@@ -908,7 +1313,6 @@
           "rank",
           "vendor",
           "quote_id",
-          "total",
           "rationale",
           "evidence_ids"
         ],
@@ -925,6 +1329,30 @@
             "title": "Assumptions",
             "type": "array"
           },
+          "best_value_vendor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Value Vendor Id"
+          },
+          "cheapest_vendor_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cheapest Vendor Id"
+          },
           "evidence_ids": {
             "items": {
               "format": "uuid",
@@ -938,6 +1366,13 @@
             "format": "date-time",
             "title": "Generated At",
             "type": "string"
+          },
+          "hidden_fee_findings": {
+            "items": {
+              "$ref": "#/components/schemas/IntelligenceFinding"
+            },
+            "title": "Hidden Fee Findings",
+            "type": "array"
           },
           "job_id": {
             "format": "uuid",
@@ -969,6 +1404,13 @@
             },
             "minItems": 1,
             "title": "Transcript Evidence",
+            "type": "array"
+          },
+          "uncertainty": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Uncertainty",
             "type": "array"
           },
           "version": {
@@ -1030,16 +1472,6 @@
       "SourceContext": {
         "additionalProperties": false,
         "properties": {
-          "intake_method": {
-            "default": "demo",
-            "enum": [
-              "voice",
-              "document",
-              "demo"
-            ],
-            "title": "Intake Method",
-            "type": "string"
-          },
           "vera_property_id": {
             "anyOf": [
               {
@@ -1079,6 +1511,10 @@
             "minLength": 1,
             "title": "Claim",
             "type": "string"
+          },
+          "data_classification": {
+            "$ref": "#/components/schemas/DataClassification",
+            "default": "synthetic"
           },
           "end_seconds": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$",
@@ -1176,11 +1612,22 @@
             "title": "Contact Label",
             "type": "string"
           },
+          "data_classification": {
+            "$ref": "#/components/schemas/DataClassification",
+            "default": "synthetic"
+          },
           "name": {
             "maxLength": 120,
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "provenance": {
+            "items": {
+              "$ref": "#/components/schemas/ProvenanceReference"
+            },
+            "title": "Provenance",
+            "type": "array"
           },
           "service_areas": {
             "items": {
@@ -1239,7 +1686,8 @@
         "enum": [
           "provisional",
           "partially_verified",
-          "verified"
+          "verified",
+          "rejected"
         ],
         "title": "VerificationStatus",
         "type": "string"

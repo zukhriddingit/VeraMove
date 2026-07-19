@@ -18,6 +18,13 @@ def test_moving_config_contains_required_vertical_rules():
         "failed",
     }
     assert "long_carry" in config["fee_categories"]
+    assert "tax" in config["fee_categories"]
+    assert len(config["vendor_policy_cards"]) == 3
+    assert config["document_intake"]["accepted_mime_types"] == [
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+    ]
     assert len(config["honesty_constraints"]) >= 4
 
 
@@ -36,6 +43,11 @@ def test_migration_has_all_tables_indexes_jsonb_and_idempotency():
         assert f"create table if not exists {table}" in sql
     assert "idempotency_key text not null unique" in sql
     assert "jsonb" in sql
+    assert "verification_status" in sql
+    assert "provenance" in sql
+    assert "data_classification" in sql
+    assert "manually_fabricated" in sql
+    assert "jobs_lock_consistency" in sql
     assert "create index if not exists" in sql
 
 
@@ -46,6 +58,20 @@ def test_all_demo_json_is_explicitly_synthetic_or_covered_by_disclosure():
         (ROOT / "data/demo/vendor_policy_cards.json").read_text(encoding="utf-8")
     )
     assert all(card["synthetic"] is True for card in policy_cards)
+
+
+def test_public_dataset_contains_every_required_artifact():
+    required = {
+        "job_specs.jsonl",
+        "vendor_policies.json",
+        "quotes.jsonl",
+        "transcript_evidence.jsonl",
+        "call_outcomes.jsonl",
+        "recommendations.jsonl",
+        "eval_results.csv",
+        "README.md",
+    }
+    assert required <= {path.name for path in (ROOT / "data/demo").iterdir()}
 
 
 def test_evaluation_covers_required_mock_outcomes():

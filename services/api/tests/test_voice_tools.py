@@ -9,6 +9,7 @@ from services.api.app.contracts import (
     CallOutcome,
     CallOutcomeType,
     CallStatus,
+    IntakeSource,
     JobRecord,
     JobState,
     VerificationStatus,
@@ -26,7 +27,11 @@ def make_confirmed_record(job_spec) -> JobRecord:
     confirmed_at = datetime(2026, 7, 18, 16, 0, tzinfo=UTC)
     return JobRecord(
         job_spec=job_spec.model_copy(
-            update={"confirmed": True, "confirmed_at": confirmed_at},
+            update={
+                "confirmed": True,
+                "confirmed_at": confirmed_at,
+                "locked_version": job_spec.version,
+            },
             deep=True,
         ),
         state=JobState.CONFIRMED,
@@ -115,9 +120,10 @@ def test_mock_intelligence_extracts_document_as_fresh_unconfirmed_job(fixtures, 
     extracted = provider.extract_document("Synthetic inventory document for the demo.")
 
     assert extracted.job_id != job_spec.job_id
-    assert extracted.source_context.intake_method == "document"
+    assert extracted.intake_source is IntakeSource.DOCUMENT
     assert extracted.confirmed is False
     assert extracted.confirmed_at is None
+    assert extracted.locked_version is None
 
 
 def test_mock_intelligence_rejects_blank_document(fixtures):
@@ -418,6 +424,7 @@ def test_tools_reject_when_verified_competing_quote_is_unavailable(
         "partially_verified",
         "empty_evidence",
         "empty_verified_data",
+        "manually_fabricated",
         "wrong_job_id",
         "wrong_job_spec_version",
     ],
@@ -451,6 +458,8 @@ def test_tools_reject_every_ineligible_leverage_case(
         )
     elif case == "empty_verified_data":
         candidate = candidate.model_copy(update={"verified_data": {}}, deep=True)
+    elif case == "manually_fabricated":
+        candidate = candidate.model_copy(update={"manually_fabricated": True}, deep=True)
     elif case == "wrong_job_id":
         candidate = candidate.model_copy(update={"job_id": uuid4()}, deep=True)
     else:
@@ -473,7 +482,7 @@ def test_tools_reject_every_ineligible_leverage_case(
         )
         repository.create(other_job)
         repository.save_quote(candidate)
-    elif case == "wrong_job_spec_version":
+    elif case in {"empty_evidence", "manually_fabricated", "wrong_job_spec_version"}:
         monkeypatch.setattr(repository, "list_quotes", lambda _job_id: [candidate])
     else:
         repository.save_quote(candidate)

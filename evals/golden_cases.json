@@ -1,0 +1,17 @@
+{
+  "data_classification": "synthetic",
+  "cases": [
+    {"case_id": "transparent_quote", "category": "fee_extraction"},
+    {"case_id": "hidden_fee_quote", "category": "hidden_fee_detection"},
+    {"case_id": "premium_quote", "category": "recommendation"},
+    {"case_id": "successful_negotiation", "category": "negotiation"},
+    {"case_id": "refusal_to_itemize", "category": "call_outcome"},
+    {"case_id": "callback_commitment", "category": "call_outcome"},
+    {"case_id": "documented_decline", "category": "call_outcome"},
+    {"case_id": "contradictory_totals", "category": "arithmetic"},
+    {"case_id": "missing_fees", "category": "unknown_vs_zero"},
+    {"case_id": "suspiciously_low_quote", "category": "red_flags"},
+    {"case_id": "attempted_fake_competing_bid", "category": "verified_leverage"},
+    {"case_id": "unclear_dollar_amount", "category": "strict_parsing"}
+  ]
+}

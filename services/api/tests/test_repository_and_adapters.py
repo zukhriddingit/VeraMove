@@ -3,13 +3,17 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
+
 from services.api.app.contracts import (
     CallRecord,
     CallStatus,
+    IntakeSource,
     JobRecord,
     JobState,
     VerificationStatus,
 )
+from services.api.app.core.errors import DomainConflict
 from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
@@ -27,7 +31,12 @@ from services.api.app.repositories.memory import InMemoryRepository
 def make_confirmed_record(job_spec) -> JobRecord:
     confirmed_at = datetime.now(UTC)
     confirmed_spec = job_spec.model_copy(
-        update={"confirmed": True, "confirmed_at": confirmed_at},
+        update={
+            "confirmed": True,
+            "confirmed_at": confirmed_at,
+            "locked_version": job_spec.version,
+        },
+        deep=True,
     )
     return JobRecord(
         job_spec=confirmed_spec,
@@ -157,7 +166,11 @@ def test_webhook_reservation_and_events_are_process_local(job_spec):
     assert repository.list_events(job_spec.job_id)[0].metadata["provider"] == "synthetic"
 
 
-def test_verified_competitor_excludes_target_and_unverified_quotes(fixtures, job_spec):
+def test_verified_competitor_excludes_target_and_unverified_quotes(
+    fixtures,
+    job_spec,
+    monkeypatch,
+):
     repository = InMemoryRepository()
     repository.create(make_confirmed_record(job_spec))
     quotes = fixtures.load_initial_quotes()
@@ -173,11 +186,10 @@ def test_verified_competitor_excludes_target_and_unverified_quotes(fixtures, job
     assert selected is not None
     assert selected.vendor.slug == "clearpath-movers"
 
-    repository.save_quote(
-        quotes[0].model_copy(
-            update={"job_id": job_spec.job_id, "transcript_evidence": []},
-        ),
+    without_evidence = quotes[0].model_copy(
+        update={"job_id": job_spec.job_id, "transcript_evidence": []},
     )
+    monkeypatch.setattr(repository, "list_quotes", lambda _job_id: [without_evidence])
     assert (
         repository.get_verified_competing_quote(
             job_spec.job_id,
@@ -186,6 +198,7 @@ def test_verified_competitor_excludes_target_and_unverified_quotes(fixtures, job
         )
         is None
     )
+    monkeypatch.undo()
 
     repository.save_quote(
         quotes[0].model_copy(
@@ -210,6 +223,32 @@ def test_verified_competitor_excludes_target_and_unverified_quotes(fixtures, job
     )
 
 
+def test_repository_rejects_changes_to_locked_job_spec(job_spec):
+    repository = InMemoryRepository()
+    now = datetime.now(UTC)
+    confirmed = job_spec.model_copy(
+        update={
+            "confirmed": True,
+            "confirmed_at": now,
+            "locked_version": job_spec.version,
+        },
+        deep=True,
+    )
+    record = JobRecord(
+        job_spec=confirmed,
+        state=JobState.CONFIRMED,
+        created_at=now,
+        updated_at=now,
+    )
+    repository.create(record)
+    record.job_spec = record.job_spec.model_copy(
+        update={"bedroom_count": (record.job_spec.bedroom_count or 0) + 1},
+        deep=True,
+    )
+    with pytest.raises(DomainConflict, match="locked"):
+        repository.save(record)
+
+
 def test_new_mock_provider_boundaries_are_structurally_compatible(fixtures):
     voice: VoiceProvider = MockVoiceProvider(fixtures)
     intelligence: IntelligenceProvider = MockIntelligenceProvider(
@@ -219,7 +258,7 @@ def test_new_mock_provider_boundaries_are_structurally_compatible(fixtures):
 
     assert voice.initial_call_limit == 3
     extracted = intelligence.extract_document("Synthetic demo document.")
-    assert extracted.source_context.intake_method == "document"
+    assert extracted.intake_source is IntakeSource.DOCUMENT
 
 
 def test_mock_negotiation_improves_total(fixtures, job_spec):

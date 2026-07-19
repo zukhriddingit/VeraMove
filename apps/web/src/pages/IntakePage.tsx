@@ -7,6 +7,7 @@ import { ErrorState } from "../components/AsyncState";
 const syntheticJob: JobSpecV1 = {
   job_id: "11111111-1111-4111-8111-111111111111",
   version: "1.0",
+  intake_source: "demo",
   move_date: "2026-08-15",
   date_flexible: true,
   origin: {
@@ -53,7 +54,9 @@ const syntheticJob: JobSpecV1 = {
   insurance_preference: "Full-value protection options requested",
   confirmed: false,
   confirmed_at: null,
-  source_context: { intake_method: "demo", vera_user_id: null, vera_property_id: null },
+  locked_version: null,
+  source_context: { vera_user_id: null, vera_property_id: null },
+  data_classification: "synthetic",
 };
 
 export function IntakePage() {

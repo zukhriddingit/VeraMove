@@ -2,7 +2,7 @@
 
 from uuid import uuid4
 
-from services.api.app.contracts import JobSpecV1, QuoteV1, SourceContext
+from services.api.app.contracts import IntakeSource, JobSpecV1, QuoteV1
 from services.api.app.core.errors import DomainConflict
 from services.api.app.integrations.openai.base import NegotiationGateway
 from services.api.app.orchestration.fixtures import DemoFixtures
@@ -26,9 +26,10 @@ class MockIntelligenceProvider:
         return job_spec.model_copy(
             update={
                 "job_id": uuid4(),
+                "intake_source": IntakeSource.DOCUMENT,
                 "confirmed": False,
                 "confirmed_at": None,
-                "source_context": SourceContext(intake_method="document"),
+                "locked_version": None,
             },
             deep=True,
         )

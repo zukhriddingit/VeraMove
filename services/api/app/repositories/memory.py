@@ -13,7 +13,11 @@ from services.api.app.contracts import (
     QuoteV1,
     VerificationStatus,
 )
-from services.api.app.core.errors import DuplicateResource, ResourceNotFound
+from services.api.app.core.errors import (
+    DomainConflict,
+    DuplicateResource,
+    ResourceNotFound,
+)
 from services.api.app.orchestration.models import CallAttempt, JobEvent
 
 
@@ -42,11 +46,17 @@ class InMemoryRepository:
 
     def save(self, record: JobRecord) -> JobRecord:
         job_id = record.job_spec.job_id
+        candidate = self._copy(record)
         with self._lock:
             if job_id not in self._jobs:
                 raise ResourceNotFound(f"Job {job_id} was not found")
-            self._jobs[job_id] = deepcopy(record.model_dump(mode="json"))
-        return self._copy(record)
+            current = JobRecord.model_validate(self._jobs[job_id])
+            if current.job_spec.confirmed and candidate.job_spec.model_dump(
+                mode="json"
+            ) != current.job_spec.model_dump(mode="json"):
+                raise DomainConflict("Confirmed JobSpec version is locked and cannot be changed")
+            self._jobs[job_id] = deepcopy(candidate.model_dump(mode="json"))
+        return self._copy(candidate)
 
     def create_attempt(self, attempt: CallAttempt) -> CallAttempt:
         with self._lock:
@@ -161,8 +171,21 @@ class InMemoryRepository:
             and quote.verification_status is VerificationStatus.VERIFIED
             and quote.verified_data
             and quote.transcript_evidence
+            and not quote.manually_fabricated
+            and (
+                quote.comparable_total is not None
+                or quote.negotiated_total is not None
+            )
         ]
-        selected = min(eligible, key=lambda quote: quote.negotiated_total, default=None)
+        selected = min(
+            eligible,
+            key=lambda quote: (
+                quote.comparable_total
+                if quote.comparable_total is not None
+                else quote.negotiated_total
+            ),
+            default=None,
+        )
         return self._copy_quote(selected) if selected is not None else None
 
     def reset(self) -> None:

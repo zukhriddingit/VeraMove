@@ -2,7 +2,7 @@
 
 import pytest
 
-from services.api.app.contracts import CallStatus, JobState
+from services.api.app.contracts import CallStatus, IntakeSource, JobState
 from services.api.app.core.errors import DomainConflict, InvalidStateTransition
 
 
@@ -61,7 +61,7 @@ def test_document_intake_creates_fresh_document_job(service, job_spec):
     created = service.create_job_from_document("Synthetic inventory document.")
 
     assert created.job_spec.job_id != job_spec.job_id
-    assert created.job_spec.source_context.intake_method == "document"
+    assert created.job_spec.intake_source is IntakeSource.DOCUMENT
     assert created.state is JobState.INTAKE_COMPLETE
 
 
@@ -125,6 +125,17 @@ def test_calls_require_confirmation(service, job_spec):
     service.create_job(job_spec)
     with pytest.raises(InvalidStateTransition, match="intake_complete -> calling"):
         service.start_calls(job_spec.job_id)
+
+
+def test_confirmation_rejects_incomplete_job_spec_without_changing_state(
+    service,
+    job_spec,
+):
+    incomplete = job_spec.model_copy(update={"move_date": None})
+    service.create_job(incomplete)
+    with pytest.raises(DomainConflict, match="move_date"):
+        service.confirm_job(incomplete.job_id)
+    assert service.get_job(incomplete.job_id).state is JobState.INTAKE_COMPLETE
 
 
 def test_report_requires_completed_negotiation(service, job_spec):

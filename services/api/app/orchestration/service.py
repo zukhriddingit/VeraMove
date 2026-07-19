@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from services.api.app.contracts import (
@@ -105,9 +106,19 @@ class VeraMoveService:
         if record.job_spec.confirmed:
             return record
         validate_transition(record.state, JobState.CONFIRMED)
+        missing = record.job_spec.missing_required_fields()
+        if missing:
+            fields = ", ".join(missing)
+            raise DomainConflict(
+                f"JobSpec cannot be confirmed until required fields are complete: {fields}"
+            )
         now = self._clock()
         record.job_spec = record.job_spec.model_copy(
-            update={"confirmed": True, "confirmed_at": now},
+            update={
+                "confirmed": True,
+                "confirmed_at": now,
+                "locked_version": record.job_spec.version,
+            },
             deep=True,
         )
         record.state = JobState.CONFIRMED
@@ -196,10 +207,17 @@ class VeraMoveService:
             return record
 
         validate_transition(record.state, JobState.NEGOTIATING)
-        if not record.quotes:
-            raise DomainConflict("Negotiation requires an initial quote")
+        priced_quotes = [
+            (quote, total)
+            for quote in record.quotes
+            if (total := self._quote_total(quote)) is not None
+        ]
+        if not priced_quotes:
+            raise DomainConflict(
+                "Negotiation requires an initial quote with a comparable total"
+            )
 
-        target_quote = max(record.quotes, key=lambda quote: quote.negotiated_total)
+        target_quote = max(priced_quotes, key=lambda item: item[1])[0]
         competitor = self._tools.get_verified_competing_quote(
             job_id,
             target_quote.vendor.vendor_id,
@@ -391,8 +409,12 @@ class VeraMoveService:
         for ranking in template.rankings:
             quote = quotes_by_id.get(ranking.quote_id)
             if quote is None:
-                candidates = quotes_by_vendor.get(ranking.vendor.vendor_id, [])
-                quote = min(candidates, key=lambda item: item.negotiated_total, default=None)
+                candidates = [
+                    (item, total)
+                    for item in quotes_by_vendor.get(ranking.vendor.vendor_id, [])
+                    if (total := self._quote_total(item)) is not None
+                ]
+                quote = min(candidates, key=lambda item: item[1], default=(None, None))[0]
             if quote is None:
                 continue
             vendor_evidence = [
@@ -405,7 +427,7 @@ class VeraMoveService:
                     update={
                         "vendor": quote.vendor,
                         "quote_id": quote.quote_id,
-                        "total": quote.negotiated_total,
+                        "total": self._quote_total(quote),
                         "evidence_ids": [item.evidence_id for item in vendor_evidence],
                     },
                     deep=True,
@@ -433,7 +455,19 @@ class VeraMoveService:
 
     @staticmethod
     def _is_improved(initial: QuoteV1, negotiated: QuoteV1) -> bool:
-        return (
-            negotiated.negotiated_total < initial.negotiated_total
-            or bool(negotiated.concessions)
+        initial_total = VeraMoveService._quote_total(initial)
+        negotiated_total = VeraMoveService._quote_total(negotiated)
+        price_improved = (
+            initial_total is not None
+            and negotiated_total is not None
+            and negotiated_total < initial_total
         )
+        return price_improved or bool(negotiated.concessions)
+
+    @staticmethod
+    def _quote_total(quote: QuoteV1) -> Decimal | None:
+        """Prefer Member 2's comparable total, falling back to negotiated total."""
+
+        if quote.comparable_total is not None:
+            return quote.comparable_total
+        return quote.negotiated_total

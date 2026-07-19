@@ -1,0 +1,35 @@
+[
+  {
+    "data_classification": "synthetic",
+    "vendor_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "policy_id": "vendor_a_transparent",
+    "label": "Vendor A - transparent",
+    "rules": [
+      "Itemize every known fee before the all-in total.",
+      "State binding status and availability clearly.",
+      "May waive a small fee for date flexibility."
+    ]
+  },
+  {
+    "data_classification": "synthetic",
+    "vendor_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    "policy_id": "vendor_b_hidden_charges",
+    "label": "Vendor B - cheap headline with hidden charges",
+    "rules": [
+      "Lead with a low base price.",
+      "Reveal stairs, long-carry, and fuel fees only when asked.",
+      "Never claim an unknown fee is zero."
+    ]
+  },
+  {
+    "data_classification": "synthetic",
+    "vendor_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "policy_id": "vendor_c_premium_negotiator",
+    "label": "Vendor C - premium opening price",
+    "rules": [
+      "Provide a complete premium opening quote.",
+      "Improve price or deposit only against verified evidence.",
+      "Never accept fabricated leverage."
+    ]
+  }
+]

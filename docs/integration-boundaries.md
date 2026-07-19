@@ -22,14 +22,20 @@ transcripts, phone numbers, and arbitrary provider payloads are not retained in 
 
 ## OpenAI
 
-`IntelligenceProvider` isolates document intake and negotiation planning. This slice wires the
-deterministic implementation in both mock and live voice modes; the existing OpenAI integration is
-not called or rewritten.
+`IntelligenceProvider` isolates the orchestration-facing document-intake and negotiation-planning
+operations. `DocumentIntakeGateway` returns a strict `DocumentParseResult` containing the same
+`JobSpecV1` used by voice intake. `OpenAIDocumentParser` accepts an injected structured-output client
+and revalidates the response with Pydantic. `OpenAIRecommendationNarrator` can explain a
+deterministic ranking but cannot change its order or findings. `NegotiationGateway` remains
+compatible with the seeded mock. Deterministic implementations are wired in both mock and live
+voice modes; no model call occurs in mock mode.
 
 ## Tavily
 
-`VendorDiscoveryGateway` accepts origin and destination context. The deterministic mock ignores
-those strings and returns three committed fictional vendors. This slice performs no Tavily search.
+`VendorDiscoveryGateway` preserves the original origin/destination method and adds cached call-list
+sourcing by city, state, service type, and radius. The mock returns the three committed fictional
+vendors. The optional normalizer accepts an injected Tavily client and stores no direct contact
+details. Mock mode performs no search request.
 
 ## Supabase/PostgreSQL
 

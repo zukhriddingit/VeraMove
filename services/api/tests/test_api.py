@@ -138,7 +138,7 @@ def test_document_intake_and_events_routes(client):
     )
     assert intake.status_code == 201
     job_id = intake.json()["job_spec"]["job_id"]
-    assert intake.json()["job_spec"]["source_context"]["intake_method"] == "document"
+    assert intake.json()["job_spec"]["intake_source"] == "document"
 
     events = client.get(f"/api/jobs/{job_id}/events")
     assert events.status_code == 200

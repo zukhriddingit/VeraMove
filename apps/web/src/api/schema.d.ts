@@ -196,10 +196,20 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AmountStatus
+         * @enum {string}
+         */
+        AmountStatus: "known" | "unknown" | "not_applicable";
+        /**
+         * AvailabilityStatus
+         * @enum {string}
+         */
+        AvailabilityStatus: "available" | "unavailable" | "unknown";
+        /**
          * BindingType
          * @enum {string}
          */
-        BindingType: "binding" | "non_binding";
+        BindingType: "binding" | "non_binding" | "unknown";
         /** CallOutcome */
         CallOutcome: {
             /** Callback At */
@@ -248,6 +258,11 @@ export interface components {
          */
         CallStatus: "pending" | "in_progress" | "completed" | "failed";
         /**
+         * DataClassification
+         * @enum {string}
+         */
+        DataClassification: "synthetic" | "role_play" | "real_redacted";
+        /**
          * DocumentIntakeRequest
          * @description Bound the unstructured document text accepted by the intake route.
          */
@@ -293,11 +308,13 @@ export interface components {
          * FeeCategory
          * @enum {string}
          */
-        FeeCategory: "base_service" | "hourly_minimum" | "travel" | "fuel" | "stairs" | "elevator" | "long_carry" | "packing" | "materials" | "disassembly" | "storage" | "insurance" | "taxes" | "deposit" | "other";
+        FeeCategory: "base_service" | "hourly_minimum" | "travel" | "fuel" | "stairs" | "elevator" | "long_carry" | "packing" | "materials" | "disassembly" | "storage" | "insurance" | "tax" | "deposit" | "other";
         /** FeeLineItem */
         FeeLineItem: {
             /** Amount */
-            amount: string;
+            amount?: string | null;
+            /** @default known */
+            amount_status: components["schemas"]["AmountStatus"];
             category: components["schemas"]["FeeCategory"];
             /** Description */
             description: string;
@@ -306,7 +323,25 @@ export interface components {
              * @default true
              */
             disclosed_upfront: boolean;
+            /** Evidence Ids */
+            evidence_ids?: string[];
+            /**
+             * Mandatory
+             * @default false
+             */
+            mandatory: boolean;
+            /** Minimum Units */
+            minimum_units?: string | null;
+            /** Unit Rate */
+            unit_rate?: string | null;
+            /** Units */
+            units?: string | null;
         };
+        /**
+         * FindingSeverity
+         * @enum {string}
+         */
+        FindingSeverity: "info" | "warning" | "critical";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -332,6 +367,31 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /**
+         * IntakeSource
+         * @enum {string}
+         */
+        IntakeSource: "voice" | "document" | "merged" | "demo";
+        /** IntelligenceFinding */
+        IntelligenceFinding: {
+            /** Code */
+            code: string;
+            /** Description */
+            description: string;
+            /**
+             * Deterministic
+             * @default true
+             */
+            deterministic: boolean;
+            /** Evidence Ids */
+            evidence_ids?: string[];
+            fee_category?: components["schemas"]["FeeCategory"] | null;
+            /** Quote Id */
+            quote_id?: string | null;
+            severity: components["schemas"]["FindingSeverity"];
+            /** Vendor Id */
+            vendor_id?: string | null;
         };
         /** InventoryItem */
         InventoryItem: {
@@ -422,7 +482,7 @@ export interface components {
         /** JobSpecV1 */
         JobSpecV1: {
             /** Bedroom Count */
-            bedroom_count: number;
+            bedroom_count?: number | null;
             /**
              * Confirmed
              * @default false
@@ -430,26 +490,25 @@ export interface components {
             confirmed: boolean;
             /** Confirmed At */
             confirmed_at?: string | null;
-            /**
-             * Date Flexible
-             * @default false
-             */
-            date_flexible: boolean;
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
+            /** Date Flexible */
+            date_flexible?: boolean | null;
             destination: components["schemas"]["OriginDestinationAccess"];
             /** Insurance Preference */
-            insurance_preference: string;
+            insurance_preference?: string | null;
+            intake_source: components["schemas"]["IntakeSource"];
             /** Inventory */
-            inventory: components["schemas"]["InventoryItem"][];
+            inventory?: components["schemas"]["InventoryItem"][];
             /**
              * Job Id
              * Format: uuid
              */
             job_id?: string;
-            /**
-             * Move Date
-             * Format: date
-             */
-            move_date: string;
+            /** Locked Version */
+            locked_version?: "1.0" | null;
+            /** Move Date */
+            move_date?: string | null;
             origin: components["schemas"]["OriginDestinationAccess"];
             /** Oversized Or Fragile Items */
             oversized_or_fragile_items?: string[];
@@ -469,21 +528,12 @@ export interface components {
         JobState: "draft" | "intake_complete" | "confirmed" | "calling" | "quotes_ready" | "negotiating" | "completed" | "failed";
         /** MovingServices */
         MovingServices: {
-            /**
-             * Disassembly
-             * @default false
-             */
-            disassembly: boolean;
-            /**
-             * Packing
-             * @default false
-             */
-            packing: boolean;
-            /**
-             * Storage
-             * @default false
-             */
-            storage: boolean;
+            /** Disassembly */
+            disassembly?: boolean | null;
+            /** Packing */
+            packing?: boolean | null;
+            /** Storage */
+            storage?: boolean | null;
             /** Storage Days */
             storage_days?: number | null;
         };
@@ -492,28 +542,16 @@ export interface components {
             /** Access Notes */
             access_notes?: string | null;
             /** Address Summary */
-            address_summary: string;
-            dwelling_type: components["schemas"]["DwellingType"];
-            /**
-             * Elevator Access
-             * @default false
-             */
-            elevator_access: boolean;
-            /**
-             * Floors
-             * @default 1
-             */
-            floors: number;
-            /**
-             * Parking Distance Feet
-             * @default 0
-             */
-            parking_distance_feet: number;
-            /**
-             * Stairs
-             * @default 0
-             */
-            stairs: number;
+            address_summary?: string | null;
+            dwelling_type?: components["schemas"]["DwellingType"] | null;
+            /** Elevator Access */
+            elevator_access?: boolean | null;
+            /** Floors */
+            floors?: number | null;
+            /** Parking Distance Feet */
+            parking_distance_feet?: number | null;
+            /** Stairs */
+            stairs?: number | null;
         };
         /**
          * PostCallWebhookData
@@ -529,11 +567,30 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** ProvenanceReference */
+        ProvenanceReference: {
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Location */
+            location?: string | null;
+            /** Source Id */
+            source_id: string;
+            source_type: components["schemas"]["ProvenanceType"];
+        };
+        /**
+         * ProvenanceType
+         * @enum {string}
+         */
+        ProvenanceType: "document" | "voice_intake" | "agent_tool" | "transcript" | "demo_fixture" | "tavily";
         /** QuoteV1 */
         QuoteV1: {
             /** Availability */
             availability: string;
+            /** @default unknown */
+            availability_status: components["schemas"]["AvailabilityStatus"];
             binding_type: components["schemas"]["BindingType"];
+            /** Comparable Total */
+            comparable_total?: string | null;
             /** Concessions */
             concessions?: string[];
             /**
@@ -542,10 +599,16 @@ export interface components {
              * @constant
              */
             currency: "USD";
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
             /** Deposit */
-            deposit: string;
+            deposit?: string | null;
             /** Fee Line Items */
             fee_line_items: components["schemas"]["FeeLineItem"][];
+            /** Findings */
+            findings?: components["schemas"]["IntelligenceFinding"][];
+            /** Headline Total */
+            headline_total?: string | null;
             /**
              * Job Id
              * Format: uuid
@@ -557,10 +620,17 @@ export interface components {
              * @constant
              */
             job_spec_version: "1.0";
+            /**
+             * Manually Fabricated
+             * @default false
+             */
+            manually_fabricated: boolean;
             /** Negotiated Total */
-            negotiated_total: string;
+            negotiated_total?: string | null;
             /** Original Total */
-            original_total: string;
+            original_total?: string | null;
+            /** Provenance */
+            provenance?: components["schemas"]["ProvenanceReference"][];
             /** Provisional Data */
             provisional_data?: {
                 [key: string]: unknown;
@@ -602,13 +672,17 @@ export interface components {
             /** Red Flags */
             red_flags?: string[];
             /** Total */
-            total: string;
+            total?: string | null;
             vendor: components["schemas"]["Vendor"];
         };
         /** RecommendationV1 */
         RecommendationV1: {
             /** Assumptions */
             assumptions?: string[];
+            /** Best Value Vendor Id */
+            best_value_vendor_id?: string | null;
+            /** Cheapest Vendor Id */
+            cheapest_vendor_id?: string | null;
             /** Evidence Ids */
             evidence_ids: string[];
             /**
@@ -616,6 +690,8 @@ export interface components {
              * Format: date-time
              */
             generated_at: string;
+            /** Hidden Fee Findings */
+            hidden_fee_findings?: components["schemas"]["IntelligenceFinding"][];
             /**
              * Job Id
              * Format: uuid
@@ -632,6 +708,8 @@ export interface components {
             summary: string;
             /** Transcript Evidence */
             transcript_evidence: components["schemas"]["TranscriptEvidence"][];
+            /** Uncertainty */
+            uncertainty?: string[];
             /**
              * Version
              * @default 1.0
@@ -669,12 +747,6 @@ export interface components {
         };
         /** SourceContext */
         SourceContext: {
-            /**
-             * Intake Method
-             * @default demo
-             * @enum {string}
-             */
-            intake_method: "voice" | "document" | "demo";
             /** Vera Property Id */
             vera_property_id?: string | null;
             /** Vera User Id */
@@ -689,6 +761,8 @@ export interface components {
             call_id: string;
             /** Claim */
             claim: string;
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
             /** End Seconds */
             end_seconds: string;
             /**
@@ -725,8 +799,12 @@ export interface components {
             behavior_summary: string;
             /** Contact Label */
             contact_label: string;
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
             /** Name */
             name: string;
+            /** Provenance */
+            provenance?: components["schemas"]["ProvenanceReference"][];
             /** Service Areas */
             service_areas: string[];
             /** Slug */
@@ -752,7 +830,7 @@ export interface components {
          * VerificationStatus
          * @enum {string}
          */
-        VerificationStatus: "provisional" | "partially_verified" | "verified";
+        VerificationStatus: "provisional" | "partially_verified" | "verified" | "rejected";
         /** WebhookAck */
         WebhookAck: {
             /** Accepted */
