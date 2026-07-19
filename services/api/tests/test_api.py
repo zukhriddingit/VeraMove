@@ -45,6 +45,25 @@ def test_health_reflects_live_runtime_mode_without_dialing(monkeypatch):
     }
 
 
+def test_configured_public_origin_passes_cors_preflight(monkeypatch):
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://veramove-demo.example")
+    configured_app = create_app()
+
+    with TestClient(configured_app) as test_client:
+        response = test_client.options(
+            "/health",
+            headers={
+                "Origin": "https://veramove-demo.example",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == (
+        "https://veramove-demo.example"
+    )
+
+
 def test_api_happy_path(client, job_spec_payload):
     created = client.post("/api/jobs", json=job_spec_payload)
     assert created.status_code == 201

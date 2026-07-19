@@ -102,6 +102,33 @@ def test_settings_default_to_safe_mock_with_empty_live_values(monkeypatch):
     assert settings.live_voice.test_to_number is None
 
 
+def test_settings_cors_origins_default_and_explicit_override(monkeypatch):
+    monkeypatch.delenv("CORS_ALLOW_ORIGINS", raising=False)
+    assert Settings.from_env().cors_allow_origins == (
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+    )
+
+    monkeypatch.setenv(
+        "CORS_ALLOW_ORIGINS",
+        " https://veramove-demo.example,https://preview.veramove-demo.example/ ",
+    )
+    assert Settings.from_env().cors_allow_origins == (
+        "https://veramove-demo.example",
+        "https://preview.veramove-demo.example",
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["*", "https://veramove-demo.example/path", "veramove-demo.example"],
+)
+def test_settings_reject_invalid_cors_origins(monkeypatch, value):
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", value)
+    with pytest.raises(ProviderConfigurationError, match="CORS_ALLOW_ORIGINS"):
+        Settings.from_env()
+
+
 @pytest.mark.parametrize("enabled", ["1", "true", "TRUE", "yes", "on"])
 def test_settings_parse_explicit_true_values(monkeypatch, enabled):
     monkeypatch.setenv("APP_MODE", "live")

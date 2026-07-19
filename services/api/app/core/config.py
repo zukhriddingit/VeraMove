@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from services.api.app.core.errors import ProviderConfigurationError
 
 TRUE_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
 FALSE_ENV_VALUES = frozenset({"0", "false", "no", "off"})
+DEFAULT_CORS_ALLOW_ORIGINS = (
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+)
 
 
 def _optional_env(name: str) -> str | None:
@@ -33,6 +38,36 @@ def _boolean_env(name: str, *, default: bool = False) -> bool:
     )
 
 
+def _cors_origins_env() -> tuple[str, ...]:
+    value = _optional_env("CORS_ALLOW_ORIGINS")
+    if value is None:
+        return DEFAULT_CORS_ALLOW_ORIGINS
+    origins = tuple(
+        dict.fromkeys(
+            item.strip().rstrip("/")
+            for item in value.split(",")
+            if item.strip()
+        )
+    )
+    if not origins or "*" in origins:
+        raise ProviderConfigurationError(
+            "CORS_ALLOW_ORIGINS must contain explicit HTTP(S) origins"
+        )
+    for origin in origins:
+        parsed = urlsplit(origin)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ProviderConfigurationError(
+                "CORS_ALLOW_ORIGINS must contain explicit HTTP(S) origins"
+            )
+    return origins
+
+
 @dataclass(frozen=True, slots=True)
 class LiveVoiceConfig:
     """Secrets and identifiers required only when a live call is initiated."""
@@ -52,6 +87,7 @@ class Settings:
     app_mode: str = "mock"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
+    cors_allow_origins: tuple[str, ...] = DEFAULT_CORS_ALLOW_ORIGINS
     live_voice: LiveVoiceConfig = field(default_factory=LiveVoiceConfig)
 
     def require_live_voice_config(self) -> LiveVoiceConfig:
@@ -92,6 +128,7 @@ class Settings:
             app_mode=app_mode,
             api_host=os.getenv("API_HOST", "127.0.0.1").strip(),
             api_port=int(os.getenv("API_PORT", "8000")),
+            cors_allow_origins=_cors_origins_env(),
             live_voice=LiveVoiceConfig(
                 api_key=_optional_env("ELEVENLABS_API_KEY"),
                 quote_agent_id=_optional_env("ELEVENLABS_QUOTE_AGENT_ID"),
