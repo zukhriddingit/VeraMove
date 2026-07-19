@@ -9,9 +9,12 @@ from services.api.app.contracts import (
     CallOutcome,
     CallOutcomeType,
     CallStatus,
+    DataClassification,
     IntakeSource,
     JobRecord,
     JobState,
+    ProvenanceReference,
+    ProvenanceType,
     VerificationStatus,
 )
 from services.api.app.core.errors import DomainConflict, ResourceNotFound
@@ -80,6 +83,69 @@ def test_mock_voice_provider_initiates_one_quote_call(fixtures, job_spec):
         evidence.call_id == call_id
         for evidence in result.outcome.quote.transcript_evidence
     )
+
+
+def test_mock_voice_provider_creates_disclaimed_role_play_for_unknown_vendor(
+    fixtures,
+    job_spec,
+):
+    provider = MockVoiceProvider(fixtures)
+    vendor = fixtures.load_vendors()[0].model_copy(
+        update={
+            "vendor_id": uuid4(),
+            "name": "Example Moving Cooperative",
+            "slug": "example-moving-cooperative",
+            "behavior_summary": (
+                "Role-play discovery candidate; no real behavior is inferred."
+            ),
+            "contact_label": "Role-play channel; no contact details stored.",
+            "data_classification": DataClassification.ROLE_PLAY,
+            "provenance": [
+                ProvenanceReference(
+                    source_type=ProvenanceType.TAVILY,
+                    source_id="vendor.example.com",
+                    location="https://vendor.example.com/moving",
+                )
+            ],
+        },
+        deep=True,
+    )
+    first_call_id = uuid4()
+    second_call_id = uuid4()
+
+    first = provider.initiate_quote_call(job_spec, vendor, first_call_id)
+    second = provider.initiate_quote_call(job_spec, vendor, second_call_id)
+
+    assert first.outcome is not None
+    assert first.outcome.quote is not None
+    assert second.outcome is not None
+    assert second.outcome.quote is not None
+    first_quote = first.outcome.quote
+    second_quote = second.outcome.quote
+    assert first_quote.vendor == vendor
+    assert first_quote.job_id == job_spec.job_id
+    assert first_quote.job_spec_version == job_spec.version
+    assert first_quote.data_classification is DataClassification.ROLE_PLAY
+    assert first_quote.red_flags == []
+    assert first_quote.quote_id != fixtures.load_initial_quotes()[0].quote_id
+    assert first_quote.quote_id != second_quote.quote_id
+    assert first.recording_url != second.recording_url
+    assert first.reference.provider_call_id != second.reference.provider_call_id
+    assert {
+        evidence.evidence_id for evidence in first_quote.transcript_evidence
+    }.isdisjoint(
+        evidence.evidence_id for evidence in second_quote.transcript_evidence
+    )
+    assert all(
+        evidence.call_id == first_call_id
+        and evidence.data_classification is DataClassification.ROLE_PLAY
+        and "not a claim" in evidence.excerpt.casefold()
+        and str(evidence.recording_url).startswith(
+            "https://recordings.example.com/role-play/"
+        )
+        for evidence in first_quote.transcript_evidence
+    )
+    assert "not a claim" in first_quote.verified_data["role_play_notice"].casefold()
 
 
 def test_mock_voice_provider_rebinds_negotiated_quote(fixtures, job_spec):

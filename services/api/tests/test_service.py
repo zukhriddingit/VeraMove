@@ -1,8 +1,17 @@
 """Application-service workflow tests."""
 
+from uuid import uuid4
+
 import pytest
 
-from services.api.app.contracts import CallStatus, IntakeSource, JobState
+from services.api.app.contracts import (
+    CallStatus,
+    DataClassification,
+    IntakeSource,
+    JobState,
+    ProvenanceReference,
+    ProvenanceType,
+)
 from services.api.app.core.errors import DomainConflict, InvalidStateTransition
 
 
@@ -136,6 +145,65 @@ def test_batch_uses_first_three_distinct_discovery_vendors(
     assert [call.vendor.vendor_id for call in result.calls] == [
         vendor.vendor_id for vendor in discovery_vendors[:3]
     ]
+
+
+def test_batch_creates_three_role_play_quotes_for_discovered_vendors(
+    service,
+    fixtures,
+    job_spec,
+):
+    discovered_vendors = [
+        vendor.model_copy(
+            update={
+                "vendor_id": uuid4(),
+                "name": f"Example Discovery Vendor {index}",
+                "slug": f"example-discovery-vendor-{index}",
+                "behavior_summary": (
+                    "Role-play discovery candidate; no real behavior is inferred."
+                ),
+                "contact_label": "Role-play channel; no contact details stored.",
+                "data_classification": DataClassification.ROLE_PLAY,
+                "provenance": [
+                    ProvenanceReference(
+                        source_type=ProvenanceType.TAVILY,
+                        source_id=f"vendor-{index}.example.com",
+                        location=f"https://vendor-{index}.example.com/moving",
+                    )
+                ],
+            },
+            deep=True,
+        )
+        for index, vendor in enumerate(fixtures.load_vendors(), start=1)
+    ]
+    service._discovery = StaticDiscoveryGateway(discovered_vendors)
+    service.create_job(job_spec)
+    confirmed = service.confirm_job(job_spec.job_id)
+
+    result = service.start_calls(job_spec.job_id)
+
+    assert result.state is JobState.QUOTES_READY
+    assert len(result.calls) == 3
+    assert len(result.quotes) == 3
+    assert [call.vendor.vendor_id for call in result.calls] == [
+        vendor.vendor_id for vendor in discovered_vendors
+    ]
+    attempts = service.list_call_attempts(job_spec.job_id)
+    assert len(attempts) == 3
+    assert all(attempt.job_spec_snapshot == confirmed.job_spec for attempt in attempts)
+    assert len({quote.quote_id for quote in result.quotes}) == 3
+    assert len(
+        {
+            evidence.evidence_id
+            for quote in result.quotes
+            for evidence in quote.transcript_evidence
+        }
+    ) == 3
+    assert all(
+        quote.data_classification is DataClassification.ROLE_PLAY
+        and quote.red_flags == []
+        and "not a claim" in quote.verified_data["role_play_notice"].casefold()
+        for quote in result.quotes
+    )
 
 
 def test_batch_rejects_short_distinct_discovery_before_state_or_call_side_effects(
