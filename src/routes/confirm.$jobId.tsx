@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type JobRecord, type LocationSpec } from "@/lib/api";
+import { ErrorBox, LoadingCard, Stepper } from "@/components/flow";
 
 export const Route = createFileRoute("/confirm/$jobId")({
   head: () => ({
