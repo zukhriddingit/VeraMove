@@ -239,6 +239,27 @@ def test_materializes_failed_outcome_without_fake_recording(job_spec, fixtures):
     assert result.recording_url is None
 
 
+def test_non_quote_never_exposes_saved_audio_without_recording_consent(job_spec, fixtures):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(attempt).model_copy(
+        update={
+            "has_audio": True,
+            "collected_data": {
+                "outcome_type": "documented_decline",
+                "outcome_reason": "The synthetic participant declined recording.",
+                "recording_consent": False,
+            },
+            "transcript_turns": (),
+        },
+        deep=True,
+    )
+
+    result = materialize(event, attempt)
+
+    assert result.outcome.type is CallOutcomeType.DOCUMENTED_DECLINE
+    assert result.recording_url is None
+
+
 def test_rejects_mixed_outcome_details(job_spec, fixtures):
     attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
     event = make_event(

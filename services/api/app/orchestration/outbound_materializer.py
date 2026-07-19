@@ -61,7 +61,11 @@ def materialize_outbound_event(
     data = event.collected_data
     outcome_type = _outcome_type(data.get("outcome_type"))
     _validate_outcome_data_exclusive(outcome_type, data)
-    audio_url = recording_url if event.has_audio else None
+    audio_url = (
+        recording_url
+        if event.has_audio and data.get("recording_consent") is True
+        else None
+    )
     if outcome_type is CallOutcomeType.ITEMIZED_QUOTE:
         if data.get("recording_consent") is not True or audio_url is None:
             raise DomainConflict("Itemized quote requires consent and saved audio")
