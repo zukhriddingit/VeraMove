@@ -6,10 +6,14 @@ from services.api.app.integrations.openai.live import (
     OpenAIResponsesClient,
     OpenAIResponsesNarrativeClient,
 )
+from services.api.app.integrations.openai.recommendation import (
+    OpenAIRecommendationNarrator,
+)
 
 __all__ = [
     "HttpxOpenAITransport",
     "OpenAIJsonTransport",
     "OpenAIResponsesClient",
     "OpenAIResponsesNarrativeClient",
+    "OpenAIRecommendationNarrator",
 ]

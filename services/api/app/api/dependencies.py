@@ -1,7 +1,7 @@
-"""Application wiring for the credential-free mock lifecycle."""
+"""Application wiring for independently enabled, fail-closed providers."""
 
 from datetime import UTC, datetime
-from functools import lru_cache
+from typing import Protocol
 
 from fastapi import Request
 
@@ -16,14 +16,46 @@ from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
 from services.api.app.integrations.elevenlabs.webhook import (
     ElevenLabsWebhookProcessor,
 )
+from services.api.app.integrations.openai.base import OpenAIJsonTransport
+from services.api.app.integrations.openai.document import OpenAIDocumentParser
+from services.api.app.integrations.openai.live import (
+    OpenAIResponsesClient,
+    OpenAIResponsesNarrativeClient,
+)
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
+from services.api.app.integrations.openai.recommendation import (
+    OpenAIRecommendationNarrator,
+)
+from services.api.app.integrations.tavily.base import TavilyJsonTransport
+from services.api.app.integrations.tavily.cached import CachedTavilyVendorDiscovery
+from services.api.app.integrations.tavily.live import TavilyHttpClient
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.orchestration.fixtures import DemoFixtures
+from services.api.app.orchestration.live_intelligence import LiveIntelligenceProvider
 from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
-from services.api.app.orchestration.service import VeraMoveService
+from services.api.app.orchestration.service import VeraMoveService, utc_now
+from services.api.app.repositories.base import (
+    CallRepository,
+    JobRepository,
+    QuoteRepository,
+)
 from services.api.app.repositories.memory import InMemoryRepository
+from services.api.app.repositories.supabase import SupabaseRepository
+from services.api.app.repositories.supabase_client import (
+    SupabasePostgrestClient,
+    SupabaseTableClient,
+)
 
 _repository = InMemoryRepository()
+
+
+class ApplicationRepository(
+    JobRepository,
+    CallRepository,
+    QuoteRepository,
+    Protocol,
+):
+    """One repository implementation used across the aggregate transaction boundary."""
 
 
 def get_repository() -> InMemoryRepository:
@@ -36,21 +68,42 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
+def get_service(request: Request) -> VeraMoveService:
+    """Return the service composed from the same application settings snapshot."""
+
+    return request.app.state.service
+
+
 def mock_now() -> datetime:
     """Keep synthetic provider timestamps ordered and demo responses deterministic."""
 
     return datetime(2026, 7, 18, 16, 0, tzinfo=UTC)
 
 
-@lru_cache
-def get_service() -> VeraMoveService:
-    return build_service(Settings.from_env(), _repository)
+def build_repository(
+    settings: Settings,
+    supabase_client: SupabaseTableClient | None = None,
+) -> InMemoryRepository | SupabaseRepository:
+    """Select persistence independently; enabled misconfiguration fails startup."""
+
+    if not settings.supabase.enabled:
+        return _repository
+    config = settings.require_supabase_config()
+    assert config.url is not None
+    assert config.secret_key is not None
+    client = supabase_client or SupabasePostgrestClient(
+        url=config.url,
+        secret_key=config.secret_key,
+    )
+    return SupabaseRepository(client)
 
 
 def build_service(
     settings: Settings,
-    repository: InMemoryRepository,
+    repository: ApplicationRepository,
     voice_transport: JsonHttpTransport | None = None,
+    openai_transport: OpenAIJsonTransport | None = None,
+    tavily_transport: TavilyJsonTransport | None = None,
 ) -> VeraMoveService:
     """Compose mock or live boundaries without initiating provider activity."""
 
@@ -60,14 +113,11 @@ def build_service(
     elif settings.app_mode == "live":
         voice = ElevenLabsVoiceProvider(
             settings,
-            (
-                voice_transport
-                if voice_transport is not None
-                else HttpxJsonTransport()
-            ),
+            (voice_transport if voice_transport is not None else HttpxJsonTransport()),
         )
     else:
         raise ProviderConfigurationError("APP_MODE must be either mock or live")
+    service_clock = mock_now if settings.app_mode == "mock" else utc_now
     webhooks = (
         ElevenLabsWebhookProcessor(
             secret="synthetic-webhook-secret",
@@ -78,17 +128,59 @@ def build_service(
             secret=settings.live_voice.webhook_secret,
         )
     )
+    negotiation_gateway = MockNegotiationGateway(fixtures)
+    if settings.openai.enabled:
+        openai_config = settings.require_openai_config()
+        assert openai_config.api_key is not None
+        responses_client = OpenAIResponsesClient(
+            api_key=openai_config.api_key,
+            api_base_url=openai_config.api_base_url,
+            transport=openai_transport,
+        )
+        intelligence = LiveIntelligenceProvider(
+            OpenAIDocumentParser(
+                responses_client,
+                model=openai_config.document_model,
+            ),
+            negotiation_gateway,
+        )
+        recommendation_narrator = OpenAIRecommendationNarrator(
+            OpenAIResponsesNarrativeClient(
+                api_key=openai_config.api_key,
+                api_base_url=openai_config.api_base_url,
+                transport=openai_transport,
+            ),
+            model=openai_config.recommendation_model,
+        )
+    else:
+        intelligence = MockIntelligenceProvider(
+            fixtures,
+            negotiation_gateway,
+        )
+        recommendation_narrator = None
+
+    if settings.tavily.enabled:
+        tavily_config = settings.require_tavily_config()
+        assert tavily_config.api_key is not None
+        discovery = CachedTavilyVendorDiscovery(
+            TavilyHttpClient(
+                api_key=tavily_config.api_key,
+                api_base_url=tavily_config.api_base_url,
+                transport=tavily_transport,
+            )
+        )
+    else:
+        discovery = MockVendorDiscoveryGateway(fixtures)
+
     return VeraMoveService(
         jobs=repository,
         calls=repository,
         quotes=repository,
         voice=voice,
-        intelligence=MockIntelligenceProvider(
-            fixtures,
-            MockNegotiationGateway(fixtures),
-        ),
-        discovery=MockVendorDiscoveryGateway(fixtures),
+        intelligence=intelligence,
+        discovery=discovery,
         webhooks=webhooks,
         fixtures=fixtures,
-        clock=mock_now,
+        recommendation_narrator=recommendation_narrator,
+        clock=service_clock,
     )

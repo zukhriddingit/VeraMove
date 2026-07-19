@@ -30,6 +30,7 @@ from services.api.app.integrations.elevenlabs.webhook import (
     ElevenLabsWebhookProcessor,
 )
 from services.api.app.integrations.tavily.base import VendorDiscoveryGateway
+from services.api.app.intelligence.ranking import RecommendationNarrator
 from services.api.app.orchestration.fixtures import DemoFixtures
 from services.api.app.orchestration.models import (
     CallAttempt,
@@ -65,6 +66,7 @@ class VeraMoveService:
         discovery: VendorDiscoveryGateway,
         webhooks: ElevenLabsWebhookProcessor,
         fixtures: DemoFixtures,
+        recommendation_narrator: RecommendationNarrator | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
         self._jobs = jobs
@@ -75,6 +77,7 @@ class VeraMoveService:
         self._discovery = discovery
         self._webhooks = webhooks
         self._fixtures = fixtures
+        self._recommendation_narrator = recommendation_narrator
         self._tools = VoiceTools(calls, quotes, clock=clock)
         self._clock = clock
 
@@ -214,9 +217,7 @@ class VeraMoveService:
             if (total := self._quote_total(quote)) is not None
         ]
         if not priced_quotes:
-            raise DomainConflict(
-                "Negotiation requires an initial quote with a comparable total"
-            )
+            raise DomainConflict("Negotiation requires an initial quote with a comparable total")
 
         target_quote = max(priced_quotes, key=lambda item: item[1])[0]
         competitor = self._tools.get_verified_competing_quote(
@@ -293,17 +294,14 @@ class VeraMoveService:
             return WebhookAck(accepted=False, duplicate=True)
         attempt = self._calls.get_attempt(event.call_id) if event.call_id else None
         if attempt is None and event.conversation_id:
-            attempt = self._calls.find_attempt_by_conversation_id(
-                event.conversation_id
-            )
+            attempt = self._calls.find_attempt_by_conversation_id(event.conversation_id)
         if attempt and event.call_status:
             attempt = attempt.model_copy(
                 update={
                     "status": event.call_status,
                     "completed_at": (
                         event.event_timestamp
-                        if event.call_status
-                        in {CallStatus.COMPLETED, CallStatus.FAILED}
+                        if event.call_status in {CallStatus.COMPLETED, CallStatus.FAILED}
                         else None
                     ),
                 }
@@ -412,11 +410,7 @@ class VeraMoveService:
 
     def _build_recommendation(self, record: JobRecord) -> RecommendationV1:
         template = self._fixtures.load_recommendation()
-        evidence = [
-            item
-            for quote in record.quotes
-            for item in quote.transcript_evidence
-        ]
+        evidence = [item for quote in record.quotes for item in quote.transcript_evidence]
         quotes_by_id = {quote.quote_id: quote for quote in record.quotes}
         quotes_by_vendor: dict[UUID, list[QuoteV1]] = {}
         for quote in record.quotes:
@@ -451,7 +445,7 @@ class VeraMoveService:
                 )
             )
 
-        return template.model_copy(
+        recommendation = template.model_copy(
             update={
                 "job_id": record.job_spec.job_id,
                 "generated_at": self._clock(),
@@ -461,6 +455,17 @@ class VeraMoveService:
             },
             deep=True,
         )
+        if self._recommendation_narrator is not None:
+            summary = self._recommendation_narrator.explain(
+                record.job_spec,
+                recommendation.rankings,
+                recommendation.hidden_fee_findings,
+            )
+            recommendation = recommendation.model_copy(
+                update={"summary": summary},
+                deep=True,
+            )
+        return recommendation
 
     @staticmethod
     def _is_complete(result: VoiceCallResult) -> bool:

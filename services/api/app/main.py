@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from services.api.app.api.dependencies import build_repository, build_service
 from services.api.app.api.router import router
 from services.api.app.contracts import ErrorDetail, ErrorResponse
 from services.api.app.core.config import Settings
@@ -18,17 +19,21 @@ from services.api.app.core.errors import (
 )
 
 
-def create_app() -> FastAPI:
-    settings = Settings.from_env()
+def create_app(settings: Settings | None = None) -> FastAPI:
+    runtime_settings = settings or Settings.from_env()
+    repository = build_repository(runtime_settings)
+    service = build_service(runtime_settings, repository)
     application = FastAPI(
         title="VeraMove API",
         summary="Mock-first moving-services negotiation API",
         version="0.1.0",
     )
-    application.state.settings = settings
+    application.state.settings = runtime_settings
+    application.state.repository = repository
+    application.state.service = service
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=list(settings.cors_allow_origins),
+        allow_origins=list(runtime_settings.cors_allow_origins),
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
