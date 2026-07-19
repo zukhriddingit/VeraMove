@@ -33,6 +33,7 @@ from services.api.app.integrations.elevenlabs.webhook import (
     ElevenLabsWebhookProcessor,
 )
 from services.api.app.integrations.tavily.base import VendorDiscoveryGateway
+from services.api.app.intelligence.quotes import is_measurable_quote_improvement
 from services.api.app.intelligence.ranking import RecommendationNarrator
 from services.api.app.orchestration.fixtures import DemoFixtures
 from services.api.app.orchestration.models import (
@@ -674,14 +675,7 @@ class VeraMoveService:
 
     @staticmethod
     def _is_improved(initial: QuoteV1, negotiated: QuoteV1) -> bool:
-        initial_total = VeraMoveService._quote_total(initial)
-        negotiated_total = VeraMoveService._quote_total(negotiated)
-        price_improved = (
-            initial_total is not None
-            and negotiated_total is not None
-            and negotiated_total < initial_total
-        )
-        return price_improved or bool(negotiated.concessions)
+        return is_measurable_quote_improvement(initial, negotiated)
 
     @staticmethod
     def _quote_total(quote: QuoteV1) -> Decimal | None:

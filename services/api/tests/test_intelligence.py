@@ -6,6 +6,8 @@ import json
 import re
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -39,6 +41,14 @@ from services.api.app.intelligence import (
     QuoteVerifier,
 )
 from services.api.app.intelligence.document import merge_document_with_voice
+from services.api.app.intelligence.quotes import is_measurable_quote_improvement
+from services.api.app.intelligence.ranking import (
+    is_quote_eligible_for_leverage,
+)
+from services.api.app.orchestration.evidence import (
+    EvidenceClaim,
+    build_transcript_evidence,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -196,6 +206,134 @@ def test_quote_normalizer_preserves_explicit_zero_totals(fixtures):
     assert normalized.comparable_total == Decimal("0.00")
 
 
+def _supported_quote_and_facts(fixtures):
+    source = fixtures.load_initial_quotes()[0]
+    fee = FeeLineItem(
+        category=FeeCategory.STAIRS,
+        description="Synthetic stairs fee.",
+        amount=Decimal("250.00"),
+        mandatory=True,
+    )
+    provisional = source.model_copy(
+        update={
+            "fee_line_items": [fee],
+            "headline_total": Decimal("250.00"),
+            "original_total": Decimal("250.00"),
+            "negotiated_total": Decimal("250.00"),
+            "comparable_total": Decimal("250.00"),
+            "verification_status": VerificationStatus.PROVISIONAL,
+            "transcript_evidence": [],
+        },
+        deep=True,
+    )
+    turns = (
+        SimpleNamespace(
+            message="The all-in total is $250.00.",
+            time_in_call_secs=Decimal("2.125"),
+        ),
+        SimpleNamespace(
+            message="The stairs fee is $250.00.",
+            time_in_call_secs=Decimal("7.500"),
+        ),
+        SimpleNamespace(
+            message="This is a binding quote.",
+            time_in_call_secs=Decimal("12.000"),
+        ),
+        SimpleNamespace(
+            message="We are available on the requested date.",
+            time_in_call_secs=Decimal("17.000"),
+        ),
+    )
+    evidence = build_transcript_evidence(
+        call_id=source.transcript_evidence[0].call_id,
+        recording_url=source.recording_url,
+        transcript_turns=turns,
+        claims=(
+            EvidenceClaim("quote_total", ("all-in total",), Decimal("250.00")),
+            EvidenceClaim("fee:stairs", ("stairs fee",), Decimal("250.00")),
+            EvidenceClaim("binding_status", ("binding quote",)),
+            EvidenceClaim("availability_status", ("available",)),
+        ),
+    )
+    by_claim = {item.claim: item for item in evidence}
+    facts = TranscriptQuoteFacts(
+        fee_line_items=[
+            fee.model_copy(update={"evidence_ids": [by_claim["fee:stairs"].evidence_id]})
+        ],
+        spoken_total=Decimal("250.00"),
+        binding_type=BindingType.BINDING,
+        availability="Available on the requested date.",
+        availability_status=AvailabilityStatus.AVAILABLE,
+        addressed_fee_categories=[FeeCategory.STAIRS],
+        evidence=evidence,
+    )
+    return provisional, facts
+
+
+def test_transcript_evidence_mapping_is_deterministic_bounded_and_claim_specific(
+    fixtures,
+):
+    provisional, facts = _supported_quote_and_facts(fixtures)
+    first = facts.evidence
+    _, repeated = _supported_quote_and_facts(fixtures)
+
+    assert first == repeated.evidence
+    assert [item.claim for item in first] == [
+        "quote_total",
+        "fee:stairs",
+        "binding_status",
+        "availability_status",
+    ]
+    assert first[0].start_seconds == Decimal("2.13")
+    assert first[0].end_seconds == Decimal("7.50")
+    assert all(item.recording_url == provisional.recording_url for item in first)
+    assert all(item.end_seconds - item.start_seconds <= Decimal("30") for item in first)
+
+    unmatched = build_transcript_evidence(
+        call_id=first[0].call_id,
+        recording_url=provisional.recording_url,
+        transcript_turns=(SimpleNamespace(message="No price was stated.", time_in_call_secs=0),),
+        claims=(EvidenceClaim("quote_total", ("total",), Decimal("999.00")),),
+    )
+    assert unmatched == []
+
+
+@pytest.mark.parametrize(
+    ("missing_claim", "expected_missing"),
+    [
+        ("fee:stairs", "fee:stairs"),
+        ("binding_status", "binding_status"),
+        ("availability_status", "availability_status"),
+    ],
+)
+def test_quote_verifier_requires_per_material_claim_evidence(
+    fixtures,
+    missing_claim,
+    expected_missing,
+):
+    provisional, facts = _supported_quote_and_facts(fixtures)
+    facts = facts.model_copy(
+        update={"evidence": [item for item in facts.evidence if item.claim != missing_claim]},
+        deep=True,
+    )
+
+    result = QuoteVerifier().verify(provisional, facts)
+
+    assert result.verified_quote.verification_status is VerificationStatus.PARTIALLY_VERIFIED
+    assert expected_missing in result.verified_quote.verified_data["missing_evidence_claims"]
+
+
+def test_quote_verifier_accepts_complete_per_claim_evidence(fixtures):
+    provisional, facts = _supported_quote_and_facts(fixtures)
+
+    result = QuoteVerifier().verify(provisional, facts)
+
+    assert result.verified_quote.verification_status is VerificationStatus.VERIFIED
+    assert result.verified_quote.comparable_total == Decimal("250.00")
+    assert result.verified_quote.verified_data["missing_evidence_claims"] == []
+    assert result.verified_quote.fee_line_items[0].evidence_ids
+
+
 def test_quote_verifier_preserves_repeated_fee_categories(fixtures):
     provisional = fixtures.load_initial_quotes()[0].model_copy(
         update={"verification_status": VerificationStatus.PROVISIONAL},
@@ -211,7 +349,36 @@ def test_quote_verifier_preserves_repeated_fee_categories(fixtures):
         description="Synthetic protective wrap.",
         amount=Decimal("60.00"),
     )
-    evidence = provisional.transcript_evidence
+    evidence = build_transcript_evidence(
+        call_id=provisional.transcript_evidence[0].call_id,
+        recording_url=provisional.recording_url,
+        transcript_turns=(
+            SimpleNamespace(
+                message="Carton materials are $40.00.",
+                time_in_call_secs=1,
+            ),
+            SimpleNamespace(
+                message="Protective wrap materials are $60.00.",
+                time_in_call_secs=3,
+            ),
+            SimpleNamespace(message="The total is $100.00.", time_in_call_secs=5),
+            SimpleNamespace(message="This quote is binding.", time_in_call_secs=7),
+            SimpleNamespace(
+                message="We are available on the synthetic date.",
+                time_in_call_secs=9,
+            ),
+        ),
+        claims=(
+            EvidenceClaim("fee:materials:cartons", ("carton materials",), Decimal("40")),
+            EvidenceClaim("fee:materials:wrap", ("wrap materials",), Decimal("60")),
+            EvidenceClaim("quote_total", ("total",), Decimal("100")),
+            EvidenceClaim("binding_status", ("binding",)),
+            EvidenceClaim("availability_status", ("available",)),
+        ),
+    )
+    by_claim = {item.claim: item.evidence_id for item in evidence}
+    first = first.model_copy(update={"evidence_ids": [by_claim["fee:materials:cartons"]]})
+    second = second.model_copy(update={"evidence_ids": [by_claim["fee:materials:wrap"]]})
     facts = TranscriptQuoteFacts(
         fee_line_items=[first, second],
         spoken_total=Decimal("100.00"),
@@ -235,13 +402,58 @@ def test_verifier_preserves_provisional_data_and_corrects_contradiction(fixtures
     provisional = fixtures.load_initial_quotes()[0].model_copy(
         update={"verification_status": VerificationStatus.PROVISIONAL}
     )
-    supported = [
+    unsupported_ids = [
         item.model_copy(
             update={"amount": Decimal("1500.00")}
             if item.category is FeeCategory.BASE_SERVICE
             else {}
         )
         for item in provisional.fee_line_items
+    ]
+    total = QuoteNormalizer().calculate_all_in_total(unsupported_ids)
+    assert total is not None
+    transcript_turns = []
+    claims = []
+    for index, item in enumerate(unsupported_ids):
+        amount = QuoteNormalizer().calculate_line_item(item)
+        assert amount is not None
+        phrase = item.category.value.replace("_", " ")
+        transcript_turns.append(
+            SimpleNamespace(
+                message=f"The {phrase} fee is ${amount}.",
+                time_in_call_secs=index * 3,
+            )
+        )
+        claims.append(EvidenceClaim(f"fee:{item.category.value}:{index}", (phrase,), amount))
+    transcript_turns.extend(
+        (
+            SimpleNamespace(message=f"The total is ${total}.", time_in_call_secs=30),
+            SimpleNamespace(message="This quote is binding.", time_in_call_secs=33),
+            SimpleNamespace(
+                message="We are available on the synthetic date.",
+                time_in_call_secs=36,
+            ),
+        )
+    )
+    claims.extend(
+        (
+            EvidenceClaim("quote_total", ("total",), total),
+            EvidenceClaim("binding_status", ("binding",)),
+            EvidenceClaim("availability_status", ("available",)),
+        )
+    )
+    evidence = build_transcript_evidence(
+        call_id=provisional.transcript_evidence[0].call_id,
+        recording_url=provisional.recording_url,
+        transcript_turns=tuple(transcript_turns),
+        claims=tuple(claims),
+    )
+    evidence_by_claim = {item.claim: item.evidence_id for item in evidence}
+    supported = [
+        item.model_copy(
+            update={"evidence_ids": [evidence_by_claim[f"fee:{item.category.value}:{index}"]]}
+        )
+        for index, item in enumerate(unsupported_ids)
     ]
     total = QuoteNormalizer().calculate_all_in_total(supported)
     facts = TranscriptQuoteFacts(
@@ -251,7 +463,7 @@ def test_verifier_preserves_provisional_data_and_corrects_contradiction(fixtures
         availability="Synthetic date confirmed.",
         availability_status=AvailabilityStatus.AVAILABLE,
         addressed_fee_categories=[item.category for item in supported],
-        evidence=provisional.transcript_evidence,
+        evidence=evidence,
     )
     result = QuoteVerifier().verify(provisional, facts, {FeeCategory.FUEL})
     assert result.verified_quote.verification_status is VerificationStatus.VERIFIED
@@ -320,6 +532,71 @@ def test_deterministic_recommendation_distinguishes_cheapest_and_best_value(
     assert recommendation.cheapest_vendor_id == recommendation.winning_vendor_id
     assert recommendation.evidence_ids
     assert all(ranking.evidence_ids for ranking in recommendation.rankings)
+
+
+def test_ranking_filters_partial_fabricated_wrong_version_and_missing_recording(
+    fixtures,
+    job_spec,
+):
+    eligible, partial, other = fixtures.load_initial_quotes()
+    fabricated = other.model_copy(
+        update={"quote_id": uuid4(), "manually_fabricated": True},
+        deep=True,
+    )
+    wrong_version = other.model_copy(
+        update={"quote_id": uuid4(), "job_spec_version": "9.9"},
+        deep=True,
+    )
+    missing_recording = other.model_copy(
+        update={"quote_id": uuid4(), "recording_url": None},
+        deep=True,
+    )
+
+    recommendation = DeterministicRecommendationEngine().recommend(
+        job_spec,
+        [eligible, partial, fabricated, wrong_version, missing_recording],
+    )
+
+    assert [item.quote_id for item in recommendation.rankings] == [eligible.quote_id]
+    assert is_quote_eligible_for_leverage(
+        eligible,
+        job_id=job_spec.job_id,
+        job_spec_version=job_spec.version,
+    )
+    for quote in (partial, fabricated, wrong_version, missing_recording):
+        assert not is_quote_eligible_for_leverage(
+            quote,
+            job_id=job_spec.job_id,
+            job_spec_version=job_spec.version,
+        )
+
+
+def test_ranking_rejects_a_set_with_no_eligible_quote(fixtures, job_spec):
+    partial = fixtures.load_initial_quotes()[1]
+
+    with pytest.raises(ValueError, match="eligible verified quote"):
+        DeterministicRecommendationEngine().recommend(job_spec, [partial])
+
+
+def test_measurable_improvement_is_limited_to_supported_changes(fixtures):
+    initial = fixtures.load_initial_quotes()[0]
+    unchanged = initial.model_copy(update={"concessions": ["Free snacks"]}, deep=True)
+    lower_deposit = initial.model_copy(
+        update={"deposit": initial.deposit - Decimal("10.00")},
+        deep=True,
+    )
+    allowed_concession = initial.model_copy(
+        update={"concessions": ["Fee waiver"]},
+        deep=True,
+    )
+
+    assert not is_measurable_quote_improvement(initial, unchanged)
+    assert is_measurable_quote_improvement(initial, lower_deposit)
+    assert is_measurable_quote_improvement(
+        initial,
+        allowed_concession,
+        allowed_new_concessions={"Fee waiver"},
+    )
 
 
 def test_tavily_mock_returns_three_cached_synthetic_vendors(fixtures):

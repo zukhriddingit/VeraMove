@@ -12,12 +12,14 @@ from services.api.app.contracts import (
     QuoteVerificationResult,
     RecommendationV1,
     TranscriptQuoteFacts,
-    VerificationStatus,
     VerifiedCompetingQuote,
 )
 from services.api.app.intelligence.base import QuoteCatalog
 from services.api.app.intelligence.quotes import QuoteVerifier
-from services.api.app.intelligence.ranking import DeterministicRecommendationEngine
+from services.api.app.intelligence.ranking import (
+    DeterministicRecommendationEngine,
+    is_quote_eligible_for_leverage,
+)
 
 
 class InMemoryQuoteCatalog:
@@ -63,20 +65,16 @@ class DefaultIntelligenceProvider:
     ) -> VerifiedCompetingQuote | None:
         safe: list[QuoteV1] = []
         for quote in self._quote_catalog.list_quotes(job_id):
-            total = quote.comparable_total
-            if (
-                quote.job_id == job_id
-                and quote.vendor.vendor_id != excluded_vendor_id
-                and quote.verification_status is VerificationStatus.VERIFIED
-                and quote.job_spec_version == "1.0"
-                and total is not None
-                and quote.transcript_evidence
-                and not quote.manually_fabricated
+            if quote.vendor.vendor_id != excluded_vendor_id and is_quote_eligible_for_leverage(
+                quote,
+                job_id=job_id,
+                job_spec_version="1.0",
             ):
                 safe.append(quote)
         if not safe:
             return None
         selected = min(safe, key=lambda quote: quote.comparable_total)
+        assert selected.comparable_total is not None
         return VerifiedCompetingQuote(
             quote=selected,
             leverage_total=selected.comparable_total,

@@ -3,7 +3,14 @@
 from typing import Literal, Protocol
 from uuid import UUID
 
-from services.api.app.contracts import JobSpecV1, QuoteV1, Vendor
+from services.api.app.contracts import (
+    FeeCategory,
+    JobSpecV1,
+    QuoteV1,
+    QuoteVerificationResult,
+    TranscriptQuoteFacts,
+    Vendor,
+)
 from services.api.app.orchestration.models import VoiceCallResult
 
 
@@ -42,3 +49,14 @@ class IntelligenceProvider(Protocol):
         quotes: list[QuoteV1],
         verified_competitor: QuoteV1,
     ) -> QuoteV1: ...
+
+
+class QuoteVerificationGateway(Protocol):
+    """Verify provisional values against bounded timestamped call evidence."""
+
+    def verify(
+        self,
+        provisional_quote: QuoteV1,
+        transcript_facts: TranscriptQuoteFacts,
+        required_fee_categories: set[FeeCategory] | None = None,
+    ) -> QuoteVerificationResult: ...

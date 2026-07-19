@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from services.api.app.contracts import (
     AvailabilityStatus,
@@ -15,6 +15,7 @@ from services.api.app.contracts import (
     QuoteV1,
     RecommendationRanking,
     RecommendationV1,
+    VerificationStatus,
 )
 from services.api.app.intelligence.findings import DeterministicRedFlagDetector
 
@@ -28,6 +29,46 @@ class RecommendationNarrator(Protocol):
     ) -> str: ...
 
 
+def is_quote_eligible(
+    quote: QuoteV1,
+    *,
+    job_id: UUID,
+    job_spec_version: str,
+) -> bool:
+    """Return whether a quote may influence a recommendation."""
+
+    recording_url = getattr(quote, "recording_url", None)
+    evidence = getattr(quote, "transcript_evidence", [])
+    return (
+        quote.job_id == job_id
+        and quote.job_spec_version == job_spec_version
+        and quote.verification_status is VerificationStatus.VERIFIED
+        and not quote.manually_fabricated
+        and recording_url is not None
+        and bool(evidence)
+        and len({item.call_id for item in evidence}) == 1
+        and all(str(item.recording_url) == str(recording_url) for item in evidence)
+    )
+
+
+def is_quote_eligible_for_leverage(
+    quote: QuoteV1,
+    *,
+    job_id: UUID,
+    job_spec_version: str,
+) -> bool:
+    """Apply ranking safety gates plus the comparable-price leverage requirement."""
+
+    return (
+        is_quote_eligible(
+            quote,
+            job_id=job_id,
+            job_spec_version=job_spec_version,
+        )
+        and quote.comparable_total is not None
+    )
+
+
 class DeterministicRecommendationEngine:
     def __init__(
         self,
@@ -38,10 +79,22 @@ class DeterministicRecommendationEngine:
         self._narrator = narrator
 
     def recommend(self, job_spec: JobSpecV1, quotes: list[QuoteV1]) -> RecommendationV1:
-        if not quotes:
-            raise ValueError("at least one quote is required")
-        flags_by_quote = self._red_flag_detector.analyze(quotes)
-        ordered = sorted(quotes, key=lambda quote: self._sort_key(quote, flags_by_quote))
+        eligible_quotes = [
+            quote
+            for quote in quotes
+            if is_quote_eligible(
+                quote,
+                job_id=job_spec.job_id,
+                job_spec_version=job_spec.version,
+            )
+        ]
+        if not eligible_quotes:
+            raise ValueError("at least one eligible verified quote is required")
+        flags_by_quote = self._red_flag_detector.analyze(eligible_quotes)
+        ordered = sorted(
+            eligible_quotes,
+            key=lambda quote: self._sort_key(quote, flags_by_quote),
+        )
         rankings = [
             self._ranking(index, quote, flags_by_quote[quote.quote_id])
             for index, quote in enumerate(ordered, start=1)
@@ -57,19 +110,19 @@ class DeterministicRecommendationEngine:
         if not evidence:
             raise ValueError("recommendations require transcript evidence")
 
-        comparable = [quote for quote in quotes if quote.comparable_total is not None]
+        comparable = [quote for quote in eligible_quotes if quote.comparable_total is not None]
         cheapest = min(comparable, key=lambda quote: quote.comparable_total) if comparable else None
         summary = self._default_summary(ordered[0], cheapest)
         if self._narrator is not None:
             summary = self._narrator.explain(job_spec, rankings, findings)
         uncertainty = [
             f"{quote.vendor.name} lacks a comparable all-in total."
-            for quote in quotes
+            for quote in eligible_quotes
             if quote.comparable_total is None
         ]
         uncertainty.extend(
             f"{quote.vendor.name} availability is not confirmed."
-            for quote in quotes
+            for quote in eligible_quotes
             if quote.availability_status is AvailabilityStatus.UNKNOWN
         )
         hidden_fee_codes = {
@@ -80,7 +133,7 @@ class DeterministicRecommendationEngine:
         }
         hidden_findings = [
             finding
-            for quote in quotes
+            for quote in eligible_quotes
             for finding in quote.findings
             if finding.code in hidden_fee_codes
         ]
