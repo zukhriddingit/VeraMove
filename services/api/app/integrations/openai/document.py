@@ -8,6 +8,7 @@ from services.api.app.contracts import DocumentParseResult, IntakeSource
 from services.api.app.integrations.openai.base import StructuredDocumentClient
 
 SUPPORTED_DOCUMENT_TYPES = {
+    "text/plain",
     "application/pdf",
     "image/png",
     "image/jpeg",

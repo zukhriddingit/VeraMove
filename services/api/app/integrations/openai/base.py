@@ -51,3 +51,14 @@ class GroundedNarrativeClient(Protocol):
         rankings: list[RecommendationRanking],
         findings: list[IntelligenceFinding],
     ) -> str: ...
+
+
+class OpenAIJsonTransport(Protocol):
+    """Minimal injectable boundary for one OpenAI JSON request."""
+
+    def post(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]: ...
