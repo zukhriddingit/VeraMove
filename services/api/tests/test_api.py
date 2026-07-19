@@ -4,11 +4,19 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
+from services.api.app.contracts import (
+    DataClassification,
+    IntakeSource,
+    JobRecord,
+    JobState,
+)
+from services.api.app.core.config import LiveVoiceConfig, Settings
 from services.api.app.main import create_app
+from services.api.app.orchestration.intake_sessions import IntakeSessionService
 
 WEBHOOK_SECRET = "synthetic-webhook-secret"
 WEBHOOK_TIMESTAMP = int(datetime(2026, 7, 18, 16, 0, tzinfo=UTC).timestamp())
@@ -59,9 +67,7 @@ def test_configured_public_origin_passes_cors_preflight(monkeypatch):
         )
 
     assert response.status_code == 200
-    assert response.headers["access-control-allow-origin"] == (
-        "https://veramove-demo.example"
-    )
+    assert response.headers["access-control-allow-origin"] == ("https://veramove-demo.example")
 
 
 def test_api_happy_path(client, job_spec_payload):
@@ -112,12 +118,9 @@ def test_complete_document_to_report_flow_is_idempotent(client):
     assert first_calls.status_code == 200
     assert first_calls.json() == second_calls.json()
     assert len(first_calls.json()["calls"]) == 3
+    assert {item["outcome"]["type"] for item in first_calls.json()["calls"]} == {"itemized_quote"}
     assert {
-        item["outcome"]["type"] for item in first_calls.json()["calls"]
-    } == {"itemized_quote"}
-    assert {
-        item["outcome"]["quote"]["job_spec_version"]
-        for item in first_calls.json()["calls"]
+        item["outcome"]["quote"]["job_spec_version"] for item in first_calls.json()["calls"]
     } == {"1.0"}
 
     completed = client.post(f"/api/jobs/{job_id}/negotiate")
@@ -131,9 +134,7 @@ def test_complete_document_to_report_flow_is_idempotent(client):
     report = client.get(f"/api/jobs/{job_id}/report")
     assert report.status_code == 200
     assert report.json()["rankings"][0]["evidence_ids"]
-    assert all(
-        item["recording_url"] for item in report.json()["transcript_evidence"]
-    )
+    assert all(item["recording_url"] for item in report.json()["transcript_evidence"])
 
 
 def test_illegal_api_transition_is_conflict(client, job_spec_payload):
@@ -162,6 +163,179 @@ def test_document_intake_and_events_routes(client):
     events = client.get(f"/api/jobs/{job_id}/events")
     assert events.status_code == 200
     assert events.json() == {"events": []}
+
+
+def test_web_intake_session_is_created_without_an_incomplete_job(client):
+    created = client.post("/api/intake/sessions")
+
+    assert created.status_code == 201
+    payload = created.json()
+    assert payload == {
+        "intake_session_id": payload["intake_session_id"],
+        "job_id": payload["job_id"],
+        "status": "pending",
+        "conversation_id": None,
+        "job_spec": None,
+    }
+    fetched = client.get(f"/api/intake/sessions/{payload['intake_session_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json() == payload
+    assert client.get(f"/api/jobs/{payload['job_id']}").status_code == 404
+
+
+def test_unknown_intake_session_and_conversation_are_not_found(client):
+    assert client.get(f"/api/intake/sessions/{uuid4()}").status_code == 404
+    response = client.get("/api/intake/conversations/unknown-synthetic-conversation")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "resource_not_found"
+
+
+def test_pre_call_secret_is_checked_before_malformed_body_is_read():
+    settings = Settings(
+        app_mode="mock",
+        live_voice=LiveVoiceConfig(
+            intake_agent_id="synthetic-intake-agent",
+            precall_secret="p" * 32,
+            agent_config_version="2026-07-19.1",
+        ),
+    )
+    configured_app = create_app(settings)
+
+    with TestClient(configured_app) as test_client:
+        response = test_client.post(
+            "/api/webhooks/elevenlabs/pre-call",
+            content=b"not-json-and-must-not-be-parsed",
+            headers={"x-veramove-precall-secret": "wrong"},
+        )
+        authenticated = test_client.post(
+            "/api/webhooks/elevenlabs/pre-call",
+            content=b"not-json-and-now-may-be-parsed",
+            headers={"x-veramove-precall-secret": "p" * 32},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "webhook_authentication_error"
+    assert authenticated.status_code == 400
+    assert authenticated.json()["error"]["code"] == "webhook_payload_error"
+    assert configured_app.state.repository._intake_sessions == {}
+
+
+def test_pre_call_is_idempotent_redacted_and_returns_exact_dynamic_variables(job_spec):
+    settings = Settings(
+        app_mode="mock",
+        live_voice=LiveVoiceConfig(
+            intake_agent_id="synthetic-intake-agent",
+            precall_secret="p" * 32,
+            agent_config_version="2026-07-19.1",
+        ),
+    )
+    configured_app = create_app(settings)
+    headers = {"x-veramove-precall-secret": "p" * 32}
+    first_request = {
+        "agent_id": "synthetic-intake-agent",
+        "call_sid": "CA-synthetic-replayed",
+        "caller_id": "+15550101001",
+        "called_number": "+15550101002",
+    }
+
+    with TestClient(configured_app) as test_client:
+        first = test_client.post(
+            "/api/webhooks/elevenlabs/pre-call",
+            json=first_request,
+            headers=headers,
+        )
+        replay = test_client.post(
+            "/api/webhooks/elevenlabs/pre-call",
+            json={
+                **first_request,
+                "caller_id": "+15550101003",
+                "called_number": "+15550101004",
+            },
+            headers=headers,
+        )
+        other = test_client.post(
+            "/api/webhooks/elevenlabs/pre-call",
+            json={**first_request, "call_sid": "CA-synthetic-other"},
+            headers=headers,
+        )
+        wrong_agent = test_client.post(
+            "/api/webhooks/elevenlabs/pre-call",
+            json={**first_request, "agent_id": "synthetic-wrong-agent"},
+            headers=headers,
+        )
+
+        assert first.status_code == 200
+        assert first.json() == replay.json()
+        assert set(first.json()) == {"type", "dynamic_variables"}
+        assert first.json()["type"] == "conversation_initiation_client_data"
+        variables = first.json()["dynamic_variables"]
+        assert set(variables) == {
+            "job_id",
+            "intake_session_id",
+            "agent_config_version",
+        }
+        assert variables["agent_config_version"] == "2026-07-19.1"
+        assert "prompt" not in first.json()
+        assert other.status_code == 200
+        other_variables = other.json()["dynamic_variables"]
+        assert other_variables["job_id"] != variables["job_id"]
+        assert other_variables["intake_session_id"] != variables["intake_session_id"]
+        assert wrong_agent.status_code == 400
+
+        session_id = variables["intake_session_id"]
+        pending = test_client.get(f"/api/intake/sessions/{session_id}")
+        assert pending.status_code == 200
+        assert pending.json()["status"] == "pending"
+        assert pending.json()["job_spec"] is None
+
+        session_service = IntakeSessionService(
+            repository=configured_app.state.repository,
+            expected_agent_id="synthetic-intake-agent",
+            agent_config_version="2026-07-19.1",
+        )
+        session_service.attach_conversation(
+            session_id,
+            "synthetic-conversation-id",
+            agent_id="synthetic-intake-agent",
+        )
+        by_conversation = test_client.get("/api/intake/conversations/synthetic-conversation-id")
+        assert by_conversation.status_code == 200
+        assert by_conversation.json()["status"] == "in_progress"
+
+        draft = job_spec.model_copy(
+            update={
+                "job_id": UUID(variables["job_id"]),
+                "intake_source": IntakeSource.VOICE,
+                "confirmed": False,
+                "confirmed_at": None,
+                "locked_version": None,
+                "data_classification": DataClassification.ROLE_PLAY,
+            },
+            deep=True,
+        )
+        configured_app.state.repository.create(
+            JobRecord(
+                job_spec=draft,
+                state=JobState.INTAKE_COMPLETE,
+                created_at=session_service.clock(),
+                updated_at=session_service.clock(),
+            )
+        )
+        session_service.complete_session(session_id, "synthetic-conversation-id")
+        completed = test_client.get(f"/api/intake/sessions/{session_id}")
+
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["job_spec"]["job_id"] == variables["job_id"]
+    serialized = repr(configured_app.state.repository._intake_sessions)
+    for forbidden in (
+        "CA-synthetic-replayed",
+        "+15550101001",
+        "+15550101002",
+        "+15550101003",
+        "+15550101004",
+    ):
+        assert forbidden not in serialized
 
 
 def test_elevenlabs_webhook_is_idempotent(client):

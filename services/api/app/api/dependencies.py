@@ -31,12 +31,14 @@ from services.api.app.integrations.tavily.cached import CachedTavilyVendorDiscov
 from services.api.app.integrations.tavily.live import TavilyHttpClient
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.orchestration.fixtures import DemoFixtures
+from services.api.app.orchestration.intake_sessions import IntakeSessionService
 from services.api.app.orchestration.live_intelligence import LiveIntelligenceProvider
 from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
 from services.api.app.orchestration.role_play import FixtureRolePlayVendorRoster
 from services.api.app.orchestration.service import VeraMoveService, utc_now
 from services.api.app.repositories.base import (
     CallRepository,
+    IntakeSessionRepository,
     JobRepository,
     QuoteRepository,
 )
@@ -54,6 +56,7 @@ class ApplicationRepository(
     JobRepository,
     CallRepository,
     QuoteRepository,
+    IntakeSessionRepository,
     Protocol,
 ):
     """One repository implementation used across the aggregate transaction boundary."""
@@ -73,6 +76,25 @@ def get_service(request: Request) -> VeraMoveService:
     """Return the service composed from the same application settings snapshot."""
 
     return request.app.state.service
+
+
+def get_intake_session_service(request: Request) -> IntakeSessionService:
+    """Compose the safe intake correlation boundary from the app snapshot."""
+
+    settings: Settings = request.app.state.settings
+    config = settings.live_voice
+    if settings.app_mode == "live" and (
+        config.intake_agent_id is None or config.agent_config_version is None
+    ):
+        raise ProviderConfigurationError(
+            "Live intake requires ELEVENLABS_INTAKE_AGENT_ID and AGENT_CONFIG_VERSION"
+        )
+    return IntakeSessionService(
+        repository=request.app.state.repository,
+        expected_agent_id=config.intake_agent_id or "synthetic-mock-intake-agent",
+        agent_config_version=config.agent_config_version or "mock-v1",
+        clock=mock_now if settings.app_mode == "mock" else utc_now,
+    )
 
 
 def mock_now() -> datetime:
@@ -183,9 +205,7 @@ def build_service(
         webhooks=webhooks,
         fixtures=fixtures,
         vendor_roster=(
-            FixtureRolePlayVendorRoster(fixtures)
-            if settings.app_mode == "live"
-            else None
+            FixtureRolePlayVendorRoster(fixtures) if settings.app_mode == "live" else None
         ),
         recommendation_narrator=recommendation_narrator,
         clock=service_clock,

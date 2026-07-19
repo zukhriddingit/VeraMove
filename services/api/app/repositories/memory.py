@@ -18,6 +18,10 @@ from services.api.app.core.errors import (
     DuplicateResource,
     ResourceNotFound,
 )
+from services.api.app.orchestration.intake_sessions import (
+    IntakeSession,
+    validate_intake_session_update,
+)
 from services.api.app.orchestration.models import CallAttempt, JobEvent
 
 
@@ -28,6 +32,7 @@ class InMemoryRepository:
         self._jobs: dict[UUID, dict[str, Any]] = {}
         self._attempts: dict[UUID, dict[str, Any]] = {}
         self._events: dict[UUID, list[dict[str, Any]]] = {}
+        self._intake_sessions: dict[UUID, dict[str, Any]] = {}
         self._webhook_keys: set[str] = set()
         self._lock = RLock()
 
@@ -96,8 +101,7 @@ class InMemoryRepository:
                 (
                     deepcopy(item)
                     for item in self._attempts.values()
-                    if (item.get("reference") or {}).get("conversation_id")
-                    == conversation_id
+                    if (item.get("reference") or {}).get("conversation_id") == conversation_id
                 ),
                 None,
             )
@@ -143,9 +147,7 @@ class InMemoryRepository:
         with self._lock:
             payload = self._require_job(quote.job_id)
             record = JobRecord.model_validate(deepcopy(payload))
-            record.quotes = [
-                item for item in record.quotes if item.quote_id != quote.quote_id
-            ]
+            record.quotes = [item for item in record.quotes if item.quote_id != quote.quote_id]
             record.quotes.append(quote)
             self._jobs[quote.job_id] = deepcopy(record.model_dump(mode="json"))
         return self._copy_quote(quote)
@@ -172,10 +174,7 @@ class InMemoryRepository:
             and quote.verified_data
             and quote.transcript_evidence
             and not quote.manually_fabricated
-            and (
-                quote.comparable_total is not None
-                or quote.negotiated_total is not None
-            )
+            and (quote.comparable_total is not None or quote.negotiated_total is not None)
         ]
         selected = min(
             eligible,
@@ -188,11 +187,100 @@ class InMemoryRepository:
         )
         return self._copy_quote(selected) if selected is not None else None
 
+    def create_intake_session(self, session: IntakeSession) -> IntakeSession:
+        candidate = self._copy_intake_session(session)
+        with self._lock:
+            if candidate.provider_call_key_hash is not None:
+                replay = next(
+                    (
+                        IntakeSession.model_validate(deepcopy(payload))
+                        for payload in self._intake_sessions.values()
+                        if payload.get("provider_call_key_hash") == candidate.provider_call_key_hash
+                    ),
+                    None,
+                )
+                if replay is not None:
+                    return replay
+            if candidate.intake_session_id in self._intake_sessions:
+                raise DuplicateResource(
+                    f"Intake session {candidate.intake_session_id} already exists"
+                )
+            if any(
+                payload["job_id"] == str(candidate.job_id)
+                for payload in self._intake_sessions.values()
+            ):
+                raise DuplicateResource(
+                    f"An intake session already exists for job {candidate.job_id}"
+                )
+            if candidate.job_id in self._jobs:
+                raise DomainConflict("Intake session must exist before its canonical JobRecord")
+            self._intake_sessions[candidate.intake_session_id] = deepcopy(
+                candidate.model_dump(mode="json")
+            )
+        return self._copy_intake_session(candidate)
+
+    def get_intake_session(self, session_id: UUID) -> IntakeSession | None:
+        with self._lock:
+            payload = deepcopy(self._intake_sessions.get(session_id))
+        return IntakeSession.model_validate(payload) if payload is not None else None
+
+    def find_intake_session_by_provider_call_key_hash(
+        self,
+        provider_call_key_hash: str,
+    ) -> IntakeSession | None:
+        with self._lock:
+            payload = next(
+                (
+                    deepcopy(item)
+                    for item in self._intake_sessions.values()
+                    if item.get("provider_call_key_hash") == provider_call_key_hash
+                ),
+                None,
+            )
+        return IntakeSession.model_validate(payload) if payload is not None else None
+
+    def find_intake_session_by_conversation_id(
+        self,
+        conversation_id: str,
+    ) -> IntakeSession | None:
+        with self._lock:
+            payload = next(
+                (
+                    deepcopy(item)
+                    for item in self._intake_sessions.values()
+                    if item.get("conversation_id") == conversation_id
+                ),
+                None,
+            )
+        return IntakeSession.model_validate(payload) if payload is not None else None
+
+    def save_intake_session(self, session: IntakeSession) -> IntakeSession:
+        candidate = self._copy_intake_session(session)
+        with self._lock:
+            payload = self._intake_sessions.get(candidate.intake_session_id)
+            if payload is None:
+                raise ResourceNotFound(
+                    f"Intake session {candidate.intake_session_id} was not found"
+                )
+            current = IntakeSession.model_validate(deepcopy(payload))
+            validate_intake_session_update(current, candidate)
+            if candidate.conversation_id is not None and any(
+                item.get("conversation_id") == candidate.conversation_id
+                and session_id != candidate.intake_session_id
+                for session_id, item in self._intake_sessions.items()
+            ):
+                raise DuplicateResource("An intake session already owns this conversation")
+            self._intake_sessions[candidate.intake_session_id] = deepcopy(
+                candidate.model_dump(mode="json")
+            )
+        return self._copy_intake_session(candidate)
+
     def reset(self) -> None:
         with self._lock:
             self._jobs.clear()
             self._attempts.clear()
             self._events.clear()
+            self._intake_sessions.clear()
             self._webhook_keys.clear()
 
     def _require_job(self, job_id: UUID) -> dict[str, Any]:
@@ -220,3 +308,7 @@ class InMemoryRepository:
     @staticmethod
     def _copy_quote(quote: QuoteV1) -> QuoteV1:
         return QuoteV1.model_validate(deepcopy(quote.model_dump(mode="json")))
+
+    @staticmethod
+    def _copy_intake_session(session: IntakeSession) -> IntakeSession:
+        return IntakeSession.model_validate(deepcopy(session.model_dump(mode="json")))

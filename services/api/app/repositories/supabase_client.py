@@ -14,6 +14,7 @@ from services.api.app.core.errors import ProviderRequestError
 _ALLOWED_TABLES = frozenset(
     {
         "jobs",
+        "intake_sessions",
         "vendors",
         "call_attempts",
         "calls",

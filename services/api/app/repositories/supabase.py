@@ -22,6 +22,10 @@ from services.api.app.core.errors import (
     DuplicateResource,
     ResourceNotFound,
 )
+from services.api.app.orchestration.intake_sessions import (
+    IntakeSession,
+    validate_intake_session_update,
+)
 from services.api.app.orchestration.models import CallAttempt, JobEvent
 from services.api.app.repositories.supabase_client import (
     SupabaseDuplicate,
@@ -54,9 +58,7 @@ class SupabaseRepository:
         try:
             self._client.insert("jobs", self._job_row(candidate))
         except SupabaseDuplicate as exc:
-            raise DuplicateResource(
-                f"Job {candidate.job_spec.job_id} already exists"
-            ) from exc
+            raise DuplicateResource(f"Job {candidate.job_spec.job_id} already exists") from exc
         if candidate.recommendation is not None:
             self._persist_recommendation(candidate)
         return self._copy_job(candidate)
@@ -71,16 +73,11 @@ class SupabaseRepository:
         candidate = self._copy_job(record)
         current = self.get(candidate.job_spec.job_id)
         if current is None:
-            raise ResourceNotFound(
-                f"Job {candidate.job_spec.job_id} was not found"
-            )
+            raise ResourceNotFound(f"Job {candidate.job_spec.job_id} was not found")
         if current.job_spec.confirmed and (
-            current.job_spec.model_dump(mode="json")
-            != candidate.job_spec.model_dump(mode="json")
+            current.job_spec.model_dump(mode="json") != candidate.job_spec.model_dump(mode="json")
         ):
-            raise DomainConflict(
-                "Confirmed JobSpec version is locked and cannot be changed"
-            )
+            raise DomainConflict("Confirmed JobSpec version is locked and cannot be changed")
         self._client.upsert(
             "jobs",
             self._job_row(candidate),
@@ -96,17 +93,13 @@ class SupabaseRepository:
         try:
             self._client.insert("call_attempts", self._attempt_row(candidate))
         except SupabaseDuplicate as exc:
-            raise DuplicateResource(
-                f"Call attempt {candidate.call_id} already exists"
-            ) from exc
+            raise DuplicateResource(f"Call attempt {candidate.call_id} already exists") from exc
         return self._copy_attempt(candidate)
 
     def save_attempt(self, attempt: CallAttempt) -> CallAttempt:
         candidate = self._copy_attempt(attempt)
         if self.get_attempt(candidate.call_id) is None:
-            raise ResourceNotFound(
-                f"Call attempt {candidate.call_id} was not found"
-            )
+            raise ResourceNotFound(f"Call attempt {candidate.call_id} was not found")
         self._persist_vendor(candidate.vendor)
         self._client.upsert(
             "call_attempts",
@@ -129,10 +122,7 @@ class SupabaseRepository:
             "call_attempts",
             {"job_id": f"eq.{job_id}"},
         )
-        return [
-            CallAttempt.model_validate(deepcopy(row["payload"]))
-            for row in rows
-        ]
+        return [CallAttempt.model_validate(deepcopy(row["payload"])) for row in rows]
 
     def find_attempt_by_conversation_id(
         self,
@@ -161,9 +151,7 @@ class SupabaseRepository:
             self._call_row(candidate, external_call_id),
             on_conflict="id",
         )
-        record.calls = [
-            item for item in record.calls if item.call_id != candidate.call_id
-        ]
+        record.calls = [item for item in record.calls if item.call_id != candidate.call_id]
         record.calls.append(candidate)
         self.save(record)
         return self._copy_call(candidate)
@@ -176,10 +164,7 @@ class SupabaseRepository:
                 "record_type": "eq.canonical",
             },
         )
-        return [
-            CallRecord.model_validate(deepcopy(row["payload"]))
-            for row in rows
-        ]
+        return [CallRecord.model_validate(deepcopy(row["payload"])) for row in rows]
 
     def reserve_webhook(self, idempotency_key: str) -> bool:
         webhook_id = uuid5(NAMESPACE_URL, f"webhook:{idempotency_key}")
@@ -212,17 +197,13 @@ class SupabaseRepository:
                     "source": "veramove",
                     "event_type": safe_event.event_type,
                     "idempotency_key": f"job-event:{safe_event.event_id}",
-                    "data_classification": self._job_classification(
-                        safe_event.job_id
-                    ),
+                    "data_classification": self._job_classification(safe_event.job_id),
                     "payload": safe_event.model_dump(mode="json"),
                     "created_at": safe_event.occurred_at.isoformat(),
                 },
             )
         except SupabaseDuplicate as exc:
-            raise DuplicateResource(
-                f"Job event {safe_event.event_id} already exists"
-            ) from exc
+            raise DuplicateResource(f"Job event {safe_event.event_id} already exists") from exc
         return self._copy_event(safe_event)
 
     def list_events(self, job_id: UUID) -> list[JobEvent]:
@@ -233,10 +214,7 @@ class SupabaseRepository:
                 "source": "eq.veramove",
             },
         )
-        return [
-            JobEvent.model_validate(deepcopy(row["payload"]))
-            for row in rows
-        ]
+        return [JobEvent.model_validate(deepcopy(row["payload"])) for row in rows]
 
     def save_quote(self, quote: QuoteV1) -> QuoteV1:
         candidate = self._copy_quote(quote)
@@ -253,9 +231,7 @@ class SupabaseRepository:
                 self._evidence_row(candidate, evidence),
                 on_conflict="id",
             )
-        record.quotes = [
-            item for item in record.quotes if item.quote_id != candidate.quote_id
-        ]
+        record.quotes = [item for item in record.quotes if item.quote_id != candidate.quote_id]
         record.quotes.append(candidate)
         self.save(record)
         return self._copy_quote(candidate)
@@ -265,10 +241,7 @@ class SupabaseRepository:
             "quotes",
             {"job_id": f"eq.{job_id}"},
         )
-        return [
-            QuoteV1.model_validate(deepcopy(row["payload"]))
-            for row in rows
-        ]
+        return [QuoteV1.model_validate(deepcopy(row["payload"])) for row in rows]
 
     def get_verified_competing_quote(
         self,
@@ -285,10 +258,7 @@ class SupabaseRepository:
             and quote.verified_data
             and quote.transcript_evidence
             and not quote.manually_fabricated
-            and (
-                quote.comparable_total is not None
-                or quote.negotiated_total is not None
-            )
+            and (quote.comparable_total is not None or quote.negotiated_total is not None)
         ]
         selected = min(
             eligible,
@@ -300,6 +270,77 @@ class SupabaseRepository:
             default=None,
         )
         return self._copy_quote(selected) if selected is not None else None
+
+    def create_intake_session(self, session: IntakeSession) -> IntakeSession:
+        candidate = self._copy_intake_session(session)
+        if self.get(candidate.job_id) is not None:
+            raise DomainConflict("Intake session must exist before its canonical JobRecord")
+        try:
+            self._client.insert(
+                "intake_sessions",
+                self._intake_session_row(candidate),
+            )
+        except SupabaseDuplicate as exc:
+            if candidate.provider_call_key_hash is not None:
+                replay = self.find_intake_session_by_provider_call_key_hash(
+                    candidate.provider_call_key_hash
+                )
+                if replay is not None:
+                    return replay
+            raise DuplicateResource(
+                f"Intake session {candidate.intake_session_id} already exists"
+            ) from exc
+        return self._copy_intake_session(candidate)
+
+    def get_intake_session(self, session_id: UUID) -> IntakeSession | None:
+        rows = self._client.select_many(
+            "intake_sessions",
+            {"id": f"eq.{session_id}"},
+        )
+        if not rows:
+            return None
+        return self._intake_session_from_row(rows[0])
+
+    def find_intake_session_by_provider_call_key_hash(
+        self,
+        provider_call_key_hash: str,
+    ) -> IntakeSession | None:
+        rows = self._client.select_many(
+            "intake_sessions",
+            {"provider_call_key_hash": f"eq.{provider_call_key_hash}"},
+        )
+        if not rows:
+            return None
+        return self._intake_session_from_row(rows[0])
+
+    def find_intake_session_by_conversation_id(
+        self,
+        conversation_id: str,
+    ) -> IntakeSession | None:
+        rows = self._client.select_many(
+            "intake_sessions",
+            {"conversation_id": f"eq.{conversation_id}"},
+        )
+        if not rows:
+            return None
+        return self._intake_session_from_row(rows[0])
+
+    def save_intake_session(self, session: IntakeSession) -> IntakeSession:
+        candidate = self._copy_intake_session(session)
+        current = self.get_intake_session(candidate.intake_session_id)
+        if current is None:
+            raise ResourceNotFound(f"Intake session {candidate.intake_session_id} was not found")
+        validate_intake_session_update(current, candidate)
+        if candidate.conversation_id is not None:
+            owner = self.find_intake_session_by_conversation_id(candidate.conversation_id)
+            if owner is not None and owner.intake_session_id != candidate.intake_session_id:
+                raise DuplicateResource("An intake session already owns this conversation")
+        self._client.upsert(
+            "intake_sessions",
+            self._intake_session_row(candidate),
+            on_conflict="id",
+        )
+        return self._copy_intake_session(candidate)
 
     def reset(self) -> None:
         raise RuntimeError("SupabaseRepository reset is disabled")
@@ -330,9 +371,7 @@ class SupabaseRepository:
                 "id": str(vendor.vendor_id),
                 "slug": vendor.slug,
                 "data_classification": vendor.data_classification.value,
-                "provenance": [
-                    item.model_dump(mode="json") for item in vendor.provenance
-                ],
+                "provenance": [item.model_dump(mode="json") for item in vendor.provenance],
                 "payload": vendor.model_dump(mode="json"),
             },
             on_conflict="id",
@@ -359,9 +398,7 @@ class SupabaseRepository:
             "job_spec_version": job_spec.version,
             "state": record.state.value,
             "confirmed_at": (
-                job_spec.confirmed_at.isoformat()
-                if job_spec.confirmed_at is not None
-                else None
+                job_spec.confirmed_at.isoformat() if job_spec.confirmed_at is not None else None
             ),
             "locked_job_spec_version": job_spec.locked_version,
             "data_classification": job_spec.data_classification.value,
@@ -377,23 +414,35 @@ class SupabaseRepository:
             "job_id": str(attempt.job_id),
             "vendor_id": str(attempt.vendor.vendor_id),
             "conversation_id": (
-                attempt.reference.conversation_id
-                if attempt.reference is not None
-                else None
+                attempt.reference.conversation_id if attempt.reference is not None else None
             ),
             "external_call_id": (
-                attempt.reference.provider_call_id
-                if attempt.reference is not None
-                else None
+                attempt.reference.provider_call_id if attempt.reference is not None else None
             ),
             "idempotency_key": f"call:{attempt.call_id}",
             "status": attempt.status.value,
             "data_classification": attempt.vendor.data_classification.value,
             "payload": attempt.model_dump(mode="json"),
             "created_at": attempt.started_at.isoformat(),
-            "updated_at": (
-                attempt.completed_at or attempt.started_at
-            ).isoformat(),
+            "updated_at": (attempt.completed_at or attempt.started_at).isoformat(),
+        }
+
+    @staticmethod
+    def _intake_session_row(session: IntakeSession) -> dict[str, Any]:
+        return {
+            "id": str(session.intake_session_id),
+            "reserved_job_id": str(session.job_id),
+            "provider_call_key_hash": session.provider_call_key_hash,
+            "conversation_id": session.conversation_id,
+            "expected_agent_id": session.expected_agent_id,
+            "agent_config_version": session.agent_config_version,
+            "status": session.status.value,
+            "failure_code": session.failure_code,
+            "created_at": session.created_at.isoformat(),
+            "updated_at": session.updated_at.isoformat(),
+            "completed_at": (
+                session.completed_at.isoformat() if session.completed_at is not None else None
+            ),
         }
 
     @staticmethod
@@ -418,11 +467,7 @@ class SupabaseRepository:
 
     @staticmethod
     def _quote_row(quote: QuoteV1) -> dict[str, Any]:
-        call_id = (
-            quote.transcript_evidence[0].call_id
-            if quote.transcript_evidence
-            else None
-        )
+        call_id = quote.transcript_evidence[0].call_id if quote.transcript_evidence else None
         return {
             "id": str(quote.quote_id),
             "job_id": str(quote.job_id),
@@ -433,9 +478,7 @@ class SupabaseRepository:
             "verification_status": quote.verification_status.value,
             "provisional_payload": deepcopy(quote.provisional_data),
             "verified_payload": deepcopy(quote.verified_data),
-            "provenance": [
-                item.model_dump(mode="json") for item in quote.provenance
-            ],
+            "provenance": [item.model_dump(mode="json") for item in quote.provenance],
             "manually_fabricated": quote.manually_fabricated,
             "data_classification": quote.data_classification.value,
             "payload": quote.model_dump(mode="json"),
@@ -486,10 +529,7 @@ class SupabaseRepository:
             key: value
             for key, value in event.metadata.items()
             if key.lower() not in _SENSITIVE_EVENT_KEYS
-            and not (
-                isinstance(value, str)
-                and _PHONE_LIKE.search(value) is not None
-            )
+            and not (isinstance(value, str) and _PHONE_LIKE.search(value) is not None)
         }
         return event.model_copy(update={"metadata": metadata}, deep=True)
 
@@ -512,6 +552,28 @@ class SupabaseRepository:
     @staticmethod
     def _copy_quote(quote: QuoteV1) -> QuoteV1:
         return QuoteV1.model_validate(deepcopy(quote.model_dump(mode="json")))
+
+    @staticmethod
+    def _copy_intake_session(session: IntakeSession) -> IntakeSession:
+        return IntakeSession.model_validate(deepcopy(session.model_dump(mode="json")))
+
+    @staticmethod
+    def _intake_session_from_row(row: dict[str, Any]) -> IntakeSession:
+        return IntakeSession.model_validate(
+            {
+                "intake_session_id": row["id"],
+                "job_id": row["reserved_job_id"],
+                "provider_call_key_hash": row.get("provider_call_key_hash"),
+                "conversation_id": row.get("conversation_id"),
+                "expected_agent_id": row["expected_agent_id"],
+                "agent_config_version": row["agent_config_version"],
+                "status": row["status"],
+                "failure_code": row.get("failure_code"),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+                "completed_at": row.get("completed_at"),
+            }
+        )
 
 
 __all__ = ["SupabaseRepository"]

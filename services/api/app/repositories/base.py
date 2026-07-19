@@ -4,6 +4,7 @@ from typing import Protocol
 from uuid import UUID
 
 from services.api.app.contracts import CallRecord, JobRecord, QuoteV1
+from services.api.app.orchestration.intake_sessions import IntakeSession
 from services.api.app.orchestration.models import CallAttempt, JobEvent
 
 
@@ -53,3 +54,21 @@ class QuoteRepository(Protocol):
         target_vendor_id: UUID,
         job_spec_version: str,
     ) -> QuoteV1 | None: ...
+
+
+class IntakeSessionRepository(Protocol):
+    def create_intake_session(self, session: IntakeSession) -> IntakeSession: ...
+
+    def get_intake_session(self, session_id: UUID) -> IntakeSession | None: ...
+
+    def find_intake_session_by_provider_call_key_hash(
+        self,
+        provider_call_key_hash: str,
+    ) -> IntakeSession | None: ...
+
+    def find_intake_session_by_conversation_id(
+        self,
+        conversation_id: str,
+    ) -> IntakeSession | None: ...
+
+    def save_intake_session(self, session: IntakeSession) -> IntakeSession: ...

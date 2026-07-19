@@ -1,10 +1,12 @@
 """Route-local models for provider-facing and runtime API surfaces."""
 
 from typing import Literal, TypeAlias
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from services.api.app.contracts import ElevenLabsWebhookEvent
+from services.api.app.contracts import ElevenLabsWebhookEvent, JobSpecV1
+from services.api.app.orchestration.intake_sessions import IntakeSessionStatus
 from services.api.app.orchestration.models import JobEvent
 
 
@@ -32,6 +34,58 @@ class JobEventsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     events: list[JobEvent]
+
+
+class IntakeSessionResponse(BaseModel):
+    """Expose safe intake correlation and the result only after completion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    intake_session_id: UUID
+    job_id: UUID
+    status: IntakeSessionStatus
+    conversation_id: str | None = None
+    job_spec: JobSpecV1 | None = None
+
+
+class ElevenLabsConversationInitiationRequest(BaseModel):
+    """Provider pre-call fields; phone metadata is accepted then discarded."""
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    agent_id: str = Field(min_length=1, max_length=200)
+    call_sid: str = Field(min_length=1, max_length=200)
+    caller_id: str | None = Field(
+        default=None,
+        max_length=80,
+        exclude=True,
+        repr=False,
+    )
+    called_number: str | None = Field(
+        default=None,
+        max_length=80,
+        exclude=True,
+        repr=False,
+    )
+
+
+class IntakeDynamicVariables(BaseModel):
+    """The complete custom-variable set defined by the Intake agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: UUID
+    intake_session_id: UUID
+    agent_config_version: str = Field(min_length=1, max_length=80)
+
+
+class ElevenLabsConversationInitiationResponse(BaseModel):
+    """Exact ElevenLabs response envelope for inbound personalization."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["conversation_initiation_client_data"] = "conversation_initiation_client_data"
+    dynamic_variables: IntakeDynamicVariables
 
 
 class PostCallWebhookData(BaseModel):

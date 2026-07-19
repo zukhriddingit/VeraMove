@@ -25,6 +25,10 @@ from services.api.app.core.errors import (
     ProviderRequestError,
 )
 from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
+from services.api.app.orchestration.intake_sessions import (
+    IntakeSession,
+    IntakeSessionStatus,
+)
 from services.api.app.orchestration.models import (
     CallAttempt,
     CallKind,
@@ -52,6 +56,7 @@ class FakeSupabaseTableClient:
                 "transcript_evidence",
                 "recommendations",
                 "event_log",
+                "intake_sessions",
             )
         }
         self.operations: list[tuple[str, str, dict[str, Any]]] = []
@@ -119,14 +124,16 @@ class FakeSupabaseTableClient:
                 "idempotency_key",
             ),
             "calls": ("external_call_id", "idempotency_key"),
+            "intake_sessions": (
+                "reserved_job_id",
+                "provider_call_key_hash",
+                "conversation_id",
+            ),
             "vendors": ("slug",),
         }.get(table, ())
         return any(
             row.get(column) is not None
-            and any(
-                existing.get(column) == row[column]
-                for existing in self.tables[table].values()
-            )
+            and any(existing.get(column) == row[column] for existing in self.tables[table].values())
             for column in unique_columns
         )
 
@@ -209,9 +216,7 @@ def test_supabase_job_round_trip_and_confirmed_lock(
     repository.save(confirmed)
     mutated = confirmed.model_copy(
         update={
-            "job_spec": confirmed.job_spec.model_copy(
-                update={"insurance_preference": "Changed"}
-            )
+            "job_spec": confirmed.job_spec.model_copy(update={"insurance_preference": "Changed"})
         },
         deep=True,
     )
@@ -239,9 +244,7 @@ def test_supabase_attempt_round_trip_and_provider_lookup(
     assert created is not attempt
     assert repository.get_attempt(attempt.call_id) == attempt
     assert repository.list_attempts(attempt.job_id) == [attempt]
-    assert repository.find_attempt_by_conversation_id(
-        "synthetic-conversation"
-    ) == attempt
+    assert repository.find_attempt_by_conversation_id("synthetic-conversation") == attempt
     row = table_client.tables["call_attempts"][str(attempt.call_id)]
     assert row["conversation_id"] == "synthetic-conversation"
     assert row["external_call_id"] == "synthetic-provider-call"
@@ -293,9 +296,7 @@ def test_supabase_canonical_call_and_quote_upsert_exact_aggregate(
     assert repository.save_call(call) == call
     assert repository.get_attempt(attempt.call_id) == attempt
     assert repository.list_attempts(attempt.job_id) == [attempt]
-    assert repository.find_attempt_by_conversation_id(
-        "synthetic-conversation"
-    ) == attempt
+    assert repository.find_attempt_by_conversation_id("synthetic-conversation") == attempt
     assert repository.save_quote(quote) == quote
     assert repository.list_calls(attempt.job_id) == [call]
     assert repository.list_quotes(attempt.job_id) == [quote]
@@ -311,9 +312,7 @@ def test_supabase_canonical_call_and_quote_upsert_exact_aggregate(
     quote_row = table_client.tables["quotes"][str(quote.quote_id)]
     assert quote_row["manually_fabricated"] is False
     assert quote_row["verified_payload"] == quote.verified_data
-    assert len(table_client.tables["transcript_evidence"]) == len(
-        quote.transcript_evidence
-    )
+    assert len(table_client.tables["transcript_evidence"]) == len(quote.transcript_evidence)
 
 
 def test_supabase_round_trips_discovered_vendor_role_play_outcome(
@@ -328,9 +327,7 @@ def test_supabase_round_trips_discovered_vendor_role_play_outcome(
             "vendor_id": uuid4(),
             "name": "Example Moving Cooperative",
             "slug": "example-moving-cooperative",
-            "behavior_summary": (
-                "Role-play discovery candidate; no real behavior is inferred."
-            ),
+            "behavior_summary": ("Role-play discovery candidate; no real behavior is inferred."),
             "contact_label": "Role-play channel; no contact details stored.",
             "data_classification": DataClassification.ROLE_PLAY,
             "provenance": [
@@ -373,12 +370,14 @@ def test_supabase_round_trips_discovered_vendor_role_play_outcome(
     assert stored is not None
     assert stored.calls == [call]
     assert stored.quotes == [quote]
-    assert table_client.tables["vendors"][str(vendor.vendor_id)][
-        "data_classification"
-    ] == DataClassification.ROLE_PLAY.value
-    assert table_client.tables["quotes"][str(quote.quote_id)][
-        "data_classification"
-    ] == DataClassification.ROLE_PLAY.value
+    assert (
+        table_client.tables["vendors"][str(vendor.vendor_id)]["data_classification"]
+        == DataClassification.ROLE_PLAY.value
+    )
+    assert (
+        table_client.tables["quotes"][str(quote.quote_id)]["data_classification"]
+        == DataClassification.ROLE_PLAY.value
+    )
     assert all(
         row["data_classification"] == DataClassification.ROLE_PLAY.value
         for row in table_client.tables["transcript_evidence"].values()
@@ -414,6 +413,110 @@ def test_supabase_save_persists_recommendation(
 def test_supabase_webhook_reservation_is_atomic(repository):
     assert repository.reserve_webhook("synthetic-event") is True
     assert repository.reserve_webhook("synthetic-event") is False
+
+
+def test_supabase_intake_session_is_idempotent_and_stores_only_safe_correlation(
+    repository,
+    table_client,
+):
+    first = IntakeSession(
+        intake_session_id=uuid4(),
+        job_id=uuid4(),
+        provider_call_key_hash="a" * 64,
+        expected_agent_id="synthetic-intake-agent",
+        agent_config_version="2026-07-19.1",
+        status=IntakeSessionStatus.PENDING,
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+    created = repository.create_intake_session(first)
+    assert created == first
+    assert created is not first
+    assert repository.get_intake_session(first.intake_session_id) == first
+    assert repository.find_intake_session_by_provider_call_key_hash("a" * 64) == first
+
+    replay_candidate = first.model_copy(
+        update={"intake_session_id": uuid4(), "job_id": uuid4()},
+        deep=True,
+    )
+    assert repository.create_intake_session(replay_candidate) == first
+
+    different = first.model_copy(
+        update={
+            "intake_session_id": uuid4(),
+            "job_id": uuid4(),
+            "provider_call_key_hash": "b" * 64,
+        },
+        deep=True,
+    )
+    assert repository.create_intake_session(different) == different
+
+    in_progress = first.model_copy(
+        update={
+            "status": IntakeSessionStatus.IN_PROGRESS,
+            "conversation_id": "synthetic-conversation",
+        },
+        deep=True,
+    )
+    assert repository.save_intake_session(in_progress) == in_progress
+    assert (
+        repository.find_intake_session_by_conversation_id("synthetic-conversation") == in_progress
+    )
+
+    row = table_client.tables["intake_sessions"][str(first.intake_session_id)]
+    assert set(row) == {
+        "id",
+        "reserved_job_id",
+        "provider_call_key_hash",
+        "conversation_id",
+        "expected_agent_id",
+        "agent_config_version",
+        "status",
+        "failure_code",
+        "created_at",
+        "updated_at",
+        "completed_at",
+    }
+    assert row["reserved_job_id"] == str(first.job_id)
+    assert row["provider_call_key_hash"] == "a" * 64
+    assert row["conversation_id"] == "synthetic-conversation"
+    serialized = repr(table_client.tables["intake_sessions"])
+    for forbidden in (
+        "CA-synthetic-provider-call",
+        "+15550102001",
+        "+15550102002",
+        "caller_id",
+        "called_number",
+    ):
+        assert forbidden not in serialized
+
+
+def test_supabase_intake_session_rejects_identity_and_terminal_state_mutation(
+    repository,
+):
+    pending = IntakeSession(
+        intake_session_id=uuid4(),
+        job_id=uuid4(),
+        expected_agent_id="synthetic-intake-agent",
+        agent_config_version="2026-07-19.1",
+        status=IntakeSessionStatus.PENDING,
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+    repository.create_intake_session(pending)
+
+    with pytest.raises(DomainConflict, match="identity"):
+        repository.save_intake_session(pending.model_copy(update={"job_id": uuid4()}, deep=True))
+
+    failed = pending.model_copy(
+        update={"status": IntakeSessionStatus.FAILED},
+        deep=True,
+    )
+    repository.save_intake_session(failed)
+    with pytest.raises(DomainConflict, match="terminal"):
+        repository.save_intake_session(
+            failed.model_copy(update={"status": IntakeSessionStatus.PENDING}, deep=True)
+        )
 
 
 def test_supabase_events_are_safe_and_exclude_raw_transcript_fields(
@@ -467,13 +570,9 @@ def test_verified_competitor_enforces_every_safety_predicate(
     unsafe_variants = (
         quotes[0].model_copy(update={"transcript_evidence": []}),
         quotes[0].model_copy(update={"verified_data": {}}),
-        quotes[0].model_copy(
-            update={"verification_status": VerificationStatus.PROVISIONAL}
-        ),
+        quotes[0].model_copy(update={"verification_status": VerificationStatus.PROVISIONAL}),
         quotes[0].model_copy(update={"manually_fabricated": True}),
-        quotes[0].model_copy(
-            update={"comparable_total": None, "negotiated_total": None}
-        ),
+        quotes[0].model_copy(update={"comparable_total": None, "negotiated_total": None}),
     )
     for unsafe in unsafe_variants:
         monkeypatch.setattr(
@@ -481,23 +580,32 @@ def test_verified_competitor_enforces_every_safety_predicate(
             "list_quotes",
             lambda _job_id, quote=unsafe: [quote],
         )
-        assert repository.get_verified_competing_quote(
-            confirmed_record.job_spec.job_id,
-            target_vendor_id=quotes[2].vendor.vendor_id,
-            job_spec_version="1.0",
-        ) is None
+        assert (
+            repository.get_verified_competing_quote(
+                confirmed_record.job_spec.job_id,
+                target_vendor_id=quotes[2].vendor.vendor_id,
+                job_spec_version="1.0",
+            )
+            is None
+        )
 
     monkeypatch.setattr(repository, "list_quotes", lambda _job_id: [quotes[0]])
-    assert repository.get_verified_competing_quote(
-        confirmed_record.job_spec.job_id,
-        target_vendor_id=quotes[0].vendor.vendor_id,
-        job_spec_version="1.0",
-    ) is None
-    assert repository.get_verified_competing_quote(
-        confirmed_record.job_spec.job_id,
-        target_vendor_id=quotes[2].vendor.vendor_id,
-        job_spec_version="unsupported-version",
-    ) is None
+    assert (
+        repository.get_verified_competing_quote(
+            confirmed_record.job_spec.job_id,
+            target_vendor_id=quotes[0].vendor.vendor_id,
+            job_spec_version="1.0",
+        )
+        is None
+    )
+    assert (
+        repository.get_verified_competing_quote(
+            confirmed_record.job_spec.job_id,
+            target_vendor_id=quotes[2].vendor.vendor_id,
+            job_spec_version="unsupported-version",
+        )
+        is None
+    )
 
 
 def test_supabase_transport_failure_never_falls_back(
