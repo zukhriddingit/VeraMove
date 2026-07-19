@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: veramove-api-demo-zukhriddingit
+    runtime: python
+    plan: free
+    buildCommand: pip install -r services/api/requirements.txt
+    startCommand: uvicorn services.api.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: APP_MODE
+        value: mock
+      - key: LIVE_CALLS_ENABLED
+        value: "false"
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_QUOTE_AGENT_ID
+        sync: false
+      - key: ELEVENLABS_NEGOTIATOR_AGENT_ID
+        sync: false
+      - key: ELEVENLABS_PHONE_NUMBER_ID
+        sync: false
+      - key: ELEVENLABS_WEBHOOK_SECRET
+        sync: false
+      - key: LIVE_TEST_TO_NUMBER
+        sync: false
+      - key: CORS_ALLOW_ORIGINS
+        sync: false

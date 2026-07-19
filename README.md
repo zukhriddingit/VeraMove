@@ -92,6 +92,7 @@ Copy `.env.example` only if you want to override safe defaults.
 | `API_HOST` | `127.0.0.1` | Documented API bind host |
 | `API_PORT` | `8000` | Documented API port |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Browser API base URL |
+| `CORS_ALLOW_ORIGINS` | local Vite origins | Comma-separated exact browser origins allowed to call the API |
 | `LIVE_CALLS_ENABLED` | `false` | Independent switch required before a controlled live call |
 | `ELEVENLABS_*` | empty | Live agent, phone-number, webhook, and API configuration |
 | `LIVE_TEST_TO_NUMBER` | empty | Externally supplied, opted-in live test destination |
@@ -101,6 +102,25 @@ Copy `.env.example` only if you want to override safe defaults.
 OpenAI, Tavily, and Supabase credential names remain reserved for unwired adapters. ElevenLabs
 values are read only by the controlled live voice path and are validated when a call is initiated;
 startup itself never dials. Never commit a populated `.env` file.
+
+## Render demo deployment
+
+The repository includes `render.yaml` for one demo API service. Render installs
+`services/api/requirements.txt` and starts the API with:
+
+```bash
+uvicorn services.api.app.main:app --host 0.0.0.0 --port $PORT
+```
+
+The Blueprint keeps `APP_MODE=mock` and `LIVE_CALLS_ENABLED=false` until a reviewer explicitly
+enables the controlled live path. Enter all `ELEVENLABS_*` values, `LIVE_TEST_TO_NUMBER`, and the
+exact deployed frontend origin for `CORS_ALLOW_ORIGINS` only in Render's environment controls.
+Never place those values in `render.yaml`, `.env.example`, repository files, or deployment logs.
+
+After deployment, use `https://<service-host>/api/webhooks/elevenlabs` as the ElevenLabs post-call
+webhook URL and copy its generated HMAC secret directly into Render. The service must remain at one
+Uvicorn worker while it uses the in-memory repository. Jobs and call attempts disappear whenever
+Render restarts or redeploys the service; Supabase persistence is follow-up work.
 
 ## Mock mode
 
