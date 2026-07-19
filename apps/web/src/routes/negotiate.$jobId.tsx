@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCalls, useEvents, useJob, useNegotiate } from "@/lib/api/hooks";
-import { isDemoMode } from "@/lib/api";
-import { setRuntimeMode } from "@/api/client";
+import { setRuntimeMode, useRuntimeMode } from "@/api/client";
 import { jobActions } from "@/lib/api/actions";
 import { ErrorState, LoadingState } from "@/components/veramove/States";
 import { NegotiationPreflight } from "@/components/veramove/NegotiationPreflight";
@@ -17,6 +16,7 @@ import {
   Handshake,
   PhoneCall,
 } from "lucide-react";
+import { useEffect } from "react";
 
 export const Route = createFileRoute("/negotiate/$jobId")({
   head: () => ({
@@ -34,7 +34,7 @@ export const Route = createFileRoute("/negotiate/$jobId")({
 
 function NegotiatePage() {
   const { jobId } = Route.useParams();
-  const demo = isDemoMode;
+  const demo = useRuntimeMode() === "demo";
 
   const jobQ = useJob(jobId);
   const job = jobQ.data;
@@ -46,6 +46,10 @@ function NegotiatePage() {
 
   const callsQ = useCalls(jobId);
   const eventsQ = useEvents(jobId, { poll: isNegotiating });
+
+  useEffect(() => {
+    if (status === "completed") void callsQ.refetch();
+  }, [status, callsQ.refetch]);
 
   const negotiate = useNegotiate();
 
@@ -74,7 +78,7 @@ function NegotiatePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Header job={job} />
+      <Header job={job} demo={demo} />
 
       {/* State-driven body */}
       {status === "confirmed" && (
@@ -229,13 +233,19 @@ function NegotiatePage() {
   );
 }
 
-function Header({ job }: { job: NonNullable<ReturnType<typeof useJob>["data"]> }) {
+function Header({
+  job,
+  demo,
+}: {
+  job: NonNullable<ReturnType<typeof useJob>["data"]>;
+  demo: boolean;
+}) {
   return (
     <header className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill tone="info">JobSpec v{job.version} locked</StatusPill>
         <StatusPill tone="neutral">Status: {job.status.replace("_", " ")}</StatusPill>
-        {isDemoMode ? <StatusPill tone="info">Role-play</StatusPill> : null}
+        {demo ? <StatusPill tone="info">Role-play</StatusPill> : null}
       </div>
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Negotiate</h1>

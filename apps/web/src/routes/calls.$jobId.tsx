@@ -8,7 +8,7 @@ import {
   useVendorsDiscovery,
 } from "@/lib/api/hooks";
 import { jobActions } from "@/lib/api/actions";
-import { isDemoMode } from "@/lib/api";
+import { useRuntimeMode } from "@/api/client";
 import { VendorCallCard } from "@/components/veramove/VendorCallCard";
 import { QuoteComparison } from "@/components/veramove/QuoteComparison";
 import { CallsRequirementsChecklist } from "@/components/veramove/CallsRequirementsChecklist";
@@ -45,6 +45,7 @@ const ACTIVE_STATES = new Set(["confirmed", "calling", "quotes_ready"] as const)
 function CallsPage() {
   const { jobId } = Route.useParams();
   const navigate = useNavigate();
+  const isDemoMode = useRuntimeMode() === "demo";
 
   const jobQ = useJob(jobId, { poll: false });
   const job = jobQ.data;

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, isDemoMode } from "@/lib/api";
+import { api } from "@/lib/api";
+import { useRuntimeMode } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { Loader2, CheckCircle2, AlertTriangle, WifiOff, RotateCcw, MinusCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ export type HealthState =
  * offline.
  */
 export function HealthIndicator({ onUseDemo }: { onUseDemo?: () => void }) {
+  const isDemoMode = useRuntimeMode() === "demo";
   const [firstAttemptAt] = useState(() => Date.now());
   const q = useQuery({
     queryKey: ["health"],

@@ -40,10 +40,11 @@ function readEnvMode(): RuntimeMode {
   return (env?.VITE_DEMO_MODE ?? "").toLowerCase() === "true" ? "demo" : "live";
 }
 
-export const runtimeMode: RuntimeMode = readStoredMode() ?? readEnvMode();
-export const isDemoMode = runtimeMode === "demo";
-
 const listeners = new Set<() => void>();
+
+export function getRuntimeMode(): RuntimeMode {
+  return readStoredMode() ?? readEnvMode();
+}
 
 export function useRuntimeMode(): RuntimeMode {
   return useSyncExternalStore(
@@ -51,8 +52,8 @@ export function useRuntimeMode(): RuntimeMode {
       listeners.add(callback);
       return () => listeners.delete(callback);
     },
-    () => runtimeMode,
-    () => runtimeMode,
+    getRuntimeMode,
+    readEnvMode,
   );
 }
 

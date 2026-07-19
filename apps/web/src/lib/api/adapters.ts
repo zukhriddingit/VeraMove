@@ -38,14 +38,46 @@ function missingRequiredFields(spec: JobSpecV1): string[] {
   if (spec.date_flexible === null || spec.date_flexible === undefined) {
     missing.push("move.flexibilityDays");
   }
-  if (spec.bedroom_count === null || spec.bedroom_count === undefined) missing.push("bedrooms");
+  if (spec.bedroom_count === null || spec.bedroom_count === undefined) missing.push("homeType");
   if (!spec.insurance_preference) missing.push("services.insuranceTier");
   if (!spec.inventory?.length) missing.push("inventory");
   if (!spec.origin.address_summary || !spec.destination.address_summary) missing.push("move.route");
+  if (!spec.origin.dwelling_type || !spec.destination.dwelling_type) missing.push("homeType");
+  if (
+    spec.origin.floors === null ||
+    spec.origin.floors === undefined ||
+    spec.origin.stairs === null ||
+    spec.origin.stairs === undefined ||
+    spec.origin.elevator_access === null ||
+    spec.origin.elevator_access === undefined
+  ) {
+    missing.push("access.origin");
+  }
+  if (
+    spec.destination.floors === null ||
+    spec.destination.floors === undefined ||
+    spec.destination.stairs === null ||
+    spec.destination.stairs === undefined ||
+    spec.destination.elevator_access === null ||
+    spec.destination.elevator_access === undefined ||
+    spec.destination.parking_distance_feet === null ||
+    spec.destination.parking_distance_feet === undefined
+  ) {
+    missing.push("access.destination");
+  }
   if (spec.origin.parking_distance_feet === null || spec.origin.parking_distance_feet === undefined) {
     missing.push("access.longCarryFt");
   }
-  return missing;
+  if (spec.services?.packing === null || spec.services?.packing === undefined) {
+    missing.push("services.packing");
+  }
+  if (spec.services?.disassembly === null || spec.services?.disassembly === undefined) {
+    missing.push("extras.disassembly");
+  }
+  if (spec.services?.storage === null || spec.services?.storage === undefined) {
+    missing.push("extras.storage");
+  }
+  return [...new Set(missing)];
 }
 
 export function toJobView(record: JobRecord): JobView {

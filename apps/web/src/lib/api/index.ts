@@ -1,9 +1,15 @@
-import { isDemoMode } from "@/api/client";
+import { getRuntimeMode } from "@/api/client";
 import * as live from "./endpoints";
 import * as demo from "./demo/adapter";
 
-export const api = isDemoMode ? { ...live, ...demo } : live;
+const demoApi = { ...live, ...demo };
 
-export { isDemoMode };
+export const api = new Proxy(demoApi, {
+  get(_target, property) {
+    const adapter = getRuntimeMode() === "demo" ? demoApi : live;
+    return Reflect.get(adapter, property);
+  },
+});
+
 export * from "./types";
 export { DEMO_JOB_ID } from "./demo/fixtures";

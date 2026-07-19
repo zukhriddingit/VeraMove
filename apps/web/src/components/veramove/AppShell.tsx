@@ -2,7 +2,7 @@ import { Link, useLocation, useRouter } from "@tanstack/react-router";
 import { ShieldCheck, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { isDemoMode } from "@/lib/api";
+import { useRuntimeMode } from "@/api/client";
 import { RuntimeModeBadge } from "./RuntimeModeBadge";
 import { HealthIndicator } from "./HealthIndicator";
 import { JourneyStepper } from "./JourneyStepper";
@@ -13,6 +13,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
   const { pathname } = useLocation();
   const onLanding = pathname === "/";
+  const isDemoMode = useRuntimeMode() === "demo";
 
   const resetDemo = () => {
     qc.clear();

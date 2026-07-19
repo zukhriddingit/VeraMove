@@ -5,8 +5,7 @@ import { JobSpecSummary } from "@/components/veramove/JobSpecSummary";
 import { MissingFieldAlert } from "@/components/veramove/MissingFieldAlert";
 import { ErrorState, LoadingState } from "@/components/veramove/States";
 import { useConfirmJob, useJob, useUpdateJob } from "@/lib/api/hooks";
-import { runtimeMode } from "@/api/client";
-import { ApiError } from "@/api/client";
+import { ApiError, useRuntimeMode } from "@/api/client";
 import type { JobView, JobViewState } from "@/lib/api/types";
 import { AlertTriangle, ArrowRight, Lock, PhoneCall, RefreshCcw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -46,6 +45,7 @@ const PAST_CONFIRM_STATES = new Set<JobViewState>([
 function ConfirmPage() {
   const { jobId } = Route.useParams();
   const navigate = useNavigate();
+  const runtimeMode = useRuntimeMode();
   const jobQ = useJob(jobId);
   const update = useUpdateJob();
   const confirm = useConfirmJob();

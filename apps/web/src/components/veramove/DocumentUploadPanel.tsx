@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { StatusPill } from "./StatusPill";
 import { useEffect, useRef, useState } from "react";
 import { useCreateJobFromDocument } from "@/lib/api/hooks";
-import { runtimeMode, setRuntimeMode, ApiError } from "@/api/client";
+import { setRuntimeMode, ApiError, useRuntimeMode } from "@/api/client";
 import { createJobFromDocumentText } from "@/lib/api/endpoints";
 import { DEMO_JOB_ID } from "@/lib/api";
 import type { IntakeVariant } from "@/lib/api/types";
@@ -40,6 +40,7 @@ const EXTRACTED_PREVIEW = [
 ];
 
 export function DocumentUploadPanel({ onComplete }: { onComplete: (jobId: string) => void }) {
+  const runtimeMode = useRuntimeMode();
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);

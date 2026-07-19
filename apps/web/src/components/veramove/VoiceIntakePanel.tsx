@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { StatusPill } from "./StatusPill";
 import { useEffect, useRef, useState } from "react";
 import { useCreateJobFromVoice } from "@/lib/api/hooks";
-import { runtimeMode, setRuntimeMode } from "@/api/client";
+import { setRuntimeMode, useRuntimeMode } from "@/api/client";
 import { DEMO_JOB_ID } from "@/lib/api";
 import type { IntakeVariant } from "@/lib/api/types";
 
@@ -48,6 +48,7 @@ const EXTRACTED_PREVIEW = [
 ];
 
 export function VoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) => void }) {
+  const runtimeMode = useRuntimeMode();
   const [state, setState] = useState<ConnState>("ready");
   const [lines, setLines] = useState<typeof DEMO_LINES>([]);
   const [variant, setVariant] = useState<IntakeVariant>("clean");

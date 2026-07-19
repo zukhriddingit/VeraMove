@@ -1,4 +1,4 @@
-import { runtimeMode, setRuntimeMode } from "@/api/client";
+import { setRuntimeMode, useRuntimeMode } from "@/api/client";
 import { FlaskConical, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * an implicit fallback.
  */
 export function RuntimeModeBadge({ className }: { className?: string }) {
-  const isDemo = runtimeMode === "demo";
+  const isDemo = useRuntimeMode() === "demo";
   const next = isDemo ? "live" : "demo";
   const label = isDemo ? "Demo · synthetic data" : "Live · connected";
   const title = isDemo

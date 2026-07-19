@@ -1,8 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, PhoneCall, ShieldCheck, Sparkles, Scale, ClipboardList, Mic, FileText, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { DEMO_JOB_ID, isDemoMode } from "@/lib/api";
-import { setRuntimeMode } from "@/api/client";
+import { DEMO_JOB_ID } from "@/lib/api";
+import { setRuntimeMode, useRuntimeMode } from "@/api/client";
 import { HealthIndicator } from "@/components/veramove/HealthIndicator";
 import { RuntimeModeBadge } from "@/components/veramove/RuntimeModeBadge";
 
@@ -28,6 +28,7 @@ export const Route = createFileRoute("/")({
 
 function Landing() {
   const navigate = useNavigate();
+  const isDemoMode = useRuntimeMode() === "demo";
 
   return (
     <div className="flex flex-col gap-16">

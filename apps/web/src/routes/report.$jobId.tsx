@@ -9,8 +9,7 @@ import { WhyWonNarrative } from "@/components/veramove/WhyWonNarrative";
 import { EvidenceBadge } from "@/components/veramove/EvidenceBadge";
 import { LoadingState } from "@/components/veramove/States";
 import { StatusPill } from "@/components/veramove/StatusPill";
-import { isDemoMode } from "@/lib/api";
-import { ApiError } from "@/api/client";
+import { ApiError, useRuntimeMode } from "@/api/client";
 import { AlertTriangle, ArrowRight, FileText, Sparkles } from "lucide-react";
 import type { JobViewState } from "@/lib/api/types";
 
@@ -30,6 +29,7 @@ export const Route = createFileRoute("/report/$jobId")({
 
 function ReportPage() {
   const { jobId } = Route.useParams();
+  const isDemoMode = useRuntimeMode() === "demo";
   const jobQ = useJob(jobId, { poll: false });
   const status = jobQ.data?.status as JobViewState | undefined;
   // Poll job during negotiating so the report unlocks automatically.
