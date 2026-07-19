@@ -150,12 +150,13 @@ export interface RecommendationV1 {
 export interface JobRecord {
   job_spec: JobSpecV1;
   state: JobState;
-  calls: unknown[];
+  calls: CallRecord[];
   quotes: QuoteV1[];
   recommendation: RecommendationV1 | null;
   created_at: string;
   updated_at: string;
 }
+
 
 // ---------- Client ----------
 
