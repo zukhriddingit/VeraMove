@@ -96,6 +96,31 @@ export interface QuoteV1 {
   transcript_evidence?: string;
 }
 
+export type CallOutcomeType =
+  | "itemized_quote"
+  | "callback_commitment"
+  | "documented_decline"
+  | "failed";
+
+export interface CallOutcome {
+  type: CallOutcomeType;
+  summary?: string;
+  notes?: string;
+}
+
+export interface CallRecord {
+  call_id: string;
+  job_id: string;
+  vendor_id: string;
+  vendor_name?: string;
+  recording_url?: string;
+  transcript?: string;
+  outcome: CallOutcome;
+  created_at: string;
+  updated_at: string;
+}
+
+
 export interface RecommendationRanking {
   quote_id: string;
   rank: number;
