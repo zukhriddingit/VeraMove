@@ -196,14 +196,3 @@ export function StatePill({ state }: { state: JobRecord["state"] }) {
   );
 }
 
-function PageSkel({ title }: { title: string }) {
-  return <div className="py-16 text-center text-muted-foreground">{title}</div>;
-}
-
-export function ErrorBox({ message }: { message: string }) {
-  return (
-    <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-      {message}
-    </div>
-  );
-}
