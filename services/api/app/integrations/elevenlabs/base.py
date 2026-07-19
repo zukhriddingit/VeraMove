@@ -13,3 +13,21 @@ class JsonHttpTransport(Protocol):
         payload: dict[str, Any],
         timeout_seconds: float,
     ) -> dict[str, Any]: ...
+
+
+class ConversationHttpTransport(Protocol):
+    """Injectable read boundary for conversation details and audio."""
+
+    def get_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> dict[str, Any]: ...
+
+    def get_bytes(
+        self,
+        url: str,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> tuple[bytes, str]: ...

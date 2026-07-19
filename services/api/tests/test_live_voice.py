@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -16,8 +17,15 @@ from services.api.app.core.config import LiveVoiceConfig, Settings, SupabaseConf
 from services.api.app.core.errors import (
     ProviderConfigurationError,
     ProviderRequestError,
+    ResourceNotFound,
+)
+from services.api.app.integrations.elevenlabs.conversations import (
+    ElevenLabsConversationClient,
 )
 from services.api.app.integrations.elevenlabs.live import ElevenLabsVoiceProvider
+from services.api.app.integrations.elevenlabs.recordings import (
+    ElevenLabsRecordingClient,
+)
 from services.api.app.repositories.memory import InMemoryRepository
 
 
@@ -63,6 +71,39 @@ class RaisingTransport:
         del url, headers, payload, timeout_seconds
         self.requests += 1
         raise self.error
+
+
+class RecordingConversationTransport:
+    def __init__(
+        self,
+        *,
+        details: object | None = None,
+        audio: bytes = b"synthetic-audio",
+        media_type: str = "audio/mpeg",
+    ) -> None:
+        self.details = details
+        self.audio = audio
+        self.media_type = media_type
+        self.json_requests: list[tuple[str, dict[str, str], float]] = []
+        self.audio_requests: list[tuple[str, dict[str, str], float]] = []
+
+    def get_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> dict[str, Any]:
+        self.json_requests.append((url, headers, timeout_seconds))
+        return self.details  # type: ignore[return-value]
+
+    def get_bytes(
+        self,
+        url: str,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> tuple[bytes, str]:
+        self.audio_requests.append((url, headers, timeout_seconds))
+        return self.audio, self.media_type
 
 
 @pytest.fixture
@@ -477,3 +518,123 @@ def test_live_transport_failure_preserves_failed_attempt(
     assert len(result.calls) == 3
     assert all(call.status is CallStatus.FAILED for call in result.calls)
     assert all(call.recording_url is None for call in result.calls)
+
+
+def test_conversation_client_returns_only_safe_repair_fields():
+    details = {
+        "conversation_id": "conv_synthetic_repair",
+        "agent_id": "agent_synthetic_outbound",
+        "status": "done",
+        "has_audio": True,
+        "metadata": {"phone_call": {"external_number": "+15550100001"}},
+        "analysis": {"data_collection_results": {}},
+        "transcript": [],
+    }
+    transport = RecordingConversationTransport(details=details)
+    client = ElevenLabsConversationClient(
+        api_key="synthetic-elevenlabs-secret",
+        api_base_url="https://api.elevenlabs.example",
+        transport=transport,
+        clock=lambda: datetime(2026, 7, 19, 12, 0, tzinfo=UTC),
+    )
+
+    snapshot = client.fetch_for_repair("conv_synthetic_repair")
+
+    assert snapshot.status == "done"
+    assert snapshot.has_audio is True
+    assert snapshot.completed_event is not None
+    assert snapshot.completed_event.conversation_id == "conv_synthetic_repair"
+    assert "+15550100001" not in snapshot.model_dump_json()
+    assert transport.json_requests == [
+        (
+            "https://api.elevenlabs.example/v1/convai/conversations/conv_synthetic_repair",
+            {"xi-api-key": "synthetic-elevenlabs-secret"},
+            15.0,
+        )
+    ]
+
+
+@pytest.mark.parametrize("status", ("initiated", "in-progress", "processing", "failed"))
+def test_conversation_client_preserves_partial_or_failed_status_without_analysis(status):
+    transport = RecordingConversationTransport(
+        details={
+            "conversation_id": "conv_synthetic_partial",
+            "agent_id": "agent_synthetic_outbound",
+            "status": status,
+            "analysis": {"data_collection_results": {"outcome_type": "discard"}},
+        }
+    )
+
+    snapshot = ElevenLabsConversationClient(
+        api_key="synthetic-secret",
+        transport=transport,
+    ).fetch_for_repair("conv_synthetic_partial")
+
+    assert snapshot.status == status
+    assert snapshot.completed_event is None
+
+
+@pytest.mark.parametrize(
+    "details",
+    (
+        [],
+        {"conversation_id": "wrong", "agent_id": "agent", "status": "done"},
+        {"conversation_id": "conv_valid", "agent_id": "", "status": "done"},
+        {"conversation_id": "conv_valid", "agent_id": "agent", "status": "mystery"},
+    ),
+)
+def test_conversation_client_rejects_invalid_provider_details(details):
+    client = ElevenLabsConversationClient(
+        api_key="synthetic-secret",
+        transport=RecordingConversationTransport(details=details),
+    )
+
+    with pytest.raises(ProviderRequestError):
+        client.fetch_for_repair("conv_valid")
+
+
+def test_recording_client_fetches_allowlisted_audio_without_exposing_key():
+    transport = RecordingConversationTransport(
+        audio=b"synthetic-mpeg-bytes",
+        media_type="audio/mpeg; charset=binary",
+    )
+    client = ElevenLabsRecordingClient(
+        api_key="synthetic-elevenlabs-secret",
+        api_base_url="https://api.elevenlabs.example",
+        transport=transport,
+    )
+
+    audio = client.fetch_audio("conv_synthetic_audio", has_audio=True)
+
+    assert audio.content == b"synthetic-mpeg-bytes"
+    assert audio.media_type == "audio/mpeg"
+    assert transport.audio_requests == [
+        (
+            "https://api.elevenlabs.example/v1/convai/conversations/conv_synthetic_audio/audio",
+            {"xi-api-key": "synthetic-elevenlabs-secret"},
+            30.0,
+        )
+    ]
+
+
+def test_recording_client_rejects_absent_empty_or_wrong_type_audio():
+    no_audio_transport = RecordingConversationTransport()
+    client = ElevenLabsRecordingClient(
+        api_key="synthetic-secret",
+        transport=no_audio_transport,
+    )
+    with pytest.raises(ResourceNotFound, match="no saved recording"):
+        client.fetch_audio("conv_synthetic_audio", has_audio=False)
+    assert no_audio_transport.audio_requests == []
+
+    with pytest.raises(ResourceNotFound, match="empty"):
+        ElevenLabsRecordingClient(
+            api_key="synthetic-secret",
+            transport=RecordingConversationTransport(audio=b""),
+        ).fetch_audio("conv_synthetic_audio", has_audio=True)
+
+    with pytest.raises(ProviderRequestError, match="unsupported recording type"):
+        ElevenLabsRecordingClient(
+            api_key="synthetic-secret",
+            transport=RecordingConversationTransport(media_type="text/html"),
+        ).fetch_audio("conv_synthetic_audio", has_audio=True)
