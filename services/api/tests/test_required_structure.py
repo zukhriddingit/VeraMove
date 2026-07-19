@@ -91,10 +91,10 @@ def test_only_necessary_frontend_package_manifest_exists():
     assert manifests == ["apps/web/package.json"]
 
 
-def test_no_production_integration_sdk_or_optional_platform_dependency_is_declared():
+def test_only_reviewed_production_integration_dependency_is_declared():
     requirements = (ROOT / "services/api/requirements.txt").read_text(encoding="utf-8").lower()
-    package = (ROOT / "apps/web/package.json").read_text(encoding="utf-8").lower()
-    dependency_text = requirements + package
+    package_path = ROOT / "apps/web/package.json"
+    package_text = package_path.read_text(encoding="utf-8").lower()
     for forbidden in (
         "elevenlabs",
         "twilio",
@@ -105,7 +105,14 @@ def test_no_production_integration_sdk_or_optional_platform_dependency_is_declar
         "turbo",
         "nx",
     ):
-        assert forbidden not in dependency_text
+        assert forbidden not in requirements
+
+    # Browser voice uses only the reviewed WebRTC client. Provider keys and all
+    # REST calls remain behind FastAPI's integration adapters.
+    package = json.loads(package_path.read_text(encoding="utf-8"))
+    assert package["dependencies"]["@elevenlabs/react"] == "1.10.1"
+    for forbidden in ("twilio", "openai", "tavily", "supabase", "docker", "turbo", "nx"):
+        assert forbidden not in package_text
 
 
 def test_sensitive_local_artifacts_are_absent_and_ignored():

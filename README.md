@@ -155,8 +155,9 @@ Activate the non-voice providers one at a time while `LIVE_CALLS_ENABLED=false`:
 
 1. Run `supabase/migrations/202607180001_initial_schema.sql`,
    `supabase/migrations/202607190002_live_persistence_hardening.sql`,
-   `supabase/migrations/202607190003_live_voice_materialization.sql`, and
-   `supabase/migrations/202607190004_atomic_voice_intake.sql` in that order in the Supabase SQL editor.
+   `supabase/migrations/202607190003_live_voice_materialization.sql`,
+   `supabase/migrations/202607190004_atomic_voice_intake.sql`, and
+   `supabase/migrations/202607190005_browser_voice_intake.sql` in that order in the Supabase SQL editor.
    Enter `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`, set
    `SUPABASE_ENABLED=true`, and verify a synthetic job survives one Render redeploy.
 2. Enter `TAVILY_API_KEY`, set `TAVILY_ENABLED=true`, and verify
@@ -170,7 +171,9 @@ fails, VeraMove reports a safe error instead of silently switching back to mock 
 After deployment, configure the authenticated conversation-initiation endpoint at
 `https://<service-host>/api/webhooks/elevenlabs/pre-call` and signed post-call transcription at
 `https://<service-host>/api/webhooks/elevenlabs`. Deployed live voice requires Supabase after all
-four migrations; it never falls back to process memory.
+five migrations; it never falls back to process memory. Browser voice additionally requires
+authenticated client access on the reviewed Intake agent. The browser receives only an ephemeral
+conversation token; the ElevenLabs API key remains server-side.
 
 ## Mock mode
 
@@ -203,6 +206,8 @@ destinations, and the complete reviewed configuration in `docs/backend-voice-run
 | POST | `/api/intake/document` | Creates an unconfirmed job; OpenAI extracts only when enabled |
 | POST | `/api/intake/sessions` | Reserves a safe voice-intake session without creating an incomplete job |
 | GET | `/api/intake/sessions/{session_id}` | Returns intake status and the unconfirmed JobSpec after completion |
+| POST | `/api/intake/sessions/{session_id}/voice-token` | Atomically issues one ephemeral browser conversation credential |
+| POST | `/api/intake/sessions/{session_id}/conversation` | Attaches the SDK conversation ID to its durable intake session |
 | GET | `/api/intake/conversations/{conversation_id}` | Resolves a safe intake session by provider conversation |
 | POST | `/api/jobs` | Creates a job at `intake_complete` through the selected repository |
 | GET | `/api/jobs/{job_id}` | Returns the typed job aggregate |

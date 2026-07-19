@@ -113,6 +113,7 @@ never in source, a populated `.env`, chat, screenshots, shell history, or logs.
    2. `supabase/migrations/202607190002_live_persistence_hardening.sql`
    3. `supabase/migrations/202607190003_live_voice_materialization.sql`
    4. `supabase/migrations/202607190004_atomic_voice_intake.sql`
+   5. `supabase/migrations/202607190005_browser_voice_intake.sql`
 
    Set `SUPABASE_URL`, backend-only `SUPABASE_SECRET_KEY`, and `SUPABASE_ENABLED=true` in Render.
    A live three-call run is disabled without durable Supabase. Create an obviously synthetic record,
@@ -211,6 +212,10 @@ Only after the one-call smoke succeeds:
 1. Call the imported Twilio number and complete one fictional Intake conversation. Confirm AI and
    recording disclosure, explicit consent, complete readback, and that the agent does not lock the
    job.
+   Alternatively, open the deployed frontend in Live Mode, start the browser voice interview,
+   allow microphone access, and complete the same fictional intake through WebRTC. This requires
+   authenticated client access on the reviewed Intake agent and uses a single-use server-issued
+   conversation token; no provider key is exposed to the browser.
 2. Verify the intake-session API shows one unconfirmed voice `JobSpecV1`. Correct any missing field
    through the supported workflow, then explicitly confirm it to lock version `1.0`.
 3. Reconfirm all three role-play participants, then invoke the canonical calls route once. Verify

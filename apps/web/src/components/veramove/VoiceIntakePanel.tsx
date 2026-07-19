@@ -1,21 +1,19 @@
-import { Mic, Radio, CheckCircle2, AlertTriangle, Loader2, RotateCcw, Info, FlaskConical } from "lucide-react";
+import { ConversationProvider } from "@elevenlabs/react";
+import { Mic, Radio, CheckCircle2, AlertTriangle, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "./StatusPill";
 import { useEffect, useRef, useState } from "react";
 import { useCreateJobFromVoice } from "@/lib/api/hooks";
-import { setRuntimeMode, useRuntimeMode } from "@/api/client";
-import { DEMO_JOB_ID } from "@/lib/api";
+import { useRuntimeMode } from "@/api/client";
 import type { IntakeVariant } from "@/lib/api/types";
+import { LiveVoiceIntakePanel } from "./LiveVoiceIntakePanel";
 
-type ConnState =
-  | "ready"
-  | "connecting"
-  | "listening"
-  | "processing"
-  | "completed"
-  | "failed";
+type ConnState = "ready" | "connecting" | "listening" | "processing" | "completed" | "failed";
 
-const STATE_META: Record<ConnState, { label: string; tone: "neutral" | "info" | "verified" | "risk" | "caution" }> = {
+const STATE_META: Record<
+  ConnState,
+  { label: string; tone: "neutral" | "info" | "verified" | "risk" | "caution" }
+> = {
   ready: { label: "Ready to connect", tone: "neutral" },
   connecting: { label: "Connecting to voice agent…", tone: "info" },
   listening: { label: "Listening", tone: "verified" },
@@ -27,12 +25,18 @@ const STATE_META: Record<ConnState, { label: string; tone: "neutral" | "info" | 
 // Scripted transcript that streams in during the demo "listening" phase so
 // judges see the intake feels alive without any real audio being captured.
 const DEMO_LINES: Array<{ speaker: "agent" | "you"; text: string }> = [
-  { speaker: "agent", text: "Hi! I'm going to ask a few quick questions about your move. Where are you moving from and to?" },
+  {
+    speaker: "agent",
+    text: "Hi! I'm going to ask a few quick questions about your move. Where are you moving from and to?",
+  },
   { speaker: "you", text: "Rock Hill, South Carolina to Charlotte, North Carolina." },
   { speaker: "agent", text: "Great. What's your target move date, and how flexible are you?" },
   { speaker: "you", text: "August 15th, 2026. I could do a day earlier or later." },
   { speaker: "agent", text: "Got it. Tell me about the home — bedrooms, floors, elevators?" },
-  { speaker: "you", text: "Two-bedroom apartment. Origin is floor 2, no elevator. Destination is floor 4 with an elevator." },
+  {
+    speaker: "you",
+    text: "Two-bedroom apartment. Origin is floor 2, no elevator. Destination is floor 4 with an elevator.",
+  },
   { speaker: "agent", text: "Any long carry from the truck to the door?" },
   { speaker: "you", text: "About 80 feet at the pickup." },
   { speaker: "agent", text: "Anything oversized or that needs disassembly?" },
@@ -48,6 +52,18 @@ const EXTRACTED_PREVIEW = [
 ];
 
 export function VoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) => void }) {
+  const runtimeMode = useRuntimeMode();
+  if (runtimeMode === "live") {
+    return (
+      <ConversationProvider>
+        <LiveVoiceIntakePanel onComplete={onComplete} />
+      </ConversationProvider>
+    );
+  }
+  return <DemoVoiceIntakePanel onComplete={onComplete} />;
+}
+
+function DemoVoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) => void }) {
   const runtimeMode = useRuntimeMode();
   const [state, setState] = useState<ConnState>("ready");
   const [lines, setLines] = useState<typeof DEMO_LINES>([]);
@@ -71,16 +87,17 @@ export function VoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) =
     setLines([]);
     setState("connecting");
 
-    timers.current.push(
-      window.setTimeout(() => setState("listening"), 900),
-    );
+    timers.current.push(window.setTimeout(() => setState("listening"), 900));
 
     // Stream in the scripted transcript.
     DEMO_LINES.forEach((line, i) => {
       timers.current.push(
-        window.setTimeout(() => {
-          setLines((prev) => [...prev, line]);
-        }, 1400 + i * 900),
+        window.setTimeout(
+          () => {
+            setLines((prev) => [...prev, line]);
+          },
+          1400 + i * 900,
+        ),
       );
     });
 
@@ -89,18 +106,19 @@ export function VoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) =
       window.setTimeout(() => setState("processing"), 1400 + DEMO_LINES.length * 900),
     );
     timers.current.push(
-      window.setTimeout(async () => {
-        try {
-          const { jobId } = await create.mutateAsync(variant);
-          setState("completed");
-          // Small pause so the user sees the completed state before nav.
-          timers.current.push(
-            window.setTimeout(() => onComplete(jobId), 700),
-          );
-        } catch {
-          setState("failed");
-        }
-      }, 2100 + DEMO_LINES.length * 900),
+      window.setTimeout(
+        async () => {
+          try {
+            const { jobId } = await create.mutateAsync(variant);
+            setState("completed");
+            // Small pause so the user sees the completed state before nav.
+            timers.current.push(window.setTimeout(() => onComplete(jobId), 700));
+          } catch {
+            setState("failed");
+          }
+        },
+        2100 + DEMO_LINES.length * 900,
+      ),
     );
   }
 
@@ -122,8 +140,7 @@ export function VoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) =
         <div>
           <h3 className="text-base font-semibold">Voice interview</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Answer a short conversation with our AI intake agent. Takes about
-            two minutes.
+            Answer a short conversation with our AI intake agent. Takes about two minutes.
             {runtimeMode === "demo" && (
               <span className="ml-1 rounded bg-caution-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-caution-foreground">
                 Demo · role-play
@@ -139,33 +156,6 @@ export function VoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) =
           {meta.label}
         </StatusPill>
       </header>
-
-      {runtimeMode === "live" && (
-        <div
-          role="note"
-          className="flex flex-col gap-2 rounded-lg border border-info/40 bg-info-soft p-3 text-sm sm:flex-row sm:items-start"
-        >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-info" aria-hidden />
-          <div className="flex-1">
-            <p className="font-medium">Live voice intake is being connected.</p>
-            <p className="text-muted-foreground">
-              Use document intake or Demo Mode today.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1.5 self-start"
-            onClick={() =>
-              setRuntimeMode("demo", { redirectTo: `/confirm/${DEMO_JOB_ID}` })
-            }
-          >
-            <FlaskConical className="h-3.5 w-3.5" />
-            Switch to Demo
-          </Button>
-        </div>
-      )}
 
       <div
         role="status"
@@ -281,12 +271,7 @@ export function VoiceIntakePanel({ onComplete }: { onComplete: (jobId: string) =
             <RotateCcw className="h-4 w-4" /> Retry interview
           </Button>
         ) : (
-          <Button
-            onClick={start}
-            disabled={isActive || state === "completed" || runtimeMode === "live"}
-            className="gap-1.5"
-            title={runtimeMode === "live" ? "Live voice intake is being connected" : undefined}
-          >
+          <Button onClick={start} disabled={isActive || state === "completed"} className="gap-1.5">
             <Mic className="h-4 w-4" />
             {state === "ready" ? "Start voice interview" : meta.label}
           </Button>

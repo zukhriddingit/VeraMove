@@ -11,17 +11,19 @@ export type RecommendationV1 = Schemas["RecommendationV1"];
 export type JobEventsResponse = Schemas["JobEventsResponse"];
 export type VendorDiscoveryResponse = Schemas["VendorDiscoveryResponse"];
 export type HealthResponse = Schemas["HealthResponse"] | Schemas["RuntimeHealthResponse"];
+export type IntakeSessionResponse = Schemas["IntakeSessionResponse"];
+export type BrowserVoiceTokenResponse = Schemas["BrowserVoiceTokenResponse"];
+export type AttachIntakeConversationRequest = Schemas["AttachIntakeConversationRequest"];
+export type IntegrationStatusSnapshot = Schemas["IntegrationStatusSnapshot"];
 export type RuntimeMode = "demo" | "live";
 export type FieldErrors = Record<string, string>;
 export type ApiErrorKind = "http" | "network" | "aborted" | "malformed";
 
 const env = (typeof import.meta !== "undefined" ? import.meta.env : undefined) as
-  | Record<string, string | undefined>
-  | undefined;
+  Record<string, string | undefined> | undefined;
 
 export const API_BASE_URL = (
-  env?.VITE_API_BASE_URL ||
-  "https://veramove-api-demo-zukhriddingit.onrender.com"
+  env?.VITE_API_BASE_URL || "https://veramove-api-demo-zukhriddingit.onrender.com"
 ).replace(/\/$/, "");
 
 const STORAGE_KEY = "veramove.runtimeMode";
@@ -193,6 +195,20 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
 export const apiClient = {
   health: () => apiFetch<HealthResponse>("/health"),
+  integrationStatus: () => apiFetch<IntegrationStatusSnapshot>("/api/integrations/status"),
+  createIntakeSession: () =>
+    apiFetch<IntakeSessionResponse>("/api/intake/sessions", { method: "POST" }),
+  issueBrowserVoiceToken: (sessionId: string) =>
+    apiFetch<BrowserVoiceTokenResponse>(`/api/intake/sessions/${sessionId}/voice-token`, {
+      method: "POST",
+    }),
+  attachIntakeConversation: (sessionId: string, conversationId: string) =>
+    apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}/conversation`, {
+      method: "POST",
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }),
+  getIntakeSession: (sessionId: string) =>
+    apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}`),
   createJob: (jobSpec: JobSpecV1) =>
     apiFetch<JobRecord>("/api/jobs", { method: "POST", body: JSON.stringify(jobSpec) }),
   createJobFromDocument: (documentText: string) =>
@@ -207,10 +223,8 @@ export const apiClient = {
     apiFetch<JobRecord>(`/api/jobs/${jobId}/calls`, { method: "POST" }),
   negotiate: (jobId: string) =>
     apiFetch<JobRecord>(`/api/jobs/${jobId}/negotiate`, { method: "POST" }),
-  getReport: (jobId: string) =>
-    apiFetch<RecommendationV1>(`/api/jobs/${jobId}/report`),
-  getEvents: (jobId: string) =>
-    apiFetch<JobEventsResponse>(`/api/jobs/${jobId}/events`),
+  getReport: (jobId: string) => apiFetch<RecommendationV1>(`/api/jobs/${jobId}/report`),
+  getEvents: (jobId: string) => apiFetch<JobEventsResponse>(`/api/jobs/${jobId}/events`),
   discoverVendors: () => apiFetch<VendorDiscoveryResponse>("/api/vendors/discover"),
 };
 
