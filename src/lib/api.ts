@@ -138,7 +138,7 @@ export interface CallRecord {
 export interface RecommendationRanking {
   quote_id: string;
   rank: number;
-  vendor: { vendor_id: string; name: string };
+  vendor: Vendor;
   total: string;
   rationale: string[];
   red_flags?: string[];
