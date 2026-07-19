@@ -46,7 +46,7 @@ set
     ),
     negotiation_context = coalesce(
         negotiation_context,
-        payload -> 'negotiation_context',
+        nullif(payload -> 'negotiation_context', 'null'::jsonb),
         '{}'::jsonb
     );
 
