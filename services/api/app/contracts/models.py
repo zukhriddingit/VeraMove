@@ -381,6 +381,28 @@ class CallOutcome(ContractModel):
         }
         if needs_reason and not self.reason:
             raise ValueError(f"{self.type.value} outcomes require reason")
+
+        permitted_detail = {
+            CallOutcomeType.ITEMIZED_QUOTE: "quote",
+            CallOutcomeType.CALLBACK_COMMITMENT: "callback_at",
+            CallOutcomeType.DOCUMENTED_DECLINE: "reason",
+            CallOutcomeType.FAILED: "reason",
+        }[self.type]
+        populated_details = {
+            name
+            for name in ("quote", "callback_at", "reason")
+            if getattr(self, name) is not None
+        }
+        unexpected_details = populated_details - {permitted_detail}
+        if unexpected_details:
+            raise ValueError(
+                f"{self.type.value} only permits {permitted_detail}; "
+                f"unexpected details: {', '.join(sorted(unexpected_details))}"
+            )
+        if self.callback_at is not None and (
+            self.callback_at.tzinfo is None or self.callback_at.utcoffset() is None
+        ):
+            raise ValueError("callback_at must include a timezone")
         return self
 
 
@@ -392,7 +414,59 @@ class CallRecord(ContractModel):
     started_at: datetime
     completed_at: datetime | None = None
     outcome: CallOutcome
-    recording_url: HttpUrl
+    recording_url: HttpUrl | None = None
+
+    @model_validator(mode="after")
+    def terminal_call_is_internally_consistent(self) -> CallRecord:
+        if self.status not in {CallStatus.COMPLETED, CallStatus.FAILED}:
+            raise ValueError("canonical call records require terminal status")
+        if self.completed_at is None:
+            raise ValueError("terminal calls require completed_at")
+        if self.started_at.tzinfo is None or self.started_at.utcoffset() is None:
+            raise ValueError("started_at must include a timezone")
+        if self.completed_at.tzinfo is None or self.completed_at.utcoffset() is None:
+            raise ValueError("completed_at must include a timezone")
+        expected_status = (
+            CallStatus.FAILED
+            if self.outcome.type is CallOutcomeType.FAILED
+            else CallStatus.COMPLETED
+        )
+        if self.status is not expected_status:
+            raise ValueError(
+                f"{self.outcome.type.value} outcomes require status={expected_status.value}"
+            )
+
+        if (
+            self.outcome.callback_at is not None
+            and self.outcome.callback_at <= self.completed_at
+        ):
+            raise ValueError("callback_at must follow completed_at")
+
+        if self.outcome.type is not CallOutcomeType.ITEMIZED_QUOTE:
+            return self
+        if self.recording_url is None:
+            raise ValueError("itemized_quote calls require recording_url")
+
+        quote = self.outcome.quote
+        if quote is None:  # Defensive guard if the outcome was built without validation.
+            raise ValueError("itemized_quote calls require quote")
+        quote_recording = str(quote.recording_url)
+        call_recording = str(self.recording_url)
+        identity_matches = (
+            quote.job_id == self.job_id
+            and quote.vendor.vendor_id == self.vendor.vendor_id
+            and quote_recording == call_recording
+            and all(
+                evidence.call_id == self.call_id
+                and str(evidence.recording_url) == call_recording
+                for evidence in quote.transcript_evidence
+            )
+        )
+        if not identity_matches:
+            raise ValueError(
+                "itemized quote identity must match call job, vendor, evidence, and recording"
+            )
+        return self
 
 
 class RecommendationRanking(ContractModel):

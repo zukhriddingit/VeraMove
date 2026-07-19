@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from services.api.app.contracts import (
     CallOutcome,
@@ -473,6 +474,25 @@ def test_request_callback_uses_the_validated_outcome_path(
     assert call.outcome.type is CallOutcomeType.CALLBACK_COMMITMENT
     assert call.outcome.callback_at == callback_at
     assert call.completed_at == completed_at
+
+
+def test_request_callback_rejects_time_before_completion(
+    repository,
+    confirmed_record,
+    fixtures,
+):
+    repository.create(confirmed_record)
+    attempt = make_attempt(confirmed_record.job_spec, fixtures.load_vendors()[0])
+    repository.create_attempt(attempt)
+    completed_at = datetime(2026, 7, 18, 17, 0, tzinfo=UTC)
+    tools = VoiceTools(repository, repository, clock=lambda: completed_at)
+
+    with pytest.raises(ValidationError, match="callback_at must follow completed_at"):
+        tools.request_callback(
+            attempt.call_id,
+            completed_at - timedelta(minutes=1),
+            "https://recordings.example.com/synthetic-callback.mp3",
+        )
 
 
 def test_tools_return_only_verified_evidence_backed_competing_quote(
