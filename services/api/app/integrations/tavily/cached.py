@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from urllib.parse import urlparse
 from uuid import NAMESPACE_URL, uuid5
 
@@ -13,6 +15,17 @@ from services.api.app.contracts import (
     VendorSearchQuery,
 )
 from services.api.app.integrations.tavily.base import TavilySearchClient
+
+
+def _contract_safe_slug(name: str, url: str) -> str:
+    ascii_name = (
+        unicodedata.normalize("NFKD", name)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .casefold()
+    )
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_name).strip("-")[:80].rstrip("-")
+    return slug or f"vendor-{uuid5(NAMESPACE_URL, url).hex}"
 
 
 class CachedTavilyVendorDiscovery:
@@ -63,8 +76,7 @@ class CachedTavilyVendorDiscovery:
         url = str(result["url"])
         name = str(result["title"]).strip()
         host = urlparse(url).netloc.casefold().removeprefix("www.")
-        slug_seed = "".join(character if character.isalnum() else "-" for character in name.lower())
-        slug = "-".join(part for part in slug_seed.split("-") if part)[:80]
+        slug = _contract_safe_slug(name, url)
         classification = (
             DataClassification.ROLE_PLAY if self._role_play else DataClassification.REAL_REDACTED
         )
@@ -74,7 +86,7 @@ class CachedTavilyVendorDiscovery:
         return Vendor(
             vendor_id=uuid5(NAMESPACE_URL, url),
             name=name,
-            slug=slug or uuid5(NAMESPACE_URL, url).hex,
+            slug=slug,
             behavior_summary=(
                 "Production call-list example sourced from Tavily; no behavior is inferred."
             ),

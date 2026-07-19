@@ -128,6 +128,42 @@ def test_live_gateway_reports_tavily_and_preserves_only_source_provenance():
     assert all(vendor.provenance[0].excerpt is None for vendor in vendors)
 
 
+@pytest.mark.parametrize(
+    ("title", "expected_slug"),
+    [
+        ("Möving & Storage – Boston", "moving-storage-boston"),
+        ("A" * 79 + " Moving Company", "a" * 79),
+        ("東京引越センター", "vendor-62e9c2cdec9e5a0ca67b92e18f69d79e"),
+    ],
+)
+def test_live_gateway_normalizes_provider_titles_to_contract_safe_slugs(
+    title,
+    expected_slug,
+):
+    transport = RecordingTransport(
+        {
+            "results": [
+                {
+                    "title": title,
+                    "url": "https://unicode-vendor.example/moving",
+                }
+            ]
+        }
+    )
+    gateway = CachedTavilyVendorDiscovery(
+        TavilyHttpClient(
+            api_key="synthetic-tavily-key",
+            api_base_url="https://api.tavily.example",
+            transport=transport,
+        )
+    )
+
+    vendor = gateway.discover("Example City", None)[0]
+
+    assert vendor.slug == expected_slug
+    assert len(vendor.slug) <= 80
+
+
 @pytest.mark.parametrize("status_code", [401, 429, 503])
 def test_httpx_transport_maps_http_errors_to_exact_safe_message(
     monkeypatch,
