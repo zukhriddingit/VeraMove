@@ -52,7 +52,8 @@ export interface SourceContext {
 
 export interface JobSpecV1 {
   job_id: string;
-  version: number;
+  version: "1.0";
+
   move_date: string;
   date_flexible: boolean;
   origin: LocationSpec;
