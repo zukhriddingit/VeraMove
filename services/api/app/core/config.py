@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
@@ -14,6 +15,8 @@ DEFAULT_CORS_ALLOW_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://localhost:5173",
 )
+E164_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
+MIN_LIVE_SECRET_BYTES = 32
 
 
 def _optional_env(name: str) -> str | None:
@@ -33,9 +36,7 @@ def _boolean_env(name: str, *, default: bool = False) -> bool:
         return True
     if normalized in FALSE_ENV_VALUES:
         return False
-    raise ProviderConfigurationError(
-        f"{name} must be one of: 1, true, yes, on, 0, false, no, off"
-    )
+    raise ProviderConfigurationError(f"{name} must be one of: 1, true, yes, on, 0, false, no, off")
 
 
 def _cors_origins_env() -> tuple[str, ...]:
@@ -43,16 +44,10 @@ def _cors_origins_env() -> tuple[str, ...]:
     if value is None:
         return DEFAULT_CORS_ALLOW_ORIGINS
     origins = tuple(
-        dict.fromkeys(
-            item.strip().rstrip("/")
-            for item in value.split(",")
-            if item.strip()
-        )
+        dict.fromkeys(item.strip().rstrip("/") for item in value.split(",") if item.strip())
     )
     if not origins or "*" in origins:
-        raise ProviderConfigurationError(
-            "CORS_ALLOW_ORIGINS must contain explicit HTTP(S) origins"
-        )
+        raise ProviderConfigurationError("CORS_ALLOW_ORIGINS must contain explicit HTTP(S) origins")
     for origin in origins:
         parsed = urlsplit(origin)
         if (
@@ -84,16 +79,61 @@ def _https_origin(name: str, value: str) -> str:
     return normalized
 
 
+def _outbound_agent_id_env() -> str | None:
+    """Resolve the one outbound role without accepting ambiguous old aliases."""
+
+    preferred = _optional_env("ELEVENLABS_OUTBOUND_AGENT_ID")
+    legacy_quote = _optional_env("ELEVENLABS_QUOTE_AGENT_ID")
+    legacy_negotiator = _optional_env("ELEVENLABS_NEGOTIATOR_AGENT_ID")
+    legacy_present = legacy_quote is not None or legacy_negotiator is not None
+    if legacy_present and (
+        legacy_quote is None or legacy_negotiator is None or legacy_quote != legacy_negotiator
+    ):
+        raise ProviderConfigurationError(
+            "Legacy outbound agent aliases must both exist and identify one outbound agent"
+        )
+    if preferred is not None and legacy_quote is not None and preferred != legacy_quote:
+        raise ProviderConfigurationError(
+            "Preferred and legacy settings must identify one outbound agent"
+        )
+    return preferred or legacy_quote
+
+
+def _destination_numbers_env() -> tuple[str, ...]:
+    value = _optional_env("LIVE_TEST_TO_NUMBERS")
+    if value is None:
+        return ()
+    numbers = tuple(item.strip() for item in value.split(",") if item.strip())
+    if (
+        len(numbers) != 3
+        or len(set(numbers)) != 3
+        or any(E164_PATTERN.fullmatch(number) is None for number in numbers)
+    ):
+        raise ProviderConfigurationError(
+            "LIVE_TEST_TO_NUMBERS must contain exactly three unique E.164 numbers"
+        )
+    return numbers
+
+
+def _secret_is_strong(value: str | None) -> bool:
+    return value is not None and len(value.encode("utf-8")) >= MIN_LIVE_SECRET_BYTES
+
+
 @dataclass(frozen=True, slots=True)
 class LiveVoiceConfig:
     """Secrets and identifiers required only when a live call is initiated."""
 
     api_key: str | None = None
-    quote_agent_id: str | None = None
-    negotiator_agent_id: str | None = None
+    intake_agent_id: str | None = None
+    outbound_agent_id: str | None = None
     phone_number_id: str | None = None
-    test_to_number: str | None = None
+    destination_numbers: tuple[str, ...] = ()
     webhook_secret: str | None = None
+    precall_secret: str | None = None
+    recording_signing_secret: str | None = None
+    operator_secret: str | None = None
+    public_api_base_url: str | None = None
+    agent_config_version: str | None = None
     live_calls_enabled: bool = False
     api_base_url: str = "https://api.elevenlabs.io"
 
@@ -145,26 +185,45 @@ class Settings:
             raise ProviderConfigurationError("Live voice requires APP_MODE=live")
         config = self.live_voice
         if not config.live_calls_enabled:
-            raise ProviderConfigurationError(
-                "Live calls require LIVE_CALLS_ENABLED=true"
-            )
+            raise ProviderConfigurationError("Live calls require LIVE_CALLS_ENABLED=true")
+        if not self.supabase.enabled:
+            raise ProviderConfigurationError("Live voice requires SUPABASE_ENABLED=true")
+        self.require_supabase_config()
         required = {
             "ELEVENLABS_API_KEY": config.api_key,
-            "ELEVENLABS_QUOTE_AGENT_ID": config.quote_agent_id,
-            "ELEVENLABS_NEGOTIATOR_AGENT_ID": config.negotiator_agent_id,
+            "ELEVENLABS_INTAKE_AGENT_ID": config.intake_agent_id,
+            "ELEVENLABS_OUTBOUND_AGENT_ID": config.outbound_agent_id,
             "ELEVENLABS_PHONE_NUMBER_ID": config.phone_number_id,
-            "ELEVENLABS_WEBHOOK_SECRET": config.webhook_secret,
-            "LIVE_TEST_TO_NUMBER": config.test_to_number,
+            "PUBLIC_API_BASE_URL": config.public_api_base_url,
+            "AGENT_CONFIG_VERSION": config.agent_config_version,
         }
-        missing = [
-            name
-            for name, value in required.items()
-            if value is None or not value.strip()
-        ]
+        missing = [name for name, value in required.items() if value is None or not value.strip()]
         if missing:
             raise ProviderConfigurationError(
                 f"Missing live voice configuration: {', '.join(missing)}"
             )
+        if (
+            len(config.destination_numbers) != 3
+            or len(set(config.destination_numbers)) != 3
+            or any(E164_PATTERN.fullmatch(number) is None for number in config.destination_numbers)
+        ):
+            raise ProviderConfigurationError(
+                "LIVE_TEST_TO_NUMBERS must contain exactly three unique E.164 numbers"
+            )
+        secrets = {
+            "ELEVENLABS_WEBHOOK_SECRET": config.webhook_secret,
+            "ELEVENLABS_PRECALL_SECRET": config.precall_secret,
+            "RECORDING_SIGNING_SECRET": config.recording_signing_secret,
+            "VOICE_OPERATOR_SECRET": config.operator_secret,
+        }
+        weak = [name for name, value in secrets.items() if not _secret_is_strong(value)]
+        if weak:
+            raise ProviderConfigurationError(
+                "Live voice secrets must be at least "
+                f"{MIN_LIVE_SECRET_BYTES} bytes: {', '.join(weak)}"
+            )
+        assert config.public_api_base_url is not None
+        _https_origin("PUBLIC_API_BASE_URL", config.public_api_base_url)
         return config
 
     def require_openai_config(self) -> OpenAIConfig:
@@ -172,9 +231,7 @@ class Settings:
 
         config = self.openai
         if not config.enabled:
-            raise ProviderConfigurationError(
-                "OpenAI integration requires OPENAI_ENABLED=true"
-            )
+            raise ProviderConfigurationError("OpenAI integration requires OPENAI_ENABLED=true")
         missing = [
             name
             for name, value in {
@@ -185,9 +242,7 @@ class Settings:
             if value is None or not value.strip()
         ]
         if missing:
-            raise ProviderConfigurationError(
-                f"Missing OpenAI configuration: {', '.join(missing)}"
-            )
+            raise ProviderConfigurationError(f"Missing OpenAI configuration: {', '.join(missing)}")
         return config
 
     def require_tavily_config(self) -> TavilyConfig:
@@ -195,13 +250,9 @@ class Settings:
 
         config = self.tavily
         if not config.enabled:
-            raise ProviderConfigurationError(
-                "Tavily integration requires TAVILY_ENABLED=true"
-            )
+            raise ProviderConfigurationError("Tavily integration requires TAVILY_ENABLED=true")
         if config.api_key is None or not config.api_key.strip():
-            raise ProviderConfigurationError(
-                "Missing Tavily configuration: TAVILY_API_KEY"
-            )
+            raise ProviderConfigurationError("Missing Tavily configuration: TAVILY_API_KEY")
         return config
 
     def require_supabase_config(self) -> SupabaseConfig:
@@ -209,9 +260,7 @@ class Settings:
 
         config = self.supabase
         if not config.enabled:
-            raise ProviderConfigurationError(
-                "Supabase integration requires SUPABASE_ENABLED=true"
-            )
+            raise ProviderConfigurationError("Supabase integration requires SUPABASE_ENABLED=true")
         missing = [
             name
             for name, value in {
@@ -232,6 +281,7 @@ class Settings:
         if app_mode not in {"mock", "live"}:
             raise ProviderConfigurationError("APP_MODE must be either mock or live")
         supabase_url = _optional_env("SUPABASE_URL")
+        public_api_base_url = _optional_env("PUBLIC_API_BASE_URL")
         return cls(
             app_mode=app_mode,
             api_host=os.getenv("API_HOST", "127.0.0.1").strip(),
@@ -239,33 +289,36 @@ class Settings:
             cors_allow_origins=_cors_origins_env(),
             live_voice=LiveVoiceConfig(
                 api_key=_optional_env("ELEVENLABS_API_KEY"),
-                quote_agent_id=_optional_env("ELEVENLABS_QUOTE_AGENT_ID"),
-                negotiator_agent_id=_optional_env(
-                    "ELEVENLABS_NEGOTIATOR_AGENT_ID"
-                ),
+                intake_agent_id=_optional_env("ELEVENLABS_INTAKE_AGENT_ID"),
+                outbound_agent_id=_outbound_agent_id_env(),
                 phone_number_id=_optional_env("ELEVENLABS_PHONE_NUMBER_ID"),
-                test_to_number=_optional_env("LIVE_TEST_TO_NUMBER"),
+                destination_numbers=_destination_numbers_env(),
                 webhook_secret=_optional_env("ELEVENLABS_WEBHOOK_SECRET"),
+                precall_secret=_optional_env("ELEVENLABS_PRECALL_SECRET"),
+                recording_signing_secret=_optional_env("RECORDING_SIGNING_SECRET"),
+                operator_secret=_optional_env("VOICE_OPERATOR_SECRET"),
+                public_api_base_url=(
+                    _https_origin("PUBLIC_API_BASE_URL", public_api_base_url)
+                    if public_api_base_url is not None
+                    else None
+                ),
+                agent_config_version=_optional_env("AGENT_CONFIG_VERSION"),
                 live_calls_enabled=_boolean_env("LIVE_CALLS_ENABLED"),
-                api_base_url=(
-                    _optional_env("ELEVENLABS_API_BASE_URL")
-                    or "https://api.elevenlabs.io"
+                api_base_url=_https_origin(
+                    "ELEVENLABS_API_BASE_URL",
+                    _optional_env("ELEVENLABS_API_BASE_URL") or "https://api.elevenlabs.io",
                 ),
             ),
             openai=OpenAIConfig(
                 enabled=_boolean_env("OPENAI_ENABLED"),
                 api_key=_optional_env("OPENAI_API_KEY"),
-                document_model=(
-                    _optional_env("OPENAI_DOCUMENT_MODEL") or "gpt-5.6-luna"
-                ),
+                document_model=(_optional_env("OPENAI_DOCUMENT_MODEL") or "gpt-5.6-luna"),
                 recommendation_model=(
-                    _optional_env("OPENAI_RECOMMENDATION_MODEL")
-                    or "gpt-5.6-terra"
+                    _optional_env("OPENAI_RECOMMENDATION_MODEL") or "gpt-5.6-terra"
                 ),
                 api_base_url=_https_origin(
                     "OPENAI_API_BASE_URL",
-                    _optional_env("OPENAI_API_BASE_URL")
-                    or "https://api.openai.com",
+                    _optional_env("OPENAI_API_BASE_URL") or "https://api.openai.com",
                 ),
             ),
             tavily=TavilyConfig(
@@ -273,8 +326,7 @@ class Settings:
                 api_key=_optional_env("TAVILY_API_KEY"),
                 api_base_url=_https_origin(
                     "TAVILY_API_BASE_URL",
-                    _optional_env("TAVILY_API_BASE_URL")
-                    or "https://api.tavily.com",
+                    _optional_env("TAVILY_API_BASE_URL") or "https://api.tavily.com",
                 ),
             ),
             supabase=SupabaseConfig(

@@ -9,6 +9,8 @@ from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from services.api.app.contracts import (
+    CallOutcome,
+    CallOutcomeType,
     CallStatus,
     JobRecord,
     JobSpecV1,
@@ -37,6 +39,7 @@ from services.api.app.orchestration.models import (
     CallAttempt,
     CallKind,
     JobEvent,
+    NegotiationContext,
     VoiceCallResult,
 )
 from services.api.app.orchestration.providers import IntelligenceProvider, VoiceProvider
@@ -141,6 +144,7 @@ class VeraMoveService:
         self,
         job_id: UUID,
         vendor: Vendor,
+        destination_slot: Literal[0, 1, 2] = 0,
     ) -> CallAttempt:
         """Persist one attempt before invoking the provider and normalize sync results."""
 
@@ -161,15 +165,24 @@ class VeraMoveService:
         if existing is not None:
             return existing
 
-        attempt = self._new_attempt(record, vendor, CallKind.QUOTE)
+        attempt = self._new_attempt(
+            record,
+            vendor,
+            CallKind.QUOTE,
+            destination_slot=destination_slot,
+        )
         try:
             result = self._voice.initiate_quote_call(
                 attempt.job_spec_snapshot,
                 vendor,
                 attempt.call_id,
+                attempt.destination_slot,
             )
-        except DomainError:
+        except ProviderRequestError:
             self._record_provider_failure(attempt)
+            return self._calls.get_attempt(attempt.call_id) or attempt
+        except DomainError:
+            self._record_unexpected_failure(attempt)
             raise
         return self._record_provider_result(attempt, result)
 
@@ -191,8 +204,46 @@ class VeraMoveService:
         record.updated_at = self._clock()
         self._jobs.save(record)
 
-        for vendor in vendors[: self._voice.initial_call_limit]:
-            self.initiate_single_quote_call(job_id, vendor)
+        initial_vendors = vendors[: self._voice.initial_call_limit]
+        attempts: list[CallAttempt] = []
+        for destination_slot, vendor in enumerate(initial_vendors):
+            existing = next(
+                (
+                    attempt
+                    for attempt in self._calls.list_attempts(job_id)
+                    if attempt.kind is CallKind.QUOTE
+                    and attempt.vendor.vendor_id == vendor.vendor_id
+                    and attempt.job_spec_version == record.job_spec.version
+                ),
+                None,
+            )
+            attempts.append(
+                existing
+                or self._new_attempt(
+                    record,
+                    vendor,
+                    CallKind.QUOTE,
+                    destination_slot=destination_slot,
+                )
+            )
+
+        for attempt in attempts:
+            if attempt.status is not CallStatus.PENDING:
+                continue
+            try:
+                result = self._voice.initiate_quote_call(
+                    attempt.job_spec_snapshot,
+                    attempt.vendor,
+                    attempt.call_id,
+                    attempt.destination_slot,
+                )
+            except ProviderRequestError:
+                self._record_provider_failure(attempt)
+                continue
+            except DomainError:
+                self._record_unexpected_failure(attempt)
+                raise
+            self._record_provider_result(attempt, result)
 
         record = self.get_job(job_id)
         if len(self._calls.list_calls(job_id)) == 3:
@@ -238,7 +289,39 @@ class VeraMoveService:
         record.state = JobState.NEGOTIATING
         record.updated_at = self._clock()
         record = self._jobs.save(record)
-        attempt = self._new_attempt(record, target_quote.vendor, CallKind.NEGOTIATION)
+        target_attempt = next(
+            (
+                item
+                for item in self._calls.list_attempts(job_id)
+                if item.kind is CallKind.QUOTE
+                and item.vendor.vendor_id == target_quote.vendor.vendor_id
+                and item.job_spec_version == record.job_spec.version
+            ),
+            None,
+        )
+        if target_attempt is None:
+            raise DomainConflict("Negotiation target has no initial call slot")
+        leverage_total = (
+            competitor.comparable_total
+            if competitor.comparable_total is not None
+            else competitor.negotiated_total
+        )
+        if leverage_total is None:
+            raise DomainConflict("Verified competitor has no comparable total")
+        attempt = self._new_attempt(
+            record,
+            target_quote.vendor,
+            CallKind.NEGOTIATION,
+            destination_slot=target_attempt.destination_slot,
+            negotiation_context=NegotiationContext(
+                target_quote_id=target_quote.quote_id,
+                competitor_quote_id=competitor.quote_id,
+                eligible_leverage_total=leverage_total,
+                evidence_ids=tuple(
+                    evidence.evidence_id for evidence in competitor.transcript_evidence
+                ),
+            ),
+        )
         try:
             result = self._voice.initiate_negotiation_call(
                 attempt.job_spec_snapshot,
@@ -246,6 +329,7 @@ class VeraMoveService:
                 competitor,
                 planned,
                 attempt.call_id,
+                attempt.destination_slot,
             )
         except (ProviderConfigurationError, ProviderRequestError):
             self._record_provider_failure(attempt)
@@ -351,6 +435,8 @@ class VeraMoveService:
         record: JobRecord,
         vendor: Vendor,
         kind: CallKind,
+        destination_slot: Literal[0, 1, 2],
+        negotiation_context: NegotiationContext | None = None,
     ) -> CallAttempt:
         attempt = CallAttempt(
             call_id=uuid4(),
@@ -358,6 +444,18 @@ class VeraMoveService:
             kind=kind,
             vendor=vendor.model_copy(deep=True),
             job_spec_snapshot=record.job_spec.model_copy(deep=True),
+            destination_slot=destination_slot,
+            expected_agent_id=getattr(
+                self._voice,
+                "outbound_agent_id",
+                "synthetic-provider-outbound-agent",
+            ),
+            agent_config_version=getattr(
+                self._voice,
+                "agent_config_version",
+                "provider-v1",
+            ),
+            negotiation_context=negotiation_context,
             status=CallStatus.PENDING,
             started_at=self._clock(),
         )
@@ -372,7 +470,6 @@ class VeraMoveService:
         if self._is_complete(result):
             assert result.outcome is not None
             assert result.completed_at is not None
-            assert result.recording_url is not None
             self._tools.save_call_outcome(
                 attempt.call_id,
                 result.outcome,
@@ -393,15 +490,26 @@ class VeraMoveService:
         return self._calls.save_attempt(in_progress)
 
     def _record_provider_failure(self, attempt: CallAttempt) -> None:
-        """Preserve a failed attempt without inventing a canonical call record."""
+        """Preserve a supported non-quote failure and allow sibling slots to continue."""
+
+        failed_at = self._clock()
+        self._tools.save_call_outcome(
+            attempt.call_id,
+            CallOutcome(
+                type=CallOutcomeType.FAILED,
+                reason="The voice provider rejected or could not initiate the call.",
+            ),
+            failed_at,
+            None,
+        )
+
+    def _record_unexpected_failure(self, attempt: CallAttempt) -> None:
+        """Make a visible validation/programming failure explicit without inventing an outcome."""
 
         failed_at = self._clock()
         self._calls.save_attempt(
             attempt.model_copy(
-                update={
-                    "status": CallStatus.FAILED,
-                    "completed_at": failed_at,
-                },
+                update={"status": CallStatus.FAILED, "completed_at": failed_at},
                 deep=True,
             )
         )
@@ -467,9 +575,7 @@ class VeraMoveService:
             assumptions = [
                 "Discovered companies are represented only by synthetic role-play outcomes."
             ]
-            uncertainty = [
-                "Role-play prices and availability are not claims about real companies."
-            ]
+            uncertainty = ["Role-play prices and availability are not claims about real companies."]
 
         recommendation = template.model_copy(
             update={
@@ -481,9 +587,7 @@ class VeraMoveService:
                 "generated_at": self._clock(),
                 "summary": summary,
                 "winning_vendor_id": winner.vendor.vendor_id,
-                "cheapest_vendor_id": (
-                    cheapest.vendor.vendor_id if cheapest is not None else None
-                ),
+                "cheapest_vendor_id": (cheapest.vendor.vendor_id if cheapest is not None else None),
                 "best_value_vendor_id": winner.vendor.vendor_id,
                 "rankings": rankings,
                 "evidence_ids": [item.evidence_id for item in evidence],
@@ -521,9 +625,7 @@ class VeraMoveService:
                 ),
             )
             evidence = [
-                item
-                for vendor_quote in vendor_quotes
-                for item in vendor_quote.transcript_evidence
+                item for vendor_quote in vendor_quotes for item in vendor_quote.transcript_evidence
             ]
             selected.append((quote, cls._quote_total(quote), evidence))
         selected.sort(

@@ -8,12 +8,14 @@ import pytest
 from services.api.app.api.dependencies import build_repository, build_service
 from services.api.app.contracts import DocumentParseResult, IntakeSource
 from services.api.app.core.config import (
+    LiveVoiceConfig,
     OpenAIConfig,
     Settings,
     SupabaseConfig,
     TavilyConfig,
 )
 from services.api.app.core.errors import DomainConflict
+from services.api.app.integrations.elevenlabs.live import ElevenLabsVoiceProvider
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.cached import CachedTavilyVendorDiscovery
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
@@ -50,6 +52,28 @@ class RecordingTavilyTransport:
     ) -> Any:
         self.requests.append({"url": url, "headers": headers, "payload": payload})
         raise AssertionError("startup must not call Tavily")
+
+
+class RecordingVoiceTransport:
+    def __init__(self) -> None:
+        self.requests: list[dict[str, Any]] = []
+
+    def post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        timeout_seconds: float,
+    ) -> dict[str, Any]:
+        self.requests.append(
+            {
+                "url": url,
+                "headers": headers,
+                "payload": payload,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        raise AssertionError("startup must not call ElevenLabs")
 
 
 class FakeSupabaseTableClient:
@@ -166,6 +190,52 @@ def test_supabase_can_be_enabled_without_other_live_providers() -> None:
     assert isinstance(repository, SupabaseRepository)
     assert isinstance(service._intelligence, MockIntelligenceProvider)
     assert isinstance(service._discovery, MockVendorDiscoveryGateway)
+
+
+def test_complete_two_agent_live_wiring_performs_no_startup_network_calls() -> None:
+    voice_transport = RecordingVoiceTransport()
+    supabase_client = FakeSupabaseTableClient()
+    settings = Settings(
+        app_mode="live",
+        live_voice=LiveVoiceConfig(
+            api_key="synthetic-elevenlabs-key",
+            intake_agent_id="synthetic-intake-agent",
+            outbound_agent_id="synthetic-outbound-agent",
+            phone_number_id="synthetic-phone-number-id",
+            destination_numbers=(
+                "+15550100001",
+                "+15550100002",
+                "+15550100003",
+            ),
+            webhook_secret="w" * 32,
+            precall_secret="p" * 32,
+            recording_signing_secret="r" * 32,
+            operator_secret="o" * 32,
+            public_api_base_url="https://api.veramove.example",
+            agent_config_version="2026-07-19.v1",
+            live_calls_enabled=True,
+        ),
+        supabase=SupabaseConfig(
+            enabled=True,
+            url="https://synthetic-project.supabase.co",
+            secret_key="synthetic-supabase-secret",
+        ),
+    )
+
+    repository = build_repository(settings, supabase_client=supabase_client)
+    service = build_service(
+        settings,
+        repository,
+        voice_transport=voice_transport,
+    )
+
+    assert isinstance(service._voice, ElevenLabsVoiceProvider)
+    assert settings.require_live_voice_config().destination_numbers == (
+        "+15550100001",
+        "+15550100002",
+        "+15550100003",
+    )
+    assert voice_transport.requests == []
 
 
 def test_create_app_stores_one_composed_settings_repository_and_service() -> None:

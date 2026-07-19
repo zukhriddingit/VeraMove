@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import HttpUrl
@@ -35,6 +36,8 @@ class MockVoiceProvider:
     """Implement one synchronous synthetic call at a time."""
 
     initial_call_limit = 3
+    outbound_agent_id = "synthetic-mock-outbound-agent"
+    agent_config_version = "mock-v1"
 
     def __init__(
         self,
@@ -49,14 +52,12 @@ class MockVoiceProvider:
         job_spec: JobSpecV1,
         vendor: Vendor,
         call_id: UUID,
+        destination_slot: Literal[0, 1, 2] = 0,
     ) -> VoiceCallResult:
+        del destination_slot
         fixture_quotes = self._fixtures.load_initial_quotes()
         fixture_quote = next(
-            (
-                quote
-                for quote in fixture_quotes
-                if quote.vendor.vendor_id == vendor.vendor_id
-            ),
+            (quote for quote in fixture_quotes if quote.vendor.vendor_id == vendor.vendor_id),
             None,
         )
         if fixture_quote is None:
@@ -75,8 +76,9 @@ class MockVoiceProvider:
         verified_competitor: QuoteV1,
         planned_quote: QuoteV1,
         call_id: UUID,
+        destination_slot: Literal[0, 1, 2] = 0,
     ) -> VoiceCallResult:
-        del verified_competitor
+        del verified_competitor, destination_slot
         quote = self._rebind_quote(
             planned_quote,
             job_spec,
@@ -142,14 +144,8 @@ class MockVoiceProvider:
         vendor: Vendor,
         call_id: UUID,
     ) -> QuoteV1:
-        recording_url = HttpUrl(
-            f"https://recordings.example.com/role-play/{call_id}"
-        )
-        total = (
-            quote.comparable_total
-            or quote.negotiated_total
-            or quote.headline_total
-        )
+        recording_url = HttpUrl(f"https://recordings.example.com/role-play/{call_id}")
+        total = quote.comparable_total or quote.negotiated_total or quote.headline_total
         total_statement = (
             f"The synthetic comparable total is {total} USD."
             if total is not None
@@ -164,9 +160,7 @@ class MockVoiceProvider:
                     ),
                     "call_id": call_id,
                     "excerpt": f"{ROLE_PLAY_NOTICE} {total_statement}",
-                    "claim": (
-                        "Synthetic role-play quote evidence only; not a company claim."
-                    ),
+                    "claim": ("Synthetic role-play quote evidence only; not a company claim."),
                     "recording_url": recording_url,
                     "data_classification": DataClassification.ROLE_PLAY,
                 },
@@ -188,8 +182,7 @@ class MockVoiceProvider:
                     "Role-play synthetic availability; not a claim about the company."
                 ),
                 "concessions": [
-                    f"Role-play scenario: {concession}"
-                    for concession in quote.concessions
+                    f"Role-play scenario: {concession}" for concession in quote.concessions
                 ],
                 "red_flags": [],
                 "provisional_data": provisional_data,

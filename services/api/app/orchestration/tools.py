@@ -46,7 +46,7 @@ class VoiceTools:
         call_id: UUID,
         outcome: CallOutcome,
         completed_at: datetime,
-        recording_url: HttpUrl | str,
+        recording_url: HttpUrl | str | None,
     ) -> CallRecord:
         attempt = self._require_attempt(call_id)
         if completed_at is None:
@@ -55,17 +55,14 @@ class VoiceTools:
             raise DomainConflict("Completed timestamp must include a timezone")
         if completed_at < attempt.started_at:
             raise DomainConflict("Call completion cannot precede call start")
-        if recording_url is None or not str(recording_url).strip():
-            raise DomainConflict("Completed calls require a recording URL")
-
         quote = outcome.quote
         if quote is not None:
+            if recording_url is None or not str(recording_url).strip():
+                raise DomainConflict("Itemized quote calls require a recording URL")
             self._validate_quote(attempt, quote)
 
         status = (
-            CallStatus.FAILED
-            if outcome.type is CallOutcomeType.FAILED
-            else CallStatus.COMPLETED
+            CallStatus.FAILED if outcome.type is CallOutcomeType.FAILED else CallStatus.COMPLETED
         )
         completed_attempt = attempt.model_copy(
             update={"status": status, "completed_at": completed_at},
@@ -132,10 +129,7 @@ class VoiceTools:
             raise DomainConflict("Quote vendor does not match call attempt")
         if quote.job_spec_version != attempt.job_spec_snapshot.version:
             raise DomainConflict("Quote JobSpec version does not match call attempt")
-        if any(
-            evidence.call_id != attempt.call_id
-            for evidence in quote.transcript_evidence
-        ):
+        if any(evidence.call_id != attempt.call_id for evidence in quote.transcript_evidence):
             raise DomainConflict("Quote evidence does not match call attempt")
         if quote.verification_status is VerificationStatus.VERIFIED and (
             not quote.verified_data or not quote.transcript_evidence

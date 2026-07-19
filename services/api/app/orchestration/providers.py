@@ -1,6 +1,6 @@
 """Provider-neutral protocols consumed by VeraMove orchestration."""
 
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 from services.api.app.contracts import JobSpecV1, QuoteV1, Vendor
@@ -17,6 +17,7 @@ class VoiceProvider(Protocol):
         job_spec: JobSpecV1,
         vendor: Vendor,
         call_id: UUID,
+        destination_slot: Literal[0, 1, 2],
     ) -> VoiceCallResult: ...
 
     def initiate_negotiation_call(
@@ -26,6 +27,7 @@ class VoiceProvider(Protocol):
         verified_competitor: QuoteV1,
         planned_quote: QuoteV1,
         call_id: UUID,
+        destination_slot: Literal[0, 1, 2],
     ) -> VoiceCallResult: ...
 
 

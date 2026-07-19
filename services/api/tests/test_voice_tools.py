@@ -80,10 +80,7 @@ def test_mock_voice_provider_initiates_one_quote_call(fixtures, job_spec):
     assert result.outcome.quote.vendor == vendor
     assert result.outcome.quote.job_id == job_spec.job_id
     assert result.outcome.quote.job_spec_version == job_spec.version
-    assert all(
-        evidence.call_id == call_id
-        for evidence in result.outcome.quote.transcript_evidence
-    )
+    assert all(evidence.call_id == call_id for evidence in result.outcome.quote.transcript_evidence)
 
 
 def test_mock_voice_provider_creates_disclaimed_role_play_for_unknown_vendor(
@@ -96,9 +93,7 @@ def test_mock_voice_provider_creates_disclaimed_role_play_for_unknown_vendor(
             "vendor_id": uuid4(),
             "name": "Example Moving Cooperative",
             "slug": "example-moving-cooperative",
-            "behavior_summary": (
-                "Role-play discovery candidate; no real behavior is inferred."
-            ),
+            "behavior_summary": ("Role-play discovery candidate; no real behavior is inferred."),
             "contact_label": "Role-play channel; no contact details stored.",
             "data_classification": DataClassification.ROLE_PLAY,
             "provenance": [
@@ -132,18 +127,14 @@ def test_mock_voice_provider_creates_disclaimed_role_play_for_unknown_vendor(
     assert first_quote.quote_id != second_quote.quote_id
     assert first.recording_url != second.recording_url
     assert first.reference.provider_call_id != second.reference.provider_call_id
-    assert {
-        evidence.evidence_id for evidence in first_quote.transcript_evidence
-    }.isdisjoint(
+    assert {evidence.evidence_id for evidence in first_quote.transcript_evidence}.isdisjoint(
         evidence.evidence_id for evidence in second_quote.transcript_evidence
     )
     assert all(
         evidence.call_id == first_call_id
         and evidence.data_classification is DataClassification.ROLE_PLAY
         and "not a claim" in evidence.excerpt.casefold()
-        and str(evidence.recording_url).startswith(
-            "https://recordings.example.com/role-play/"
-        )
+        and str(evidence.recording_url).startswith("https://recordings.example.com/role-play/")
         for evidence in first_quote.transcript_evidence
     )
     assert "not a claim" in first_quote.verified_data["role_play_notice"].casefold()
@@ -172,10 +163,7 @@ def test_mock_voice_provider_rebinds_negotiated_quote(fixtures, job_spec):
     assert result.outcome.quote.job_id == job_spec.job_id
     assert result.outcome.quote.job_spec_version == job_spec.version
     assert result.outcome.quote.vendor == target
-    assert all(
-        evidence.call_id == call_id
-        for evidence in result.outcome.quote.transcript_evidence
-    )
+    assert all(evidence.call_id == call_id for evidence in result.outcome.quote.transcript_evidence)
 
 
 def test_mock_intelligence_extracts_document_as_fresh_unconfirmed_job(fixtures, job_spec):
@@ -367,10 +355,7 @@ def test_tools_persist_parent_call_before_quote_for_relational_storage(
     class ForeignKeyEnforcingRepository(InMemoryRepository):
         def save_quote(self, quote):
             call_id = quote.transcript_evidence[0].call_id
-            if not any(
-                call.call_id == call_id
-                for call in self.list_calls(quote.job_id)
-            ):
+            if not any(call.call_id == call_id for call in self.list_calls(quote.job_id)):
                 raise AssertionError("quote requires its parent call")
             return super().save_quote(quote)
 
@@ -436,19 +421,18 @@ def test_tools_store_every_non_quote_outcome(
     repository.create_attempt(attempt)
     tools = VoiceTools(repository, repository)
     completed_at = datetime(2026, 7, 18, 17, 0, tzinfo=UTC)
-    recording_url = "https://recordings.example.com/synthetic-outcome.mp3"
-
     call = tools.save_call_outcome(
         attempt.call_id,
         outcome,
         completed_at,
-        recording_url,
+        None,
     )
-    tools.save_call_outcome(attempt.call_id, outcome, completed_at, recording_url)
+    tools.save_call_outcome(attempt.call_id, outcome, completed_at, None)
 
     assert call.outcome == outcome
     assert call.job_id == attempt.job_id
     assert call.vendor == attempt.vendor
+    assert call.recording_url is None
     assert repository.get_attempt(attempt.call_id).status is expected_status
     assert repository.list_calls(attempt.job_id) == [call]
 

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 from services.api.app.contracts import (
     CallOutcome,
@@ -32,6 +36,28 @@ class VoiceCallReference(BaseModel):
     provider_call_id: str = Field(min_length=1, max_length=200)
 
 
+def job_spec_sha256(job_spec: JobSpecV1) -> str:
+    """Hash one canonical JSON representation of a locked JobSpec snapshot."""
+
+    serialized = json.dumps(
+        job_spec.model_dump(mode="json"),
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+class NegotiationContext(BaseModel):
+    """Verified leverage identities captured before a negotiation call."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_quote_id: UUID
+    competitor_quote_id: UUID
+    eligible_leverage_total: Decimal = Field(ge=0)
+    evidence_ids: tuple[UUID, ...] = Field(min_length=1, max_length=100)
+
+
 class CallAttempt(BaseModel):
     """Pending or in-progress call state kept outside the canonical aggregate."""
 
@@ -42,10 +68,52 @@ class CallAttempt(BaseModel):
     kind: CallKind
     vendor: Vendor
     job_spec_snapshot: JobSpecV1
+    job_spec_version: str = Field(min_length=1, max_length=20)
+    job_spec_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    destination_slot: Literal[0, 1, 2] = 0
+    expected_agent_id: str = Field(min_length=1, max_length=200)
+    agent_config_version: str = Field(min_length=1, max_length=80)
+    call_mode: Literal["quote", "negotiation"]
+    negotiation_context: NegotiationContext | None = None
     status: CallStatus
     started_at: datetime
     completed_at: datetime | None = None
     reference: VoiceCallReference | None = None
+    provider_version_id: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_audit_fields(cls, data: Any) -> Any:
+        """Keep old synthetic constructors concise while deriving immutable audit facts."""
+
+        if not isinstance(data, dict):
+            return data
+        values = dict(data)
+        snapshot = values.get("job_spec_snapshot")
+        if snapshot is not None:
+            parsed = JobSpecV1.model_validate(snapshot)
+            values.setdefault("job_spec_version", parsed.version)
+            values.setdefault("job_spec_sha256", job_spec_sha256(parsed))
+        raw_kind = values.get("kind")
+        kind = raw_kind.value if isinstance(raw_kind, CallKind) else raw_kind
+        values.setdefault("call_mode", kind)
+        values.setdefault("expected_agent_id", "synthetic-mock-outbound-agent")
+        values.setdefault("agent_config_version", "mock-v1")
+        return values
+
+    @model_validator(mode="after")
+    def validate_audit_fields(self) -> CallAttempt:
+        if self.job_spec_version != self.job_spec_snapshot.version:
+            raise ValueError("Call attempt JobSpec version does not match snapshot")
+        if self.job_spec_sha256 != job_spec_sha256(self.job_spec_snapshot):
+            raise ValueError("Call attempt JobSpec hash does not match snapshot")
+        if self.call_mode != self.kind.value:
+            raise ValueError("Call attempt mode does not match kind")
+        if self.kind is CallKind.QUOTE and self.negotiation_context is not None:
+            raise ValueError("Quote attempts cannot contain negotiation context")
+        if self.kind is CallKind.NEGOTIATION and self.negotiation_context is None:
+            raise ValueError("Negotiation attempts require verified context")
+        return self
 
 
 class VoiceCallResult(BaseModel):

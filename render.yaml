@@ -13,15 +13,25 @@ services:
         value: "false"
       - key: ELEVENLABS_API_KEY
         sync: false
-      - key: ELEVENLABS_QUOTE_AGENT_ID
+      - key: ELEVENLABS_INTAKE_AGENT_ID
         sync: false
-      - key: ELEVENLABS_NEGOTIATOR_AGENT_ID
+      - key: ELEVENLABS_OUTBOUND_AGENT_ID
         sync: false
       - key: ELEVENLABS_PHONE_NUMBER_ID
         sync: false
       - key: ELEVENLABS_WEBHOOK_SECRET
         sync: false
-      - key: LIVE_TEST_TO_NUMBER
+      - key: ELEVENLABS_PRECALL_SECRET
+        sync: false
+      - key: LIVE_TEST_TO_NUMBERS
+        sync: false
+      - key: PUBLIC_API_BASE_URL
+        sync: false
+      - key: RECORDING_SIGNING_SECRET
+        sync: false
+      - key: VOICE_OPERATOR_SECRET
+        sync: false
+      - key: AGENT_CONFIG_VERSION
         sync: false
       - key: OPENAI_ENABLED
         value: "false"

@@ -37,8 +37,8 @@ class StaticDiscoveryGateway:
 class FailingDomainVoice:
     initial_call_limit = 3
 
-    def initiate_quote_call(self, job_spec, vendor, call_id):
-        del job_spec, vendor, call_id
+    def initiate_quote_call(self, job_spec, vendor, call_id, destination_slot):
+        del job_spec, vendor, call_id, destination_slot
         raise ResourceNotFound("Synthetic provider-domain failure")
 
 
@@ -203,13 +203,16 @@ def test_batch_creates_three_role_play_quotes_for_discovered_vendors(
     assert len(attempts) == 3
     assert all(attempt.job_spec_snapshot == confirmed.job_spec for attempt in attempts)
     assert len({quote.quote_id for quote in result.quotes}) == 3
-    assert len(
-        {
-            evidence.evidence_id
-            for quote in result.quotes
-            for evidence in quote.transcript_evidence
-        }
-    ) == 3
+    assert (
+        len(
+            {
+                evidence.evidence_id
+                for quote in result.quotes
+                for evidence in quote.transcript_evidence
+            }
+        )
+        == 3
+    )
     assert all(
         quote.data_classification is DataClassification.ROLE_PLAY
         and quote.red_flags == []
@@ -220,9 +223,7 @@ def test_batch_creates_three_role_play_quotes_for_discovered_vendors(
     completed = service.negotiate(job_spec.job_id)
     negotiated = completed.quotes[-1]
     matching_initial = next(
-        quote
-        for quote in result.quotes
-        if quote.vendor.vendor_id == negotiated.vendor.vendor_id
+        quote for quote in result.quotes if quote.vendor.vendor_id == negotiated.vendor.vendor_id
     )
     report = service.get_report(job_spec.job_id)
 
@@ -267,9 +268,11 @@ def test_provider_domain_failure_does_not_leave_job_calling(service, job_spec):
         service.start_calls(job_spec.job_id)
 
     attempts = service.list_call_attempts(job_spec.job_id)
-    assert len(attempts) == 1
-    assert attempts[0].status is CallStatus.FAILED
-    assert attempts[0].completed_at is not None
+    assert len(attempts) == 3
+    assert [attempt.status for attempt in attempts].count(CallStatus.FAILED) == 1
+    assert [attempt.status for attempt in attempts].count(CallStatus.PENDING) == 2
+    failed = next(attempt for attempt in attempts if attempt.status is CallStatus.FAILED)
+    assert failed.completed_at is not None
     assert service.get_job(job_spec.job_id).state is JobState.FAILED
 
 
