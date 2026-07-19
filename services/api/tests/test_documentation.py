@@ -98,9 +98,23 @@ def test_backend_voice_runbook_documents_fail_closed_live_and_release_gates():
     for safety_fact in (
         "APP_MODE=live",
         "LIVE_CALLS_ENABLED=true",
-        "LIVE_TEST_TO_NUMBER",
+        "LIVE_TEST_TO_NUMBERS",
         "Do not run the live smoke test from CI",
-        "one call only",
+        "--confirm-supervised-one-call",
+        "scripts/live_voice_preflight.py --check-only",
+        "scripts/live_voice_smoke.py",
+        "three-call run",
+        "not ElevenLabs Batch Calling",
+        "Audio Saving",
+        "nonzero retention",
+        "post-call transcription retries",
+        "/api/webhooks/elevenlabs/pre-call",
+        "/api/webhooks/elevenlabs",
+        "three consenting",
+        "202607190003_live_voice_materialization.sql",
+        "202607190004_atomic_voice_intake.sql",
+        "repair",
+        "APP_MODE=mock",
         "unset",
         "No release tag before code freeze",
     ):
@@ -119,11 +133,51 @@ def test_backend_voice_pr_summary_records_contract_and_operational_limits():
         assert f"## {heading}" in BACKEND_VOICE_PR_SUMMARY
     normalized_summary = " ".join(BACKEND_VOICE_PR_SUMMARY.lower().split())
     for fact in (
-        "in-memory",
-        "at most one",
-        "does not produce a live report",
-        "no canonical field change",
+        "supabase",
+        "exactly three",
+        "two agent roles",
+        "canonical report",
+        "optional for non-quote",
         "raw transcript",
         "no release tag",
     ):
         assert fact in normalized_summary
+
+
+def test_live_voice_docs_remove_obsolete_one_call_limitations():
+    combined = "\n".join(
+        (
+            README,
+            (ROOT / "docs/architecture.md").read_text(encoding="utf-8"),
+            (ROOT / "docs/integration-boundaries.md").read_text(encoding="utf-8"),
+            BACKEND_VOICE_RUNBOOK,
+            BACKEND_VOICE_PR_SUMMARY,
+        )
+    ).lower()
+    for obsolete in (
+        "at most one opted-in test call",
+        "does not produce a live report",
+        "does not materialize a canonical quote",
+        "one externally supplied test destination",
+        "one-call voice adapter",
+    ):
+        assert obsolete not in combined
+
+
+def test_readme_and_architecture_document_two_roles_and_exact_three_flow():
+    combined = "\n".join(
+        (
+            README,
+            (ROOT / "docs/architecture.md").read_text(encoding="utf-8"),
+            (ROOT / "docs/integration-boundaries.md").read_text(encoding="utf-8"),
+        )
+    )
+    for fact in (
+        "VeraMove Intake",
+        "VeraMove Outbound Negotiator",
+        "exactly three",
+        "same locked JobSpec",
+        "call_mode=quote",
+        "call_mode=negotiation",
+    ):
+        assert fact in combined

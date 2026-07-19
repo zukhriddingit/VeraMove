@@ -1,8 +1,10 @@
 # VeraMove
 
-VeraMove is a standalone, mock-first AI moving-services negotiator. It turns voice or document
-intake into one locked job specification, compares three vendors on identical facts, negotiates
-with verified evidence, and explains its final ranking with transcript and recording references.
+VeraMove is a standalone, mock-first AI moving-services negotiator. **VeraMove Intake** and document
+intake both produce one versioned job specification. After explicit confirmation, one **VeraMove
+Outbound Negotiator** calls exactly three fictional role-play vendors with the same locked JobSpec,
+uses verified evidence for one negotiation, and explains the final ranking with transcript and
+recording references.
 
 This public repository is a minimal hackathon starter for parallel development—not a production
 moving, calling, or booking product.
@@ -13,7 +15,7 @@ The seeded demo proves this loop:
 
 1. Create a structured two-bedroom `JobSpecV1` from synthetic intake.
 2. Confirm and lock version 1.0.
-3. Create three synthetic vendor calls with itemized outcomes.
+3. Create exactly three synthetic vendor calls with itemized or supported non-quote outcomes.
 4. Use a verified competing quote in a follow-up negotiation.
 5. Measure a lower price and deposit.
 6. Rank vendors and link reasons to transcript evidence and synthetic recording URLs.
@@ -25,8 +27,10 @@ service depends on repository, voice, negotiation, and discovery protocols. `APP
 an in-memory repository and deterministic fixtures, so no external SDK or account is needed.
 
 The Vite/React frontend has one API client and imports types generated from FastAPI OpenAPI.
-Optional OpenAI, Tavily, and Supabase adapters are independently enabled and fail closed. No local
-database or provider credential is required for the complete mock workflow.
+Optional OpenAI, Tavily, and Supabase adapters are independently enabled and fail closed. Live voice
+uses the two reviewed agent roles, asynchronous signed provider events, durable Supabase
+materialization, and signed recording capabilities. No provider credential is required for the
+complete mock workflow.
 
 See [architecture details](docs/architecture.md), [API contract rules](docs/api-contract.md), and
 [integration boundaries](docs/integration-boundaries.md).
@@ -95,8 +99,17 @@ Copy `.env.example` only if you want to override safe defaults.
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Browser API base URL |
 | `CORS_ALLOW_ORIGINS` | local Vite origins | Comma-separated exact browser origins allowed to call the API |
 | `LIVE_CALLS_ENABLED` | `false` | Independent switch required before a controlled live call |
-| `ELEVENLABS_*` | empty | Live agent, phone-number, webhook, and API configuration |
-| `LIVE_TEST_TO_NUMBER` | empty | Externally supplied, opted-in live test destination |
+| `ELEVENLABS_API_KEY` | empty | Backend-only ElevenLabs credential |
+| `ELEVENLABS_INTAKE_AGENT_ID` | empty | Reviewed VeraMove Intake agent identifier |
+| `ELEVENLABS_OUTBOUND_AGENT_ID` | empty | One shared quote/negotiation agent identifier |
+| `ELEVENLABS_PHONE_NUMBER_ID` | empty | Imported Twilio number identifier managed by ElevenLabs |
+| `ELEVENLABS_WEBHOOK_SECRET` | empty | Strong signed post-call webhook secret |
+| `ELEVENLABS_PRECALL_SECRET` | empty | Strong inbound conversation-initiation secret |
+| `LIVE_TEST_TO_NUMBERS` | empty | Exactly three unique consenting E.164 role-play destinations |
+| `PUBLIC_API_BASE_URL` | empty | Deployed HTTPS API origin used for webhook/recording URLs |
+| `RECORDING_SIGNING_SECRET` | empty | Strong recording-capability signing secret |
+| `VOICE_OPERATOR_SECRET` | empty | Strong repair/operator authorization secret |
+| `AGENT_CONFIG_VERSION` | empty | Must match both committed reviewed agent assets |
 | `OPENAI_ENABLED` | `false` | Enables strict document extraction and summary-only narration |
 | `OPENAI_API_KEY` | empty | Backend-only OpenAI credential |
 | `OPENAI_DOCUMENT_MODEL` | `gpt-5.6-luna` | Strict document extraction model |
@@ -128,8 +141,10 @@ The Blueprint keeps `APP_MODE=mock`, every optional provider switch, and
 
 Activate the non-voice providers one at a time while `LIVE_CALLS_ENABLED=false`:
 
-1. Run `supabase/migrations/202607180001_initial_schema.sql` and then
-   `supabase/migrations/202607190002_live_persistence_hardening.sql` in the Supabase SQL editor.
+1. Run `supabase/migrations/202607180001_initial_schema.sql`,
+   `supabase/migrations/202607190002_live_persistence_hardening.sql`,
+   `supabase/migrations/202607190003_live_voice_materialization.sql`, and
+   `supabase/migrations/202607190004_atomic_voice_intake.sql` in that order in the Supabase SQL editor.
    Enter `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`, set
    `SUPABASE_ENABLED=true`, and verify a synthetic job survives one Render redeploy.
 2. Enter `TAVILY_API_KEY`, set `TAVILY_ENABLED=true`, and verify
@@ -140,19 +155,19 @@ Activate the non-voice providers one at a time while `LIVE_CALLS_ENABLED=false`:
 Render redeploys after environment changes. If an enabled provider is missing configuration or
 fails, VeraMove reports a safe error instead of silently switching back to mock data.
 
-After deployment, use `https://<service-host>/api/webhooks/elevenlabs` as the ElevenLabs post-call
-webhook URL and copy its generated HMAC secret directly into Render. The service must remain at one
-Uvicorn worker while it uses the in-memory repository. Jobs and call attempts disappear on restart
-unless the Supabase adapter is enabled after both migrations are applied.
+After deployment, configure the authenticated conversation-initiation endpoint at
+`https://<service-host>/api/webhooks/elevenlabs/pre-call` and signed post-call transcription at
+`https://<service-host>/api/webhooks/elevenlabs`. Deployed live voice requires Supabase after all
+four migrations; it never falls back to process memory.
 
 ## Mock mode
 
 Mock mode is the default complete demo mode. With optional provider switches off, it uses
 process-local memory and deterministic synthetic fixtures for calls, quotes, transcripts,
-recordings, discovery, intelligence, and negotiation. `APP_MODE=live` selects only the controlled
-one-call voice adapter; OpenAI, Tavily, and Supabase remain independent. Live voice stays disabled
-without `LIVE_CALLS_ENABLED=true` and the complete reviewed configuration documented in
-`docs/backend-voice-runbook.md`.
+recordings, discovery, intelligence, and negotiation. `APP_MODE=live` selects the asynchronous
+two-agent voice workflow; OpenAI and Tavily remain independent, while durable Supabase is mandatory
+for deployed live calls. Live voice stays disabled without `LIVE_CALLS_ENABLED=true`, exactly three
+destinations, and the complete reviewed configuration in `docs/backend-voice-runbook.md`.
 
 ## Commands
 
@@ -164,13 +179,19 @@ without `LIVE_CALLS_ENABLED=true` and the complete reviewed configuration docume
 | `python scripts/export_openapi.py` | Regenerates `packages/contracts/openapi.json` |
 | `npm --prefix apps/web run generate:api` | Regenerates `apps/web/src/api/schema.d.ts` |
 | `python -m evals.run` | Runs deterministic synthetic intelligence evaluations |
+| `.venv/bin/python scripts/live_voice_preflight.py --check-only` | Performs read-only redacted live readiness checks; never calls |
+| `.venv/bin/python scripts/live_voice_smoke.py --confirm-supervised-one-call` | Places one explicit slot-zero provider smoke without canonical job state |
 
 ## API routes
 
 | Method | Route | Mock behavior |
 | --- | --- | --- |
 | GET | `/health` | Reports service and selected runtime mode |
+| GET | `/api/integrations/status` | Reports safe provider enablement and aggregate OpenAI usage |
 | POST | `/api/intake/document` | Creates an unconfirmed job; OpenAI extracts only when enabled |
+| POST | `/api/intake/sessions` | Reserves a safe voice-intake session without creating an incomplete job |
+| GET | `/api/intake/sessions/{session_id}` | Returns intake status and the unconfirmed JobSpec after completion |
+| GET | `/api/intake/conversations/{conversation_id}` | Resolves a safe intake session by provider conversation |
 | POST | `/api/jobs` | Creates a job at `intake_complete` through the selected repository |
 | GET | `/api/jobs/{job_id}` | Returns the typed job aggregate |
 | GET | `/api/jobs/{job_id}/events` | Returns safe normalized provider events |
@@ -179,6 +200,9 @@ without `LIVE_CALLS_ENABLED=true` and the complete reviewed configuration docume
 | POST | `/api/jobs/{job_id}/negotiate` | Adds a measurably improved synthetic quote |
 | GET | `/api/jobs/{job_id}/report` | Returns the evidence-backed final recommendation |
 | POST | `/api/webhooks/elevenlabs` | Authenticates, normalizes, and deduplicates a signed webhook |
+| POST | `/api/webhooks/elevenlabs/pre-call` | Authenticates inbound Intake conversation initialization |
+| GET | `/api/calls/{call_id}/recording` | Verifies a signed capability and streams provider audio server-side |
+| POST | `/api/calls/{call_id}/repair` | Reconciles one stored done/failed conversation with operator authorization |
 | GET | `/api/vendors/discover` | Returns synthetic or Tavily-provenance vendor candidates |
 
 Illegal state transitions return HTTP 409 with a domain error code. Unknown jobs return HTTP 404.
@@ -194,17 +218,19 @@ including the product-narrative and submission ownership in `docs/submission/`.
 
 ## Known limitations
 
-- The controlled live adapter can initiate at most one opted-in test call; it does not convert live
-  post-call data into a canonical quote or complete a live report.
-- A signed live ElevenLabs post-call webhook is authenticated and can be persisted, but it still
-  does not materialize a canonical quote or report.
+- Live voice is a supervised fictional role-play, not a production customer or moving-company
+  calling system. Provider dashboard synchronization and consent checks remain manual.
 - Tavily supplies vendor identity and provenance only; it does not supply verified quotes or direct
   phone contacts.
-- Supabase persistence has no end-user authentication or authorization layer.
+- Supabase persistence has no end-user authentication, multi-tenant authorization, or production
+  operator policy layer.
 - No payment or booking workflow is implemented.
+- There is no production retry queue or operator console; signed webhook replay and an authorized
+  repair path handle the demo recovery cases.
+- VeraMove intentionally does not retain raw transcripts or audio bytes. Recording playback depends
+  on the configured short, nonzero provider retention window.
 - Mock calls and negotiation complete synchronously.
 - The frontend is a functional route scaffold, not a polished production interface.
-- In-memory data is single-process and resets on restart.
 
 ## Synthetic data
 

@@ -2,92 +2,77 @@
 
 ## Summary
 
-- Splits orchestration across five injected core boundaries: voice, intelligence, job repository,
-  call repository, and quote repository.
-- Composes the deterministic three-vendor batch from one single-call primitive while preserving the
-  same confirmed `JobSpecV1` version on every call and quote.
-- Adds a fail-closed ElevenLabs native Twilio outbound adapter for a deliberately controlled live
-  test, with HTTP transport injection so tests never dial.
-- Authenticates and normalizes signed ElevenLabs webhooks into safe, replay-protected job events
-  without retaining arbitrary provider payloads or raw transcript content.
-- Negotiates only with verified, same-job, same-version, different-vendor evidence and requires a
-  measurable price or term improvement before completing the report.
+- Adds two agent roles: **VeraMove Intake** and one shared **VeraMove Outbound Negotiator**.
+- Produces one canonical unconfirmed `JobSpecV1` from either document or voice intake, then requires
+  explicit confirmation before vendor calling.
+- Initiates exactly three initial role-play calls with the same locked JobSpec and stable secret
+  destination slots. The shared outbound agent branches on `call_mode=quote` or
+  `call_mode=negotiation`.
+- Authenticates provider events, materializes all supported outcomes atomically in Supabase, requires
+  per-claim evidence for verified quotes, and produces the canonical report after measurable
+  negotiation improvement.
+- Proxies provider recordings through signed VeraMove capabilities and supports idempotent,
+  operator-authorized conversation repair without redialing.
 
 ## Routes
 
-Frozen workflow surface:
-
-- `GET /health`
-- `POST /api/intake/document`
-- `GET /api/jobs/{job_id}`
-- `POST /api/jobs/{job_id}/confirm`
-- `POST /api/jobs/{job_id}/calls`
-- `POST /api/webhooks/elevenlabs`
-- `POST /api/jobs/{job_id}/negotiate`
-- `GET /api/jobs/{job_id}/report`
-- `GET /api/jobs/{job_id}/events`
-
-Retained compatibility routes:
-
-- `POST /api/jobs` for structured `JobSpecV1` intake.
-- `GET /api/vendors/discover` for deterministic synthetic vendor discovery.
+The FastAPI/OpenAPI surface includes document and structured intake, typed voice-intake sessions,
+job confirmation/state, calls, negotiation, report, safe events, vendor discovery, authenticated
+ElevenLabs pre-call and post-call webhooks, signed recording streaming, conversation repair, runtime
+health, and safe OpenAI usage status. FastAPI OpenAPI remains canonical; generated frontend types are
+committed with every public change.
 
 ## Safety controls
 
-- `APP_MODE=mock` is the credential-free default for development, demos, tests, and CI.
-- Live initiation requires three independent gates: `APP_MODE=live`,
-  `LIVE_CALLS_ENABLED=true`, and complete ElevenLabs agent/phone/webhook configuration plus the
-  externally supplied `LIVE_TEST_TO_NUMBER`.
-- Tests inject a recording HTTP transport. No automated test, mock smoke, startup path, or CI job
-  makes a real network request or places a call.
-- The destination is not accepted from job input or committed fixtures. The runbook requires
-  explicit destination-owner consent and a single, human-supervised invocation.
-- Webhooks authenticate the exact raw body with HMAC-SHA256, reject missing/malformed/invalid or
-  stale timestamps outside the five-minute window, and atomically reserve a replay key.
-- Normalized events allowlist identifiers, timestamps, and statuses. Phone numbers, raw transcript
-  bodies, secrets, and arbitrary provider payloads are not stored in events or written to logs.
+- `APP_MODE=mock` is credential-free and remains the default for development, tests, demo fallback,
+  and CI.
+- Full live mode requires `APP_MODE=live`, `LIVE_CALLS_ENABLED=true`, durable Supabase, exactly three
+  unique E.164 destination secrets, both agent IDs, the imported phone-number ID, strong pre-call,
+  post-call, recording, and operator secrets, an HTTPS public origin, and a reviewed agent config
+  version.
+- Three consenting teammates represent fictional vendors. Tavily identities and real moving-company
+  phone contacts can never enter the live call roster.
+- Raw webhook bytes are authenticated before parsing. Phones, arbitrary metadata, raw transcript
+  bodies, analysis rationales, audio, and secrets are neither persisted nor logged.
+- Provider claims become canonical only after stored identity/version/hash checks and per-claim
+  transcript evidence. A recording URL is optional for non-quote failure/callback/decline outcomes,
+  but mandatory for an evidence-backed itemized quote.
+- Preflight is read-only and emits only booleans, counts, and redacted identifiers. The separate
+  one-call smoke needs explicit operator confirmation, always uses slot zero, and creates no
+  canonical batch state.
 
 ## Test evidence
 
-- Final repository pipeline: `python scripts/check.py` passed Ruff, all 153 pytest tests, OpenAPI
-  export, TypeScript API generation, frontend typecheck, all 4 tests in 1 Vitest file, and the Vite
-  production build.
-- Focused backend coverage includes `test_service.py`, `test_voice_tools.py`,
-  `test_live_voice.py`, `test_webhooks.py`, `test_api.py`, `test_openapi.py`, and
-  `test_documentation.py`.
-- Live request tests assert the exact native outbound endpoint and payload through an injected fake
-  transport; they do not perform a network call.
-- Webhook tests cover valid signatures, invalid and stale signatures, malformed payloads, replay,
-  unknown statuses, unmatched attempts, and transcript exclusion.
-- Lifecycle and safety tests cover idempotent confirmation/calls/negotiation, all required call
-  outcomes, immutable version references, invalid transitions, fake-leverage rejection, measurable
-  improvement, and evidence-backed reporting.
-- Generated artifact verification: regenerating `packages/contracts/openapi.json` and
-  `apps/web/src/api/schema.d.ts` left both files with zero working-tree diff.
-- The backend suite emits one non-failing `StarletteDeprecationWarning` from FastAPI's test-client
-  compatibility import; there are no failed or skipped checks.
+- Contract tests cover mutually exclusive outcomes, terminal status consistency, optional non-quote
+  recording, and quote/call/evidence identity.
+- Agent drift tests verify exactly two reviewed roles, 24 intake and 14 outbound Data Collection
+  fields, required disclosure/stop rules, and config version alignment.
+- Fake transports cover three distinct slot payloads, one outbound ID, identical locked facts,
+  provider errors, safe webhook parsing, audio proxy failure, and preflight/smoke refusal paths.
+- Repository tests cover leased receipt concurrency, replay, out-of-order completion, atomic Supabase
+  finalization, and idempotent repair.
+- The required final evidence is a clean `python scripts/check.py`, deterministic mock workflow,
+  agent-asset check, redacted preflight, one supervised synthetic smoke, and full supervised demo.
+  Update this section with the final observed counts only after those gates run.
 
 ## Contract impact
 
-- FastAPI OpenAPI remains canonical. This PR adds document-intake, job-event, signed provider
-  webhook, and runtime-health API schemas and the document-intake/events routes; it makes no
-  canonical field change to `JobSpecV1`, `CallRecord`, `QuoteV1`, or `RecommendationV1`.
-- `packages/contracts/openapi.json` and `apps/web/src/api/schema.d.ts` were regenerated with the API
-  changes. The additive artifacts require review from the canonical-contract owner and frontend
-  owner before merge.
-- Internal `CallAttempt`, provider reference/result, normalized webhook, and job-event models do not
-  replace or weaken the canonical completed-call contracts.
+FastAPI OpenAPI remains canonical. Public additions include voice-intake session/pre-call models,
+recording and repair routes, integration status, and asynchronous live-state responses. Existing
+domain validation is tightened: supported outcome details are mutually exclusive; a non-quote
+recording URL is optional; verified quotes still require matching call/evidence recording identity.
+Provider envelopes, `CallAttempt`, `IntakeSession`, and webhook leases remain internal and do not
+create handwritten duplicate frontend contracts.
 
 ## Known limitations
 
-- Runtime persistence is in-memory; process restarts lose jobs, attempts, replay keys, and events.
-- The controlled live path intentionally places at most one opted-in test call and does not produce
-  a live report. Provider post-call data advances an attempt/event but is not converted into a
-  canonical quote by this slice.
-- Live intelligence remains deterministic; no OpenAI model request is wired in this slice.
-- Tavily vendor discovery also remains deterministic, and Supabase persistence remains unwired.
+- This is a supervised fictional-role-play demo, not a production calling, moving, or booking system.
+- Supabase has no end-user authentication/authorization layer or production multi-tenant policy.
 - There is no automatic booking, payment, production retry queue, or operator console.
-- The post-call raw transcript is intentionally not persisted; only safe normalized status metadata
-  is retained.
-- There is no release tag in this branch. Code freeze, merge, tag, release, and any live call require
-  separate team authorization.
+- Full transcripts and audio are intentionally not retained by VeraMove; playback depends on the
+  configured short provider retention window.
+- Provider dashboard synchronization is manual and must be rechecked against committed assets before
+  each live run.
+- The frontend is a typed functional demo and may not expose every operator repair/status control.
+- There is no release tag in this branch. No release tag before code freeze; merge, release, and any
+  live call require separate team authorization.
