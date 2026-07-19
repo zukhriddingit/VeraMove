@@ -20,8 +20,20 @@ function ReportPage() {
     queryFn: () => api.getReport(jobId),
   });
 
-  if (isLoading) return <div className="py-16 text-center text-muted-foreground">Loading report…</div>;
-  if (error) return <ErrorBox message={(error as Error).message} />;
+  if (isLoading)
+    return (
+      <div className="space-y-6">
+        <Stepper current="report" jobId={jobId} />
+        <LoadingCard label="Loading report…" />
+      </div>
+    );
+  if (error)
+    return (
+      <div className="space-y-6">
+        <Stepper current="report" jobId={jobId} />
+        <ErrorBox message={(error as Error).message} />
+      </div>
+    );
   if (!data) return null;
 
   return (
