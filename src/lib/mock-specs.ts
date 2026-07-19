@@ -29,7 +29,7 @@ export function buildVoiceIntakeSpec(): JobSpecV1 {
       address_summary: "[DEMO] 1290 Harbor View Condos #504, Alameda CA",
       dwelling_type: "condo",
       floors: 1,
-      stairs: false,
+      stairs: 0,
       elevator_access: true,
       parking_distance_feet: 25,
       access_notes: "Freight elevator must be reserved 48h ahead.",
