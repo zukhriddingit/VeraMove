@@ -100,11 +100,12 @@ export interface RecommendationRanking {
   quote_id: string;
   rank: number;
   vendor: { vendor_id: string; name: string };
-  total: number;
+  total: string;
   rationale: string[];
   red_flags?: string[];
   evidence_ids: string[];
 }
+
 
 export interface TranscriptEvidence {
   evidence_id: string;
