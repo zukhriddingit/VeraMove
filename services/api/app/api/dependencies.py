@@ -28,6 +28,10 @@ from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
 from services.api.app.integrations.elevenlabs.recordings import (
     ElevenLabsRecordingClient,
 )
+from services.api.app.integrations.elevenlabs.tokens import (
+    BrowserVoiceTokenIssuer,
+    ElevenLabsBrowserVoiceTokenClient,
+)
 from services.api.app.integrations.elevenlabs.webhook import (
     ElevenLabsWebhookProcessor,
 )
@@ -124,6 +128,19 @@ def get_intake_session_service(request: Request) -> IntakeSessionService:
         expected_agent_id=config.intake_agent_id or "synthetic-mock-intake-agent",
         agent_config_version=config.agent_config_version or "mock-v1",
         clock=mock_now if settings.app_mode == "mock" else utc_now,
+    )
+
+
+def get_browser_voice_token_issuer(request: Request) -> BrowserVoiceTokenIssuer:
+    """Compose the server-only token client after fail-closed validation."""
+
+    config = request.app.state.settings.require_browser_voice_config()
+    assert config.api_key is not None
+    assert config.intake_agent_id is not None
+    return ElevenLabsBrowserVoiceTokenClient(
+        api_key=config.api_key,
+        agent_id=config.intake_agent_id,
+        api_base_url=config.api_base_url,
     )
 
 

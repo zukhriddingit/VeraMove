@@ -338,6 +338,8 @@ def test_signed_intake_completion_creates_one_unconfirmed_voice_job(fixtures):
         clock=lambda: NOW,
     )
     session_view = sessions.create_web_session()
+    reserved = sessions.reserve_browser_credential(session_view.intake_session_id)
+    assert reserved.browser_credential_issued_at == NOW
     conversation_id = "conv_synthetic_intake_1"
     sessions.attach_conversation(
         session_view.intake_session_id,

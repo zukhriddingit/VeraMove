@@ -15,6 +15,8 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
         "/api/intake/document",
         "/api/intake/sessions",
         "/api/intake/sessions/{session_id}",
+        "/api/intake/sessions/{session_id}/voice-token",
+        "/api/intake/sessions/{session_id}/conversation",
         "/api/intake/conversations/{conversation_id}",
         "/api/jobs",
         "/api/jobs/{job_id}",
@@ -40,6 +42,8 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
         "ElevenLabsPostCallWebhook",
         "ElevenLabsConversationInitiationResponse",
         "IntakeSessionResponse",
+        "AttachIntakeConversationRequest",
+        "BrowserVoiceTokenResponse",
         "IntegrationStatusSnapshot",
     ):
         assert schema in document["components"]["schemas"]

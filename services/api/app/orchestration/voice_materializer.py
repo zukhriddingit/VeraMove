@@ -661,6 +661,13 @@ class _IntakeStore:
     def save_intake_session(self, session: IntakeSession) -> IntakeSession:
         return self._sessions.save_intake_session(session)
 
+    def reserve_intake_browser_credential(
+        self,
+        session_id: UUID,
+        issued_at: datetime,
+    ) -> IntakeSession:
+        return self._sessions.reserve_intake_browser_credential(session_id, issued_at)
+
     def get(self, job_id: UUID) -> JobRecord | None:
         return self._jobs.get(job_id)
 

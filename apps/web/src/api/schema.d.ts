@@ -106,6 +106,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/intake/sessions/{session_id}/conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Attach Browser Voice Conversation */
+        post: operations["attach_browser_voice_conversation_api_intake_sessions__session_id__conversation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/sessions/{session_id}/voice-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue Browser Voice Token */
+        post: operations["issue_browser_voice_token_api_intake_sessions__session_id__voice_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/integrations/status": {
         parameters: {
             query?: never;
@@ -320,6 +354,14 @@ export interface components {
          */
         AmountStatus: "known" | "unknown" | "not_applicable";
         /**
+         * AttachIntakeConversationRequest
+         * @description Accept only a bounded provider conversation identifier from the SDK.
+         */
+        AttachIntakeConversationRequest: {
+            /** Conversation Id */
+            conversation_id: string;
+        };
+        /**
          * AvailabilityStatus
          * @enum {string}
          */
@@ -329,6 +371,15 @@ export interface components {
          * @enum {string}
          */
         BindingType: "binding" | "non_binding" | "unknown";
+        /**
+         * BrowserVoiceTokenResponse
+         * @description Return one ephemeral token plus canonical correlation variables.
+         */
+        BrowserVoiceTokenResponse: {
+            /** Conversation Token */
+            conversation_token: string;
+            dynamic_variables: components["schemas"]["IntakeDynamicVariables"];
+        };
         /** CallOutcome */
         CallOutcome: {
             /** Callback At */
@@ -1255,6 +1306,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    attach_browser_voice_conversation_api_intake_sessions__session_id__conversation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttachIntakeConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_browser_voice_token_api_intake_sessions__session_id__voice_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserVoiceTokenResponse"];
                 };
             };
             /** @description Validation Error */

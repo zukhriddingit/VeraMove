@@ -226,6 +226,36 @@ class Settings:
         _https_origin("PUBLIC_API_BASE_URL", config.public_api_base_url)
         return config
 
+    def require_browser_voice_config(self) -> LiveVoiceConfig:
+        """Require only the live settings needed for authenticated browser intake."""
+
+        if self.app_mode != "live":
+            raise ProviderConfigurationError("Browser voice requires APP_MODE=live")
+        config = self.live_voice
+        if not config.live_calls_enabled:
+            raise ProviderConfigurationError(
+                "Browser voice requires LIVE_CALLS_ENABLED=true"
+            )
+        self.require_supabase_config()
+        required = {
+            "ELEVENLABS_API_KEY": config.api_key,
+            "ELEVENLABS_INTAKE_AGENT_ID": config.intake_agent_id,
+            "AGENT_CONFIG_VERSION": config.agent_config_version,
+        }
+        missing = [
+            name for name, value in required.items() if value is None or not value.strip()
+        ]
+        if missing:
+            raise ProviderConfigurationError(
+                f"Missing browser voice configuration: {', '.join(missing)}"
+            )
+        if not _secret_is_strong(config.webhook_secret):
+            raise ProviderConfigurationError(
+                "ELEVENLABS_WEBHOOK_SECRET must be at least "
+                f"{MIN_LIVE_SECRET_BYTES} bytes"
+            )
+        return config
+
     def require_openai_config(self) -> OpenAIConfig:
         """Fail closed unless the optional OpenAI boundary is fully enabled."""
 

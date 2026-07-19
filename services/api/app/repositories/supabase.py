@@ -526,6 +526,22 @@ class SupabaseRepository:
         )
         return self._copy_intake_session(candidate)
 
+    def reserve_intake_browser_credential(
+        self,
+        session_id: UUID,
+        issued_at: datetime,
+    ) -> IntakeSession:
+        payload = self._client.rpc(
+            "veramove_reserve_browser_voice_credential",
+            {
+                "p_session_id": str(session_id),
+                "p_issued_at": issued_at.isoformat(),
+            },
+        )
+        if not isinstance(payload, dict):
+            raise ProviderRequestError("Supabase returned an invalid intake reservation")
+        return self._intake_session_from_row(payload)
+
     def reset(self) -> None:
         raise RuntimeError("SupabaseRepository reset is disabled")
 
@@ -639,6 +655,11 @@ class SupabaseRepository:
             "updated_at": session.updated_at.isoformat(),
             "completed_at": (
                 session.completed_at.isoformat() if session.completed_at is not None else None
+            ),
+            "browser_credential_issued_at": (
+                session.browser_credential_issued_at.isoformat()
+                if session.browser_credential_issued_at is not None
+                else None
             ),
         }
 
@@ -769,6 +790,9 @@ class SupabaseRepository:
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
                 "completed_at": row.get("completed_at"),
+                "browser_credential_issued_at": row.get(
+                    "browser_credential_issued_at"
+                ),
             }
         )
 

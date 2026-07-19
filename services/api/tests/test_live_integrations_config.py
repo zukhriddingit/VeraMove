@@ -239,6 +239,48 @@ def test_live_voice_requires_durable_supabase():
         settings.require_live_voice_config()
 
 
+def test_browser_voice_requires_only_intake_configuration_and_durable_storage() -> None:
+    settings = Settings(
+        app_mode="live",
+        live_voice=LiveVoiceConfig(
+            api_key="synthetic-elevenlabs-key",
+            intake_agent_id="synthetic-intake-agent",
+            webhook_secret="w" * 32,
+            agent_config_version="2026-07-19.browser-v1",
+            live_calls_enabled=True,
+        ),
+        supabase=SupabaseConfig(
+            enabled=True,
+            url="https://synthetic-project.supabase.co",
+            secret_key="synthetic-supabase-secret",
+        ),
+    )
+
+    assert settings.require_browser_voice_config().intake_agent_id == (
+        "synthetic-intake-agent"
+    )
+
+
+@pytest.mark.parametrize(
+    "settings",
+    (
+        Settings(),
+        Settings(
+            app_mode="live",
+            live_voice=LiveVoiceConfig(live_calls_enabled=False),
+        ),
+        Settings(
+            app_mode="live",
+            live_voice=LiveVoiceConfig(live_calls_enabled=True),
+            supabase=SupabaseConfig(enabled=True),
+        ),
+    ),
+)
+def test_browser_voice_configuration_fails_closed(settings) -> None:
+    with pytest.raises(ProviderConfigurationError):
+        settings.require_browser_voice_config()
+
+
 def test_live_shaped_values_do_not_activate_voice_in_mock_mode(monkeypatch):
     set_complete_live_env(monkeypatch)
     monkeypatch.setenv("APP_MODE", "mock")

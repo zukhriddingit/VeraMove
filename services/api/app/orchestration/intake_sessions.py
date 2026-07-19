@@ -53,8 +53,14 @@ class IntakeSession(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None
+    browser_credential_issued_at: datetime | None = None
 
-    @field_validator("created_at", "updated_at", "completed_at")
+    @field_validator(
+        "created_at",
+        "updated_at",
+        "completed_at",
+        "browser_credential_issued_at",
+    )
     @classmethod
     def timestamps_are_timezone_aware(cls, value: datetime | None) -> datetime | None:
         if value is None:
@@ -80,6 +86,16 @@ class IntakeSession(BaseModel):
             raise ValueError("completed intake sessions require completed_at")
         if self.status is not IntakeSessionStatus.FAILED and self.failure_code is not None:
             raise ValueError("failure_code requires a failed intake session")
+        if (
+            self.browser_credential_issued_at is not None
+            and self.browser_credential_issued_at < self.created_at
+        ):
+            raise ValueError("browser credential reservation cannot precede session creation")
+        if (
+            self.browser_credential_issued_at is not None
+            and self.provider_call_key_hash is not None
+        ):
+            raise ValueError("telephone intake sessions cannot reserve browser credentials")
         return self
 
 
@@ -108,6 +124,12 @@ class IntakeSessionStore(Protocol):
     ) -> IntakeSession | None: ...
 
     def save_intake_session(self, session: IntakeSession) -> IntakeSession: ...
+
+    def reserve_intake_browser_credential(
+        self,
+        session_id: UUID,
+        issued_at: datetime,
+    ) -> IntakeSession: ...
 
     def get(self, job_id: UUID) -> JobRecord | None: ...
 
@@ -174,6 +196,12 @@ def validate_intake_session_update(
         raise DomainConflict("Intake session terminal state cannot be changed")
     if current.conversation_id is not None and candidate.conversation_id != current.conversation_id:
         raise DomainConflict("Intake session conversation identity cannot be changed")
+    if (
+        current.browser_credential_issued_at is not None
+        and candidate.browser_credential_issued_at
+        != current.browser_credential_issued_at
+    ):
+        raise DomainConflict("Intake session credential reservation cannot be changed")
     if candidate.updated_at < current.updated_at:
         raise DomainConflict("Intake session updated_at cannot move backwards")
 
@@ -204,6 +232,13 @@ class IntakeSessionService:
     def create_web_session(self) -> IntakeSessionView:
         session = self._create_session(provider_key_hash=None)
         return self._view(session)
+
+    def reserve_browser_credential(self, session_id: UUID | str) -> IntakeSession:
+        session = self._require_session(UUID(str(session_id)))
+        return self.repository.reserve_intake_browser_credential(
+            session.intake_session_id,
+            self.clock(),
+        )
 
     def create_pre_call_session(
         self,

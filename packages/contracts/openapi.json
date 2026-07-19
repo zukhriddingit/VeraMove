@@ -10,6 +10,24 @@
         "title": "AmountStatus",
         "type": "string"
       },
+      "AttachIntakeConversationRequest": {
+        "additionalProperties": false,
+        "description": "Accept only a bounded provider conversation identifier from the SDK.",
+        "properties": {
+          "conversation_id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "title": "Conversation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversation_id"
+        ],
+        "title": "AttachIntakeConversationRequest",
+        "type": "object"
+      },
       "AvailabilityStatus": {
         "enum": [
           "available",
@@ -27,6 +45,27 @@
         ],
         "title": "BindingType",
         "type": "string"
+      },
+      "BrowserVoiceTokenResponse": {
+        "additionalProperties": false,
+        "description": "Return one ephemeral token plus canonical correlation variables.",
+        "properties": {
+          "conversation_token": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Conversation Token",
+            "type": "string"
+          },
+          "dynamic_variables": {
+            "$ref": "#/components/schemas/IntakeDynamicVariables"
+          }
+        },
+        "required": [
+          "conversation_token",
+          "dynamic_variables"
+        ],
+        "title": "BrowserVoiceTokenResponse",
+        "type": "object"
       },
       "CallOutcome": {
         "additionalProperties": false,
@@ -2242,6 +2281,102 @@
           }
         },
         "summary": "Get Intake Session",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/api/intake/sessions/{session_id}/conversation": {
+      "post": {
+        "operationId": "attach_browser_voice_conversation_api_intake_sessions__session_id__conversation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachIntakeConversationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Attach Browser Voice Conversation",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/api/intake/sessions/{session_id}/voice-token": {
+      "post": {
+        "operationId": "issue_browser_voice_token_api_intake_sessions__session_id__voice_token_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserVoiceTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Issue Browser Voice Token",
         "tags": [
           "intake"
         ]

@@ -21,6 +21,7 @@ from services.api.app.core.errors import (
 )
 from services.api.app.orchestration.intake_sessions import (
     IntakeSession,
+    IntakeSessionStatus,
     validate_intake_session_update,
 )
 from services.api.app.orchestration.models import CallAttempt, JobEvent
@@ -528,6 +529,35 @@ class InMemoryRepository:
             ):
                 raise DuplicateResource("An intake session already owns this conversation")
             self._intake_sessions[candidate.intake_session_id] = deepcopy(
+                candidate.model_dump(mode="json")
+            )
+        return self._copy_intake_session(candidate)
+
+    def reserve_intake_browser_credential(
+        self,
+        session_id: UUID,
+        issued_at: datetime,
+    ) -> IntakeSession:
+        with self._lock:
+            payload = self._intake_sessions.get(session_id)
+            if payload is None:
+                raise ResourceNotFound(f"Intake session {session_id} was not found")
+            current = IntakeSession.model_validate(deepcopy(payload))
+            if current.provider_call_key_hash is not None:
+                raise DomainConflict("Browser credentials require a web intake session")
+            if current.status is not IntakeSessionStatus.PENDING:
+                raise DomainConflict("Browser credentials require a pending intake session")
+            if current.browser_credential_issued_at is not None:
+                raise DomainConflict("Intake session already received a browser credential")
+            candidate = current.model_copy(
+                update={
+                    "browser_credential_issued_at": issued_at,
+                    "updated_at": issued_at,
+                },
+                deep=True,
+            )
+            validate_intake_session_update(current, candidate)
+            self._intake_sessions[session_id] = deepcopy(
                 candidate.model_dump(mode="json")
             )
         return self._copy_intake_session(candidate)

@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
 
 from services.api.app.api.dependencies import (
+    get_browser_voice_token_issuer,
     get_live_voice_operator_service,
     get_service,
 )
@@ -19,7 +20,8 @@ from services.api.app.contracts import (
     JobState,
     WebhookAck,
 )
-from services.api.app.core.config import LiveVoiceConfig, Settings
+from services.api.app.core.config import LiveVoiceConfig, Settings, SupabaseConfig
+from services.api.app.core.errors import ProviderRequestError
 from services.api.app.main import create_app
 from services.api.app.orchestration.intake_sessions import IntakeSessionService
 from services.api.app.orchestration.live_voice_operator import RecordingProxyPayload
@@ -253,6 +255,130 @@ def test_unknown_intake_session_and_conversation_are_not_found(client):
     response = client.get("/api/intake/conversations/unknown-synthetic-conversation")
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "resource_not_found"
+
+
+class StaticBrowserTokenIssuer:
+    def __init__(self, token: str = "synthetic-ephemeral-token") -> None:
+        self.token = token
+        self.calls = 0
+
+    def issue_token(self) -> str:
+        self.calls += 1
+        return self.token
+
+
+def browser_voice_settings() -> Settings:
+    return Settings(
+        app_mode="live",
+        live_voice=LiveVoiceConfig(
+            api_key="synthetic-elevenlabs-key",
+            intake_agent_id="synthetic-intake-agent",
+            webhook_secret="w" * 32,
+            agent_config_version="2026-07-19.browser-v1",
+            live_calls_enabled=True,
+        ),
+        supabase=SupabaseConfig(
+            enabled=True,
+            url="https://synthetic-project.supabase.co",
+            secret_key="synthetic-supabase-secret",
+        ),
+    )
+
+
+def test_browser_voice_token_and_conversation_routes_are_correlated_and_no_store():
+    application = create_app(Settings())
+    application.state.settings = browser_voice_settings()
+    issuer = StaticBrowserTokenIssuer()
+    application.dependency_overrides[get_browser_voice_token_issuer] = lambda: issuer
+
+    with TestClient(application) as test_client:
+        session = test_client.post("/api/intake/sessions").json()
+        issued = test_client.post(
+            f"/api/intake/sessions/{session['intake_session_id']}/voice-token"
+        )
+        attached = test_client.post(
+            f"/api/intake/sessions/{session['intake_session_id']}/conversation",
+            json={"conversation_id": "conv_synthetic_browser"},
+        )
+
+    assert issued.status_code == 200
+    assert issued.headers["cache-control"] == "no-store"
+    assert issued.json() == {
+        "conversation_token": "synthetic-ephemeral-token",
+        "dynamic_variables": {
+            "job_id": session["job_id"],
+            "intake_session_id": session["intake_session_id"],
+            "agent_config_version": "2026-07-19.browser-v1",
+        },
+    }
+    assert "synthetic-elevenlabs-key" not in issued.text
+    assert "synthetic-intake-agent" not in issued.text
+    assert issuer.calls == 1
+    assert attached.status_code == 200
+    assert attached.json()["status"] == "in_progress"
+    assert attached.json()["conversation_id"] == "conv_synthetic_browser"
+
+
+def test_browser_voice_token_is_single_use_and_mock_mode_is_rejected():
+    mock_application = create_app(Settings())
+    with TestClient(mock_application) as test_client:
+        session = test_client.post("/api/intake/sessions").json()
+        rejected = test_client.post(
+            f"/api/intake/sessions/{session['intake_session_id']}/voice-token"
+        )
+    assert rejected.status_code == 409
+    assert rejected.json()["error"]["code"] == "provider_configuration_error"
+
+    application = create_app(Settings())
+    application.state.settings = browser_voice_settings()
+    issuer = StaticBrowserTokenIssuer()
+    application.dependency_overrides[get_browser_voice_token_issuer] = lambda: issuer
+    with TestClient(application) as test_client:
+        unknown = test_client.post(f"/api/intake/sessions/{uuid4()}/voice-token")
+        session = test_client.post("/api/intake/sessions").json()
+        path = f"/api/intake/sessions/{session['intake_session_id']}/voice-token"
+        assert test_client.post(path).status_code == 200
+        replay = test_client.post(path)
+        attached_path = f"/api/intake/sessions/{session['intake_session_id']}/conversation"
+        first_attach = test_client.post(
+            attached_path,
+            json={"conversation_id": "conv_synthetic_browser"},
+        )
+        same_attach = test_client.post(
+            attached_path,
+            json={"conversation_id": "conv_synthetic_browser"},
+        )
+        changed_attach = test_client.post(
+            attached_path,
+            json={"conversation_id": "conv_synthetic_other"},
+        )
+
+    assert unknown.status_code == 404
+    assert replay.status_code == 409
+    assert issuer.calls == 1
+    assert first_attach.status_code == 200
+    assert same_attach.status_code == 200
+    assert changed_attach.status_code == 409
+
+
+def test_provider_failure_marks_reserved_session_failed_without_returning_token():
+    class FailingIssuer:
+        def issue_token(self) -> str:
+            raise ProviderRequestError("synthetic safe provider failure")
+
+    application = create_app(Settings())
+    application.state.settings = browser_voice_settings()
+    application.dependency_overrides[get_browser_voice_token_issuer] = FailingIssuer
+    with TestClient(application) as test_client:
+        session = test_client.post("/api/intake/sessions").json()
+        issued = test_client.post(
+            f"/api/intake/sessions/{session['intake_session_id']}/voice-token"
+        )
+        stored = test_client.get(f"/api/intake/sessions/{session['intake_session_id']}")
+
+    assert issued.status_code == 502
+    assert stored.json()["status"] == "failed"
+    assert "token" not in stored.text
 
 
 def test_pre_call_secret_is_checked_before_malformed_body_is_read():

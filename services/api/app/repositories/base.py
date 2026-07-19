@@ -375,6 +375,12 @@ class IntakeSessionRepository(Protocol):
 
     def save_intake_session(self, session: IntakeSession) -> IntakeSession: ...
 
+    def reserve_intake_browser_credential(
+        self,
+        session_id: UUID,
+        issued_at: datetime,
+    ) -> IntakeSession: ...
+
 
 class VoiceMaterializationRepository(Protocol):
     """Narrow repository boundary used by asynchronous voice canonicalization."""

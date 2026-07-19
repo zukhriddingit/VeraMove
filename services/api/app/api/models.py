@@ -79,6 +79,27 @@ class IntakeDynamicVariables(BaseModel):
     agent_config_version: str = Field(min_length=1, max_length=80)
 
 
+class AttachIntakeConversationRequest(BaseModel):
+    """Accept only a bounded provider conversation identifier from the SDK."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    conversation_id: str = Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+
+
+class BrowserVoiceTokenResponse(BaseModel):
+    """Return one ephemeral token plus canonical correlation variables."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_token: str = Field(min_length=1, max_length=8_192, repr=False)
+    dynamic_variables: IntakeDynamicVariables
+
+
 class ElevenLabsConversationInitiationResponse(BaseModel):
     """Exact ElevenLabs response envelope for inbound personalization."""
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, 
 from pydantic import ValidationError
 
 from services.api.app.api.dependencies import (
+    get_browser_voice_token_issuer,
     get_intake_session_service,
     get_integration_status,
     get_live_voice_operator_service,
@@ -16,6 +17,8 @@ from services.api.app.api.dependencies import (
 )
 from services.api.app.api.integration_status import IntegrationStatusSnapshot
 from services.api.app.api.models import (
+    AttachIntakeConversationRequest,
+    BrowserVoiceTokenResponse,
     DocumentIntakeRequest,
     ElevenLabsConversationInitiationRequest,
     ElevenLabsConversationInitiationResponse,
@@ -33,7 +36,8 @@ from services.api.app.contracts import (
     WebhookAck,
 )
 from services.api.app.core.config import Settings
-from services.api.app.core.errors import WebhookPayloadError
+from services.api.app.core.errors import ProviderRequestError, WebhookPayloadError
+from services.api.app.integrations.elevenlabs.tokens import BrowserVoiceTokenIssuer
 from services.api.app.orchestration.intake_sessions import (
     IntakeSessionService,
     verify_pre_call_secret,
@@ -47,6 +51,10 @@ router = APIRouter()
 Service = Annotated[VeraMoveService, Depends(get_service)]
 RuntimeSettings = Annotated[Settings, Depends(get_settings)]
 IntakeSessions = Annotated[IntakeSessionService, Depends(get_intake_session_service)]
+BrowserVoiceTokens = Annotated[
+    BrowserVoiceTokenIssuer,
+    Depends(get_browser_voice_token_issuer),
+]
 IntegrationStatus = Annotated[IntegrationStatusSnapshot, Depends(get_integration_status)]
 LiveVoiceOperator = Annotated[
     LiveVoiceOperatorService,
@@ -118,6 +126,54 @@ def get_intake_session_by_conversation(
 ) -> IntakeSessionResponse:
     return IntakeSessionResponse.model_validate(
         sessions.get_by_conversation(conversation_id).model_dump()
+    )
+
+
+@router.post(
+    "/api/intake/sessions/{session_id}/voice-token",
+    response_model=BrowserVoiceTokenResponse,
+    tags=["intake"],
+)
+def issue_browser_voice_token(
+    session_id: UUID,
+    response: Response,
+    sessions: IntakeSessions,
+    token_issuer: BrowserVoiceTokens,
+) -> BrowserVoiceTokenResponse:
+    session = sessions.reserve_browser_credential(session_id)
+    try:
+        token = token_issuer.issue_token()
+    except ProviderRequestError:
+        sessions.fail_session(session_id, "browser_token_issue_failed")
+        raise
+    response.headers["Cache-Control"] = "no-store"
+    return BrowserVoiceTokenResponse(
+        conversation_token=token,
+        dynamic_variables=IntakeDynamicVariables(
+            job_id=session.job_id,
+            intake_session_id=session.intake_session_id,
+            agent_config_version=session.agent_config_version,
+        ),
+    )
+
+
+@router.post(
+    "/api/intake/sessions/{session_id}/conversation",
+    response_model=IntakeSessionResponse,
+    tags=["intake"],
+)
+def attach_browser_voice_conversation(
+    session_id: UUID,
+    request: AttachIntakeConversationRequest,
+    sessions: IntakeSessions,
+) -> IntakeSessionResponse:
+    sessions.attach_conversation(
+        session_id,
+        request.conversation_id,
+        agent_id=sessions.expected_agent_id,
+    )
+    return IntakeSessionResponse.model_validate(
+        sessions.get_session(session_id).model_dump()
     )
 
 

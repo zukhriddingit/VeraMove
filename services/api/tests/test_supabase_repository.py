@@ -753,10 +753,12 @@ def test_supabase_intake_session_is_idempotent_and_stores_only_safe_correlation(
         "created_at",
         "updated_at",
         "completed_at",
+        "browser_credential_issued_at",
     }
     assert row["reserved_job_id"] == str(first.job_id)
     assert row["provider_call_key_hash"] == "a" * 64
     assert row["conversation_id"] == "synthetic-conversation"
+    assert row["browser_credential_issued_at"] is None
     serialized = repr(table_client.tables["intake_sessions"])
     for forbidden in (
         "CA-synthetic-provider-call",
@@ -766,6 +768,40 @@ def test_supabase_intake_session_is_idempotent_and_stores_only_safe_correlation(
         "called_number",
     ):
         assert forbidden not in serialized
+
+
+def test_supabase_reserves_browser_credential_through_atomic_rpc(
+    repository,
+    table_client,
+) -> None:
+    session = IntakeSession(
+        expected_agent_id="agent_synthetic_intake",
+        agent_config_version="2026-07-19.browser-v1",
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+    reserved_session = session.model_copy(
+        update={"browser_credential_issued_at": FIXED_NOW},
+        deep=True,
+    )
+    table_client.rpc_responses["veramove_reserve_browser_voice_credential"] = (
+        repository._intake_session_row(reserved_session)
+    )
+
+    reserved = repository.reserve_intake_browser_credential(
+        session.intake_session_id,
+        FIXED_NOW,
+    )
+
+    assert reserved.browser_credential_issued_at == FIXED_NOW
+    assert table_client.operations[-1] == (
+        "rpc",
+        "veramove_reserve_browser_voice_credential",
+        {
+            "p_session_id": str(session.intake_session_id),
+            "p_issued_at": FIXED_NOW.isoformat(),
+        },
+    )
 
 
 def test_supabase_intake_session_rejects_identity_and_terminal_state_mutation(
