@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api, formatCurrency } from "@/lib/api";
-import { ErrorBox } from "./confirm.$jobId";
+import { ErrorBox, LoadingCard, Stepper } from "@/components/flow";
 
 export const Route = createFileRoute("/report/$jobId")({
   head: () => ({
