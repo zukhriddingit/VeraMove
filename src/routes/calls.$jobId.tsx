@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, formatCurrency, type QuoteV1 } from "@/lib/api";
+import { api, formatCurrency, type QuoteV1, type CallRecord } from "@/lib/api";
 import { ErrorBox, LoadingCard, Stepper } from "@/components/flow";
 import { StatePill } from "./confirm.$jobId";
 
