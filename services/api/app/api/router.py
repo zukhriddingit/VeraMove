@@ -9,9 +9,11 @@ from pydantic import ValidationError
 
 from services.api.app.api.dependencies import (
     get_intake_session_service,
+    get_integration_status,
     get_service,
     get_settings,
 )
+from services.api.app.api.integration_status import IntegrationStatusSnapshot
 from services.api.app.api.models import (
     DocumentIntakeRequest,
     ElevenLabsConversationInitiationRequest,
@@ -41,6 +43,7 @@ router = APIRouter()
 Service = Annotated[VeraMoveService, Depends(get_service)]
 RuntimeSettings = Annotated[Settings, Depends(get_settings)]
 IntakeSessions = Annotated[IntakeSessionService, Depends(get_intake_session_service)]
+IntegrationStatus = Annotated[IntegrationStatusSnapshot, Depends(get_integration_status)]
 
 
 @router.get(
@@ -50,6 +53,15 @@ IntakeSessions = Annotated[IntakeSessionService, Depends(get_intake_session_serv
 )
 def health(settings: RuntimeSettings) -> RuntimeHealthResponse:
     return RuntimeHealthResponse(mode=settings.app_mode)
+
+
+@router.get(
+    "/api/integrations/status",
+    response_model=IntegrationStatusSnapshot,
+    tags=["system"],
+)
+def integration_status(snapshot: IntegrationStatus) -> IntegrationStatusSnapshot:
+    return snapshot
 
 
 @router.post(

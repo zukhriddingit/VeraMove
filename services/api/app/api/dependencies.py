@@ -5,6 +5,10 @@ from typing import Protocol
 
 from fastapi import Request
 
+from services.api.app.api.integration_status import (
+    IntegrationStatusReporter,
+    IntegrationStatusSnapshot,
+)
 from services.api.app.core.config import Settings
 from services.api.app.core.errors import ProviderConfigurationError
 from services.api.app.integrations.elevenlabs.base import JsonHttpTransport
@@ -30,6 +34,7 @@ from services.api.app.integrations.tavily.base import TavilyJsonTransport
 from services.api.app.integrations.tavily.cached import CachedTavilyVendorDiscovery
 from services.api.app.integrations.tavily.live import TavilyHttpClient
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
+from services.api.app.observability.usage import UsageRecorder
 from services.api.app.orchestration.fixtures import DemoFixtures
 from services.api.app.orchestration.intake_sessions import IntakeSessionService
 from services.api.app.orchestration.live_intelligence import LiveIntelligenceProvider
@@ -76,6 +81,13 @@ def get_service(request: Request) -> VeraMoveService:
     """Return the service composed from the same application settings snapshot."""
 
     return request.app.state.service
+
+
+def get_integration_status(request: Request) -> IntegrationStatusSnapshot:
+    """Return a read-only snapshot without exposing credentials or provider payloads."""
+
+    reporter: IntegrationStatusReporter = request.app.state.service._integration_status
+    return reporter.snapshot()
 
 
 def get_intake_session_service(request: Request) -> IntakeSessionService:
@@ -127,10 +139,12 @@ def build_service(
     voice_transport: JsonHttpTransport | None = None,
     openai_transport: OpenAIJsonTransport | None = None,
     tavily_transport: TavilyJsonTransport | None = None,
+    usage_recorder: UsageRecorder | None = None,
 ) -> VeraMoveService:
     """Compose mock or live boundaries without initiating provider activity."""
 
     fixtures = DemoFixtures()
+    app_usage_recorder = usage_recorder if usage_recorder is not None else UsageRecorder()
     if settings.app_mode == "mock":
         voice = MockVoiceProvider(fixtures)
     elif settings.app_mode == "live":
@@ -159,6 +173,7 @@ def build_service(
             api_key=openai_config.api_key,
             api_base_url=openai_config.api_base_url,
             transport=openai_transport,
+            usage_recorder=app_usage_recorder,
         )
         intelligence = LiveIntelligenceProvider(
             OpenAIDocumentParser(
@@ -172,6 +187,7 @@ def build_service(
                 api_key=openai_config.api_key,
                 api_base_url=openai_config.api_base_url,
                 transport=openai_transport,
+                usage_recorder=app_usage_recorder,
             ),
             model=openai_config.recommendation_model,
         )
@@ -195,7 +211,7 @@ def build_service(
     else:
         discovery = MockVendorDiscoveryGateway(fixtures)
 
-    return VeraMoveService(
+    service = VeraMoveService(
         jobs=repository,
         calls=repository,
         quotes=repository,
@@ -210,3 +226,8 @@ def build_service(
         recommendation_narrator=recommendation_narrator,
         clock=service_clock,
     )
+    service._integration_status = IntegrationStatusReporter(
+        settings,
+        app_usage_recorder,
+    )
+    return service
