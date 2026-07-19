@@ -32,8 +32,21 @@ function CallsPage() {
     onSuccess: (j) => qc.setQueryData(["job", jobId], j),
   });
 
-  if (isLoading) return <div className="py-16 text-center text-muted-foreground">Loading job…</div>;
-  if (error) return <ErrorBox message={(error as Error).message} />;
+  if (isLoading)
+    return (
+      <div className="space-y-6">
+        <Stepper current="calls" jobId={jobId} />
+        <LoadingCard label="Loading job…" />
+      </div>
+    );
+  if (error)
+    return (
+      <div className="space-y-6">
+        <Stepper current="calls" jobId={jobId} />
+        <ErrorBox message={(error as Error).message} />
+      </div>
+    );
+  if (!data) return null;
   if (!data) return null;
 
   const { state, quotes } = data;
