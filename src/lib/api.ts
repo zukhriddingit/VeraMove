@@ -70,10 +70,11 @@ export interface JobSpecV1 {
 
 export interface FeeLineItem {
   description: string;
-  amount: number;
+  amount: string;
   category: string;
   disclosed_upfront: boolean;
 }
+
 
 export interface QuoteV1 {
   quote_id: string;
