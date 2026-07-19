@@ -47,7 +47,7 @@ function CallsPage() {
       </div>
     );
   if (!data) return null;
-  if (!data) return null;
+
 
   const { state, quotes } = data;
 
