@@ -29,11 +29,14 @@ export function ConfirmPage() {
   if (!record) return <LoadingState label="Loading JobSpec…" />;
 
   const spec = record.job_spec;
-  const services = spec.services;
+  const oversizedOrFragileItems = spec.oversized_or_fragile_items ?? [];
+  const intakeMethod = spec.source_context?.intake_method ?? "unspecified";
   const activeServices = [
-    services.packing ? "Packing" : null,
-    services.disassembly ? "Disassembly" : null,
-    services.storage ? `Storage${services.storage_days ? ` (${services.storage_days} days)` : ""}` : null,
+    spec.services?.packing ? "Packing" : null,
+    spec.services?.disassembly ? "Disassembly" : null,
+    spec.services?.storage
+      ? `Storage${spec.services.storage_days ? ` (${spec.services.storage_days} days)` : ""}`
+      : null,
   ].filter((label): label is string => Boolean(label));
 
   return (
@@ -61,7 +64,7 @@ export function ConfirmPage() {
         </div>
         <div>
           <dt className="font-semibold">Intake method</dt>
-          <dd className="capitalize">{spec.source_context.intake_method ?? "unspecified"}</dd>
+          <dd className="capitalize">{intakeMethod}</dd>
         </div>
         <div>
           <dt className="font-semibold">Insurance preference</dt>
@@ -111,9 +114,9 @@ export function ConfirmPage() {
             </li>
           ))}
         </ul>
-        {spec.oversized_or_fragile_items.length ? (
+        {oversizedOrFragileItems.length ? (
           <p className="mt-2 text-sm text-ink/70">
-            Flagged for special handling: {spec.oversized_or_fragile_items.join(", ")}
+            Flagged for special handling: {oversizedOrFragileItems.join(", ")}
           </p>
         ) : null}
       </div>
