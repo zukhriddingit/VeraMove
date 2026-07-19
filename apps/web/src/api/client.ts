@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { components, paths } from "./schema";
 
 type Schemas = components["schemas"];
@@ -41,13 +41,20 @@ function readEnvMode(): RuntimeMode {
 }
 
 const listeners = new Set<() => void>();
+let currentMode = readEnvMode();
+
+function publishMode(next: RuntimeMode): void {
+  if (next === currentMode) return;
+  currentMode = next;
+  listeners.forEach((callback) => callback());
+}
 
 export function getRuntimeMode(): RuntimeMode {
-  return readStoredMode() ?? readEnvMode();
+  return currentMode;
 }
 
 export function useRuntimeMode(): RuntimeMode {
-  return useSyncExternalStore(
+  const mode = useSyncExternalStore(
     (callback) => {
       listeners.add(callback);
       return () => listeners.delete(callback);
@@ -55,6 +62,13 @@ export function useRuntimeMode(): RuntimeMode {
     getRuntimeMode,
     readEnvMode,
   );
+
+  useEffect(() => {
+    const storedMode = readStoredMode();
+    if (storedMode) publishMode(storedMode);
+  }, []);
+
+  return mode;
 }
 
 export function setRuntimeMode(next: RuntimeMode, options?: { redirectTo?: string }): void {
@@ -64,7 +78,7 @@ export function setRuntimeMode(next: RuntimeMode, options?: { redirectTo?: strin
   } catch {
     // Storage can be unavailable in privacy modes; navigation still works.
   }
-  listeners.forEach((callback) => callback());
+  publishMode(next);
   if (options?.redirectTo) window.location.assign(options.redirectTo);
   else window.location.reload();
 }
