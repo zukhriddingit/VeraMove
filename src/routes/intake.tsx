@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { buildDocumentIntakeSpec, buildVoiceIntakeSpec } from "@/lib/mock-specs";
+import { ErrorBox, Stepper } from "@/components/flow";
 
 export const Route = createFileRoute("/intake")({
   head: () => ({
