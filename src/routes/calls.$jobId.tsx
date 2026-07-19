@@ -49,7 +49,7 @@ function CallsPage() {
   if (!data) return null;
 
 
-  const { state, quotes } = data;
+  const { state, quotes, calls } = data;
 
   return (
     <div className="space-y-8">
