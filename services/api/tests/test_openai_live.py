@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 
 import httpx
@@ -232,6 +233,32 @@ def test_document_parser_supports_plain_text_and_enforces_postconditions(fixture
     assert parsed.job_spec.confirmed is False
     assert parsed.job_spec.confirmed_at is None
     assert parsed.job_spec.locked_version is None
+
+
+def test_document_parser_normalizes_model_missing_fields_without_mutating_response(
+    fixtures,
+):
+    result = document_result(fixtures)
+    result["missing_fields"] = []
+    result["warnings"] = ["Synthetic warning remains."]
+    original = deepcopy(result)
+    parser = OpenAIDocumentParser(
+        OpenAIResponsesClient(
+            api_key="synthetic",
+            transport=RecordingTransport(completed_response(result)),
+        ),
+        model="gpt-5.6-luna",
+    )
+
+    parsed = parser.parse_document(
+        b"SYNTHETIC two-bedroom move",
+        "text/plain",
+        "synthetic.txt",
+    )
+
+    assert parsed.missing_fields == parsed.job_spec.missing_required_fields()
+    assert parsed.warnings == ["Synthetic warning remains."]
+    assert result == original
 
 
 def test_openai_document_binary_content_uses_data_urls(fixtures):

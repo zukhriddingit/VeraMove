@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from copy import deepcopy
+from typing import Any
 
-from services.api.app.contracts import DocumentParseResult, IntakeSource
+from services.api.app.contracts import DocumentParseResult, IntakeSource, JobSpecV1
 from services.api.app.integrations.openai.base import StructuredDocumentClient
 
 SUPPORTED_DOCUMENT_TYPES = {
@@ -23,6 +25,22 @@ listed in missing_fields. Add ambiguous facts to fields_requiring_confirmation a
 in warnings. Attach field-level document provenance where practical. Never mark the JobSpec as
 confirmed or locked.
 """
+
+
+def _normalize_document_result(
+    response: DocumentParseResult | dict[str, Any],
+) -> DocumentParseResult:
+    """Make deterministic completeness metadata authoritative after fact validation."""
+
+    payload = (
+        response.model_dump(mode="python")
+        if isinstance(response, DocumentParseResult)
+        else deepcopy(response)
+    )
+    job_spec = JobSpecV1.model_validate(payload.get("job_spec"))
+    payload["job_spec"] = job_spec.model_dump(mode="python")
+    payload["missing_fields"] = job_spec.missing_required_fields()
+    return DocumentParseResult.model_validate(payload)
 
 
 class OpenAIDocumentParser:
@@ -54,7 +72,7 @@ class OpenAIDocumentParser:
             source_id=source_id,
             response_schema=DocumentParseResult,
         )
-        result = DocumentParseResult.model_validate(response)
+        result = _normalize_document_result(response)
         if result.job_spec.intake_source is not IntakeSource.DOCUMENT:
             raise ValueError("document parsing must produce intake_source=document")
         if result.job_spec.confirmed or result.job_spec.locked_version is not None:
