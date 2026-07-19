@@ -17,7 +17,14 @@ from services.api.app.core.errors import (
     WebhookAuthenticationError,
     WebhookPayloadError,
 )
+from services.api.app.integrations.elevenlabs.analysis import (
+    parse_call_initiation_failure,
+    parse_post_call_transcription,
+)
+from services.api.app.integrations.elevenlabs.models import VerifiedElevenLabsEvent
 from services.api.app.orchestration.models import NormalizedVoiceEvent
+
+MAX_PROVIDER_BODY_BYTES = 2_000_000
 
 
 def utc_now() -> datetime:
@@ -50,11 +57,31 @@ class ElevenLabsWebhookProcessor:
         payload = self._parse_object(raw_body)
         return self._normalize(payload, verified_timestamp)
 
+    def process_provider_event(
+        self,
+        raw_body: bytes,
+        signature_header: str | None,
+    ) -> VerifiedElevenLabsEvent:
+        """Authenticate and parse a bounded provider event for canonicalization."""
+
+        verified_timestamp = self._verify(raw_body, signature_header)
+        if len(raw_body) > MAX_PROVIDER_BODY_BYTES:
+            raise WebhookPayloadError("ElevenLabs webhook body is too large")
+        payload = self._parse_object(raw_body)
+        event_type = payload.get("type")
+        event_timestamp = self._event_timestamp(
+            payload.get("event_timestamp"),
+            verified_timestamp,
+        )
+        if event_type == "post_call_transcription":
+            return parse_post_call_transcription(payload, event_timestamp)
+        if event_type == "call_initiation_failure":
+            return parse_call_initiation_failure(payload, event_timestamp)
+        raise WebhookPayloadError("ElevenLabs webhook event type is unsupported")
+
     def _verify(self, raw_body: bytes, signature_header: str | None) -> int:
         if not self._secret:
-            raise WebhookAuthenticationError(
-                "ElevenLabs webhook authentication is not configured"
-            )
+            raise WebhookAuthenticationError("ElevenLabs webhook authentication is not configured")
         if not signature_header:
             raise WebhookAuthenticationError("Missing ElevenLabs signature")
         try:
@@ -62,14 +89,10 @@ class ElevenLabsWebhookProcessor:
             timestamp = int(parts["t"])
             supplied = parts["v0"]
         except (KeyError, TypeError, ValueError):
-            raise WebhookAuthenticationError(
-                "Malformed ElevenLabs signature"
-            ) from None
+            raise WebhookAuthenticationError("Malformed ElevenLabs signature") from None
         now = int(self._clock().timestamp())
         if abs(now - timestamp) > self._tolerance_seconds:
-            raise WebhookAuthenticationError(
-                "ElevenLabs webhook timestamp is stale"
-            )
+            raise WebhookAuthenticationError("ElevenLabs webhook timestamp is stale")
         signed = str(timestamp).encode("ascii") + b"." + raw_body
         expected = hmac.new(
             self._secret.encode(),
@@ -85,13 +108,9 @@ class ElevenLabsWebhookProcessor:
         try:
             payload = json.loads(raw_body)
         except (UnicodeDecodeError, json.JSONDecodeError):
-            raise WebhookPayloadError(
-                "ElevenLabs webhook body must be valid JSON"
-            ) from None
+            raise WebhookPayloadError("ElevenLabs webhook body must be valid JSON") from None
         if not isinstance(payload, dict):
-            raise WebhookPayloadError(
-                "ElevenLabs webhook body must be a JSON object"
-            )
+            raise WebhookPayloadError("ElevenLabs webhook body must be a JSON object")
         return payload
 
     def _normalize(
@@ -113,9 +132,7 @@ class ElevenLabsWebhookProcessor:
             provider_data.get("status", payload.get("status")),
             "status",
         )
-        call_id = self._optional_uuid(
-            provider_data.get("call_id", payload.get("call_id"))
-        )
+        call_id = self._optional_uuid(provider_data.get("call_id", payload.get("call_id")))
         event_timestamp = self._event_timestamp(
             payload.get("event_timestamp"),
             verified_timestamp,
@@ -128,14 +145,11 @@ class ElevenLabsWebhookProcessor:
         explicit_key = payload.get("idempotency_key")
         if explicit_key is not None:
             if not isinstance(explicit_key, str) or not explicit_key.strip():
-                raise WebhookPayloadError(
-                    "ElevenLabs webhook idempotency key is invalid"
-                )
+                raise WebhookPayloadError("ElevenLabs webhook idempotency key is invalid")
             idempotency_key = explicit_key.strip()
         else:
             replay_material = (
-                f"{event_type.strip()}:{conversation_id or ''}:"
-                f"{event_timestamp.isoformat()}"
+                f"{event_type.strip()}:{conversation_id or ''}:{event_timestamp.isoformat()}"
             )
             idempotency_key = hashlib.sha256(replay_material.encode()).hexdigest()
 
@@ -150,18 +164,14 @@ class ElevenLabsWebhookProcessor:
                 provider_status=provider_status,
             )
         except ValidationError as exc:
-            raise WebhookPayloadError(
-                "ElevenLabs webhook fields are invalid"
-            ) from exc
+            raise WebhookPayloadError("ElevenLabs webhook fields are invalid") from exc
 
     @staticmethod
     def _event_timestamp(value: Any, verified_timestamp: int) -> datetime:
         if value is None:
             return datetime.fromtimestamp(verified_timestamp, UTC)
         if isinstance(value, bool):
-            raise WebhookPayloadError(
-                "ElevenLabs webhook event timestamp is invalid"
-            )
+            raise WebhookPayloadError("ElevenLabs webhook event timestamp is invalid")
         if isinstance(value, int | float):
             try:
                 return datetime.fromtimestamp(value, UTC)
@@ -182,9 +192,7 @@ class ElevenLabsWebhookProcessor:
         if value is None:
             return None
         if not isinstance(value, str) or not value.strip():
-            raise WebhookPayloadError(
-                f"ElevenLabs webhook {field_name} is invalid"
-            )
+            raise WebhookPayloadError(f"ElevenLabs webhook {field_name} is invalid")
         return value.strip()
 
     @staticmethod
@@ -194,6 +202,4 @@ class ElevenLabsWebhookProcessor:
         try:
             return UUID(str(value))
         except (TypeError, ValueError, AttributeError):
-            raise WebhookPayloadError(
-                "ElevenLabs webhook call_id is invalid"
-            ) from None
+            raise WebhookPayloadError("ElevenLabs webhook call_id is invalid") from None
