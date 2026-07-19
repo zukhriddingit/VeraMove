@@ -75,7 +75,7 @@ The response parser accepts only the expected completed text output, decodes JSO
 
 Refusals, incomplete responses, empty output, invalid JSON, schema violations, authentication errors, timeouts, and rate limits become safe provider errors. The route never returns a partially trusted model payload.
 
-OpenAI recommendation narration remains subordinate to `DeterministicRecommendationEngine`. In live OpenAI mode, orchestration constructs and validates the deterministic recommendation first, then supplies only the locked `JobSpecV1`, immutable rankings, and findings to the narrator. Only the returned `summary` replaces the deterministic default summary; winners, totals, findings, evidence IDs, and recording URLs are copied unchanged from the deterministic result. Mock output remains unchanged.
+OpenAI recommendation narration remains subordinate to deterministic recommendation construction. In live OpenAI mode, orchestration constructs and validates the recommendation first, then supplies only the locked `JobSpecV1`, immutable rankings, and findings to the narrator. Only the returned `summary` replaces the deterministic default summary; winners, totals, findings, evidence IDs, and recording URLs are copied unchanged from the deterministic result. Mock output remains unchanged.
 
 ### Tavily
 
@@ -141,7 +141,7 @@ When Supabase is enabled, connectivity or write failures are surfaced. The servi
 2. The enabled Tavily gateway builds a bounded moving-company query.
 3. Tavily results are normalized to provenance-bearing `Vendor` records.
 4. The gateway returns cached copies for identical queries.
-5. Before any initial call, orchestration requires exactly three distinct candidates and snapshots the same locked JobSpec version for each target.
+5. Before any initial call, orchestration requires exactly three distinct candidates. Mock voice calls all three; controlled live voice still honors `initial_call_limit=1`. Every placed call snapshots the same locked JobSpec version.
 
 ### Persistent workflow
 

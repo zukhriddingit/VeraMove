@@ -24,8 +24,9 @@ FastAPI owns the canonical Pydantic contracts and generated OpenAPI schema. A sm
 service depends on repository, voice, negotiation, and discovery protocols. `APP_MODE=mock` wires
 an in-memory repository and deterministic fixtures, so no external SDK or account is needed.
 
-The Vite/React frontend has one API client and imports types generated from FastAPI OpenAPI. The
-optional Supabase migration stores versioned payloads as JSONB, but no local database is required.
+The Vite/React frontend has one API client and imports types generated from FastAPI OpenAPI.
+Optional OpenAI, Tavily, and Supabase adapters are independently enabled and fail closed. No local
+database or provider credential is required for the complete mock workflow.
 
 See [architecture details](docs/architecture.md), [API contract rules](docs/api-contract.md), and
 [integration boundaries](docs/integration-boundaries.md).
@@ -71,7 +72,7 @@ No API credentials, Supabase project, telephony account, or local database is re
 ## Five-minute local setup
 
 ```bash
-git clone <repository-url> vera-move-negotiator
+git clone https://github.com/zukhriddingit/VeraMove.git vera-move-negotiator
 cd vera-move-negotiator
 python scripts/bootstrap.py
 python scripts/dev.py
@@ -96,12 +97,20 @@ Copy `.env.example` only if you want to override safe defaults.
 | `LIVE_CALLS_ENABLED` | `false` | Independent switch required before a controlled live call |
 | `ELEVENLABS_*` | empty | Live agent, phone-number, webhook, and API configuration |
 | `LIVE_TEST_TO_NUMBER` | empty | Externally supplied, opted-in live test destination |
-| `OPENAI_DOCUMENT_MODEL` | `gpt-4.1-mini` | Unwired document parser model override |
-| `OPENAI_RECOMMENDATION_MODEL` | `gpt-4.1-mini` | Unwired grounded narrator model override |
+| `OPENAI_ENABLED` | `false` | Enables strict document extraction and summary-only narration |
+| `OPENAI_API_KEY` | empty | Backend-only OpenAI credential |
+| `OPENAI_DOCUMENT_MODEL` | `gpt-5.6-luna` | Strict document extraction model |
+| `OPENAI_RECOMMENDATION_MODEL` | `gpt-5.6-terra` | Grounded summary narrator model |
+| `TAVILY_ENABLED` | `false` | Enables provenance-backed vendor discovery |
+| `TAVILY_API_KEY` | empty | Backend-only Tavily credential |
+| `SUPABASE_ENABLED` | `false` | Replaces process memory with persistent repositories |
+| `SUPABASE_URL` | empty | Supabase project HTTPS origin |
+| `SUPABASE_SECRET_KEY` | empty | Backend-only Supabase secret key; never expose to the browser |
 
-OpenAI, Tavily, and Supabase credential names remain reserved for unwired adapters. ElevenLabs
+Each optional provider is selected only by its own `*_ENABLED=true` switch. Enabled providers
+require complete credentials and never fall back to synthetic results after a failure. ElevenLabs
 values are read only by the controlled live voice path and are validated when a call is initiated;
-startup itself never dials. Never commit a populated `.env` file.
+startup itself never contacts a provider or dials. Never commit a populated `.env` file.
 
 ## Render demo deployment
 
@@ -112,23 +121,38 @@ The repository includes `render.yaml` for one demo API service. Render installs
 uvicorn services.api.app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-The Blueprint keeps `APP_MODE=mock` and `LIVE_CALLS_ENABLED=false` until a reviewer explicitly
-enables the controlled live path. Enter all `ELEVENLABS_*` values, `LIVE_TEST_TO_NUMBER`, and the
-exact deployed frontend origin for `CORS_ALLOW_ORIGINS` only in Render's environment controls.
-Never place those values in `render.yaml`, `.env.example`, repository files, or deployment logs.
+The Blueprint keeps `APP_MODE=mock`, every optional provider switch, and
+`LIVE_CALLS_ENABLED=false`. Enter secrets and the exact frontend origin for
+`CORS_ALLOW_ORIGINS` only in Render's environment controls. Never place those values in
+`render.yaml`, `.env.example`, repository files, issues, recordings, chat, or deployment logs.
+
+Activate the non-voice providers one at a time while `LIVE_CALLS_ENABLED=false`:
+
+1. Run `supabase/migrations/202607180001_initial_schema.sql` and then
+   `supabase/migrations/202607190002_live_persistence_hardening.sql` in the Supabase SQL editor.
+   Enter `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`, set
+   `SUPABASE_ENABLED=true`, and verify a synthetic job survives one Render redeploy.
+2. Enter `TAVILY_API_KEY`, set `TAVILY_ENABLED=true`, and verify
+   `/api/vendors/discover` returns `source: "tavily"` with Tavily provenance.
+3. Enter `OPENAI_API_KEY`, set `OPENAI_ENABLED=true`, and verify a synthetic text intake produces
+   an unconfirmed, schema-valid `JobSpecV1`.
+
+Render redeploys after environment changes. If an enabled provider is missing configuration or
+fails, VeraMove reports a safe error instead of silently switching back to mock data.
 
 After deployment, use `https://<service-host>/api/webhooks/elevenlabs` as the ElevenLabs post-call
 webhook URL and copy its generated HMAC secret directly into Render. The service must remain at one
-Uvicorn worker while it uses the in-memory repository. Jobs and call attempts disappear whenever
-Render restarts or redeploys the service; Supabase persistence is follow-up work.
+Uvicorn worker while it uses the in-memory repository. Jobs and call attempts disappear on restart
+unless the Supabase adapter is enabled after both migrations are applied.
 
 ## Mock mode
 
-Mock mode is the default complete demo mode. It uses process-local memory, so jobs disappear when
-the API restarts. Calls, quotes, transcripts, recordings, discovery results, intelligence findings,
-and negotiation results are deterministic synthetic fixtures. `APP_MODE=live` selects only the
-controlled one-call voice adapter; it remains disabled without `LIVE_CALLS_ENABLED=true` and the
-complete reviewed configuration documented in `docs/backend-voice-runbook.md`.
+Mock mode is the default complete demo mode. With optional provider switches off, it uses
+process-local memory and deterministic synthetic fixtures for calls, quotes, transcripts,
+recordings, discovery, intelligence, and negotiation. `APP_MODE=live` selects only the controlled
+one-call voice adapter; OpenAI, Tavily, and Supabase remain independent. Live voice stays disabled
+without `LIVE_CALLS_ENABLED=true` and the complete reviewed configuration documented in
+`docs/backend-voice-runbook.md`.
 
 ## Commands
 
@@ -146,8 +170,8 @@ complete reviewed configuration documented in `docs/backend-voice-runbook.md`.
 | Method | Route | Mock behavior |
 | --- | --- | --- |
 | GET | `/health` | Reports service and selected runtime mode |
-| POST | `/api/intake/document` | Creates a fresh unconfirmed job from deterministic document intake |
-| POST | `/api/jobs` | Creates an in-memory job at `intake_complete` |
+| POST | `/api/intake/document` | Creates an unconfirmed job; OpenAI extracts only when enabled |
+| POST | `/api/jobs` | Creates a job at `intake_complete` through the selected repository |
 | GET | `/api/jobs/{job_id}` | Returns the typed job aggregate |
 | GET | `/api/jobs/{job_id}/events` | Returns safe normalized provider events |
 | POST | `/api/jobs/{job_id}/confirm` | Locks the JobSpec and advances to `confirmed` |
@@ -155,7 +179,7 @@ complete reviewed configuration documented in `docs/backend-voice-runbook.md`.
 | POST | `/api/jobs/{job_id}/negotiate` | Adds a measurably improved synthetic quote |
 | GET | `/api/jobs/{job_id}/report` | Returns the evidence-backed final recommendation |
 | POST | `/api/webhooks/elevenlabs` | Authenticates, normalizes, and deduplicates a signed webhook |
-| GET | `/api/vendors/discover` | Returns three synthetic vendors |
+| GET | `/api/vendors/discover` | Returns synthetic or Tavily-provenance vendor candidates |
 
 Illegal state transitions return HTTP 409 with a domain error code. Unknown jobs return HTTP 404.
 
@@ -170,12 +194,14 @@ including the product-narrative and submission ownership in `docs/submission/`.
 
 ## Known limitations
 
-- No production voice interview, model inference, or web search is wired.
 - The controlled live adapter can initiate at most one opted-in test call; it does not convert live
   post-call data into a canonical quote or complete a live report.
-- Strict document parsing and narration boundaries are implemented but no live provider or API route
-  is wired in mock mode.
-- No Supabase runtime adapter, persistence, authentication, authorization, payment, or booking.
+- A signed live ElevenLabs post-call webhook is authenticated and can be persisted, but it still
+  does not materialize a canonical quote or report.
+- Tavily supplies vendor identity and provenance only; it does not supply verified quotes or direct
+  phone contacts.
+- Supabase persistence has no end-user authentication or authorization layer.
+- No payment or booking workflow is implemented.
 - Mock calls and negotiation complete synchronously.
 - The frontend is a functional route scaffold, not a polished production interface.
 - In-memory data is single-process and resets on restart.

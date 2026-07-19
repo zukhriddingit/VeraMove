@@ -819,10 +819,9 @@ export interface components {
         VendorDiscoveryResponse: {
             /**
              * Source
-             * @default synthetic_mock
-             * @constant
+             * @enum {string}
              */
-            source: "synthetic_mock";
+            source: "synthetic_mock" | "tavily";
             /** Vendors */
             vendors: components["schemas"]["Vendor"][];
         };

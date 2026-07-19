@@ -1,8 +1,8 @@
 # Integration boundaries
 
-Deterministic mock providers remain the default and are the only providers exercised by normal
-development, demos, automated tests, and CI. Optional live voice stays behind the same orchestration
-protocol and fails closed unless its explicit runtime settings are complete.
+Deterministic mock providers remain the default and are the only providers exercised by automated
+tests and CI. OpenAI, Tavily, Supabase, and live voice each have an independent enablement switch,
+stay behind injected protocols, and fail closed when their explicit settings are incomplete.
 
 ## ElevenLabs and Twilio
 
@@ -24,28 +24,32 @@ transcripts, phone numbers, and arbitrary provider payloads are not retained in 
 
 `IntelligenceProvider` isolates the orchestration-facing document-intake and negotiation-planning
 operations. `DocumentIntakeGateway` returns a strict `DocumentParseResult` containing the same
-`JobSpecV1` used by voice intake. `OpenAIDocumentParser` accepts an injected structured-output client
-and revalidates the response with Pydantic. `OpenAIRecommendationNarrator` can explain a
-deterministic ranking but cannot change its order or findings. `NegotiationGateway` remains
-compatible with the seeded mock. Deterministic implementations are wired in both mock and live
-voice modes; no model call occurs in mock mode.
+`JobSpecV1` used by voice intake. With `OPENAI_ENABLED=true`, the Responses API adapter requests a
+strict `DocumentParseResult`, and `OpenAIDocumentParser` revalidates it with Pydantic before the job
+is stored. `OpenAIRecommendationNarrator` receives only canonical rankings and findings; its output
+can replace the summary but cannot change winners, totals, evidence, or order. Negotiation planning
+remains deterministic. With the switch off, no model request occurs.
 
 ## Tavily
 
 `VendorDiscoveryGateway` preserves the original origin/destination method and adds cached call-list
 sourcing by city, state, service type, and radius. The mock returns the three committed fictional
 vendors. The optional normalizer accepts an injected Tavily client and stores no direct contact
-details. Mock mode performs no search request.
+details. With `TAVILY_ENABLED=true`, the bounded search sends no raw-content, answer, or image
+request and retains only result titles, URLs, and provenance. Provider failure never falls back to
+mock candidates. With the switch off, no search request occurs.
 
 ## Supabase/PostgreSQL
 
-The SQL migration describes optional future persistence. `InMemoryRepository` implements the job,
-call, and quote repository protocols at runtime. Supabase remains unwired, so mock mode needs neither
-a Supabase client nor a local instance.
+`InMemoryRepository` remains the default implementation of the job, call, and quote protocols.
+After both migrations are applied, `SUPABASE_ENABLED=true` selects a server-only PostgREST client
+and `SupabaseRepository`. It persists jobs, attempts, canonical calls, quotes, evidence,
+recommendations, and idempotent safe events. The secret key is sent only from the backend; enabled
+failures never fall back to process memory.
 
 ## Adapter rules
 
-A live adapter must remain behind an injected protocol, require explicit non-mock mode and
-enablement, protect credentials, redact personal data in logs, preserve idempotency, and include
-contract and failure tests with no external request. It may never silently activate or change
-mock-mode acceptance behavior.
+A live adapter must remain behind an injected protocol, require explicit enablement, protect
+credentials, redact personal data in logs, preserve idempotency, and include contract and failure
+tests with no external request. Live voice additionally requires `APP_MODE=live`. No adapter may
+silently activate or change credential-free mock acceptance behavior.

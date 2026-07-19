@@ -23,5 +23,19 @@ services:
         sync: false
       - key: LIVE_TEST_TO_NUMBER
         sync: false
+      - key: OPENAI_ENABLED
+        value: "false"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TAVILY_ENABLED
+        value: "false"
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: SUPABASE_ENABLED
+        value: "false"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
       - key: CORS_ALLOW_ORIGINS
         sync: false

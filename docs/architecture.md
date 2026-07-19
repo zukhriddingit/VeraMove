@@ -50,7 +50,11 @@ Pydantic models generate FastAPI OpenAPI. `scripts/export_openapi.py` writes the
 committed artifacts. Document intake and event polling are additive frozen routes; their route-local
 request/event envelopes reuse canonical domain models instead of creating a parallel domain tree.
 
-## Optional persistence
+## Optional live providers
 
-The Supabase migration offers UUID, timestamp, foreign-key, index, JSONB, and webhook-idempotency
-foundations. Runtime code intentionally does not import or connect to Supabase.
+Runtime composition selects OpenAI, Tavily, and Supabase independently from voice mode. OpenAI can
+extract the shared document contract and narrate only an already-constructed recommendation
+summary. Tavily can source vendor identities and provenance but not quote evidence. Supabase can
+replace the process-local repository after both migrations are applied; its call-attempt table is
+separate from canonical completed calls, and replay reservations rely on database uniqueness.
+Every optional provider is disabled by default and enabled misconfiguration fails closed.

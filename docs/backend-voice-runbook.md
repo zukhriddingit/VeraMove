@@ -102,6 +102,39 @@ Repeated confirmation and call-batch requests are safe: each returns the existin
 duplicating calls or quotes. Negotiation is also idempotent after completion. All demo jobs, vendors,
 quotes, evidence, recordings, and document text in this procedure are synthetic.
 
+## Optional live data-provider rollout on Render
+
+OpenAI, Tavily, and Supabase are independent from `APP_MODE`. Keep
+`LIVE_CALLS_ENABLED=false` throughout this rollout so no billable voice request can occur. Enter
+keys only in Render's environment controls—never in source, `.env`, issues, recordings, logs, chat,
+or curl commands. Enable and verify one provider before moving to the next.
+
+1. In a new Supabase project, run these SQL files in order:
+
+   1. `supabase/migrations/202607180001_initial_schema.sql`
+   2. `supabase/migrations/202607190002_live_persistence_hardening.sql`
+
+   In Render, enter the project `SUPABASE_URL` and backend-only `SUPABASE_SECRET_KEY`, then set
+   `SUPABASE_ENABLED=true`. Create one obviously synthetic job, record only its UUID, redeploy the
+   same Render commit, and verify `GET /api/jobs/{job_id}` still returns it. An enabled Supabase
+   error must not create or read an in-memory fallback job. Never expose the secret key to the
+   frontend. Do not run test fixtures that call `reset()` against this project.
+2. Enter `TAVILY_API_KEY` in Render and set `TAVILY_ENABLED=true`. After the redeploy, request
+   `/api/vendors/discover?origin=Synthetic%20Boston&destination=Synthetic%20Cambridge`. Verify the
+   response says `source: "tavily"`, contains provenance URLs, and does not contain search answers,
+   raw page content, inferred quotes, or direct phone contacts. A provider error must return an
+   error rather than synthetic vendors.
+3. Enter `OPENAI_API_KEY` in Render and set `OPENAI_ENABLED=true`. Post only synthetic text to
+   `/api/intake/document`. Verify the result is schema-valid, has `intake_source: "document"`, and
+   remains `confirmed: false` with no locked version. OpenAI may extract document facts and narrate
+   an existing ranking summary; it may not choose the winner, verify unsupported facts, or create
+   negotiation evidence.
+
+After each check, leave the provider enabled only if its verification passed. Keep
+`LIVE_CALLS_ENABLED=false` until the separate consent-based voice checklist below. A signed live
+ElevenLabs post-call webhook is authenticated and can be persisted, but it still does not
+materialize a canonical `CallRecord`, `QuoteV1`, or final report.
+
 ## Manual-only controlled live check
 
 Do not run the live smoke test from CI. Automated tests use injected transports and must never dial.
@@ -163,4 +196,3 @@ following evidence exists on the intended commit:
    intended for submission materials through their existing ownership gates.
 6. The team declares code freeze. Tagging, pushing, merging, releasing, or authorizing a live call is
    a separate external action and is never implied by this runbook.
-

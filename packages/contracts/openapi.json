@@ -1663,8 +1663,10 @@
         "additionalProperties": false,
         "properties": {
           "source": {
-            "const": "synthetic_mock",
-            "default": "synthetic_mock",
+            "enum": [
+              "synthetic_mock",
+              "tavily"
+            ],
             "title": "Source",
             "type": "string"
           },
@@ -1677,7 +1679,8 @@
           }
         },
         "required": [
-          "vendors"
+          "vendors",
+          "source"
         ],
         "title": "VendorDiscoveryResponse",
         "type": "object"

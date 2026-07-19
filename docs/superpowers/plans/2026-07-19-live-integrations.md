@@ -554,7 +554,9 @@ def _initial_vendors(self, record: JobRecord) -> list[Vendor]:
     return distinct[:3]
 ```
 
-Call `_initial_vendors(record)` before transitioning the job to `calling`, then iterate the returned list. This guarantees a short Tavily response does not produce a partial call batch.
+Call `_initial_vendors(record)` before transitioning the job to `calling`, then iterate
+`vendors[: self._voice.initial_call_limit]`. This guarantees a short Tavily response does not
+produce a partial call batch while preserving the separately reviewed one-call live safety limit.
 
 - [ ] **Step 6: Add API and service assertions**
 
