@@ -98,7 +98,7 @@ Copy `.env.example` only if you want to override safe defaults.
 | `API_PORT` | `8000` | Documented API port |
 | `VITE_API_BASE_URL` | `http://127.0.0.1:8000` | Browser API base URL |
 | `VITE_DEMO_MODE` | `false` | Explicitly selects the synthetic browser demo adapter when `true` |
-| `CORS_ALLOW_ORIGINS` | local Vite origins | Comma-separated exact browser origins allowed to call the API |
+| `CORS_ALLOW_ORIGINS` | Lovable production + local Vite origins | Comma-separated exact browser origins allowed to call the API |
 | `LIVE_CALLS_ENABLED` | `false` | Independent switch required before a controlled live call |
 | `ELEVENLABS_API_KEY` | empty | Backend-only ElevenLabs credential |
 | `ELEVENLABS_INTAKE_AGENT_ID` | empty | Reviewed VeraMove Intake agent identifier |
@@ -136,9 +136,20 @@ uvicorn services.api.app.main:app --host 0.0.0.0 --port $PORT
 ```
 
 The Blueprint keeps `APP_MODE=mock`, every optional provider switch, and
-`LIVE_CALLS_ENABLED=false`. Enter secrets and the exact frontend origin for
-`CORS_ALLOW_ORIGINS` only in Render's environment controls. Never place those values in
-`render.yaml`, `.env.example`, repository files, issues, recordings, chat, or deployment logs.
+`LIVE_CALLS_ENABLED=false`. Set the exact production frontend origin in Render's
+`CORS_ALLOW_ORIGINS`; public HTTP(S) origins may be documented in `.env.example`. Never place API
+keys, auth tokens, webhook secrets, phone credentials, or Supabase secret keys in frontend files,
+repository files, issues, recordings, chat, or deployment logs.
+
+The frontend-specific `apps/web/.env.example` documents the public build-time variables:
+
+```dotenv
+VITE_API_BASE_URL=https://veramove-api-demo-zukhriddingit.onrender.com
+VITE_DEMO_MODE=false
+```
+
+`VITE_*` values are compiled into browser assets and are public. They may contain the backend URL,
+but never OpenAI, Tavily, Supabase, ElevenLabs, or Twilio credentials.
 
 Activate the non-voice providers one at a time while `LIVE_CALLS_ENABLED=false`:
 

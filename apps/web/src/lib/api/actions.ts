@@ -13,7 +13,7 @@ export interface JobActions {
   canStartCalls: boolean;
   /** Move to the negotiation stage. */
   canNegotiate: boolean;
-  /** ReportView is ready to view. */
+  /** Report is ready to view. */
   canViewReport: boolean;
   /** Terminal-failure state — surface an error banner. */
   isFailed: boolean;
