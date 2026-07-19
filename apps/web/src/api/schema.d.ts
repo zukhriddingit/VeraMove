@@ -4,6 +4,125 @@
  */
 
 export interface paths {
+    "/api/calls/{call_id}/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Call Recording */
+        get: operations["get_call_recording_api_calls__call_id__recording_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calls/{call_id}/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Repair Call */
+        post: operations["repair_call_api_calls__call_id__repair_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Intake Session By Conversation */
+        get: operations["get_intake_session_by_conversation_api_intake_conversations__conversation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Job From Document */
+        post: operations["create_job_from_document_api_intake_document_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Intake Session */
+        post: operations["create_intake_session_api_intake_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Intake Session */
+        get: operations["get_intake_session_api_intake_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Integration Status */
+        get: operations["integration_status_api_integrations_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs": {
         parameters: {
             query?: never;
@@ -66,6 +185,23 @@ export interface paths {
         put?: never;
         /** Confirm Job */
         post: operations["confirm_job_api_jobs__job_id__confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Job Events */
+        get: operations["get_job_events_api_jobs__job_id__events_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -140,6 +276,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/webhooks/elevenlabs/pre-call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Elevenlabs Conversation Initiation */
+        post: operations["elevenlabs_conversation_initiation_api_webhooks_elevenlabs_pre_call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -162,10 +315,20 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AmountStatus
+         * @enum {string}
+         */
+        AmountStatus: "known" | "unknown" | "not_applicable";
+        /**
+         * AvailabilityStatus
+         * @enum {string}
+         */
+        AvailabilityStatus: "available" | "unavailable" | "unknown";
+        /**
          * BindingType
          * @enum {string}
          */
-        BindingType: "binding" | "non_binding";
+        BindingType: "binding" | "non_binding" | "unknown";
         /** CallOutcome */
         CallOutcome: {
             /** Callback At */
@@ -195,11 +358,8 @@ export interface components {
              */
             job_id: string;
             outcome: components["schemas"]["CallOutcome"];
-            /**
-             * Recording Url
-             * Format: uri
-             */
-            recording_url: string;
+            /** Recording Url */
+            recording_url?: string | null;
             /**
              * Started At
              * Format: date-time
@@ -214,14 +374,59 @@ export interface components {
          */
         CallStatus: "pending" | "in_progress" | "completed" | "failed";
         /**
+         * DataClassification
+         * @enum {string}
+         */
+        DataClassification: "synthetic" | "role_play" | "real_redacted";
+        /**
+         * DocumentIntakeRequest
+         * @description Bound the unstructured document text accepted by the intake route.
+         */
+        DocumentIntakeRequest: {
+            /** Document Text */
+            document_text: string;
+        };
+        /**
          * DwellingType
          * @enum {string}
          */
         DwellingType: "apartment" | "condo" | "townhouse" | "house" | "storage_unit" | "other";
+        /**
+         * ElevenLabsConversationInitiationResponse
+         * @description Exact ElevenLabs response envelope for inbound personalization.
+         */
+        ElevenLabsConversationInitiationResponse: {
+            dynamic_variables: components["schemas"]["IntakeDynamicVariables"];
+            /**
+             * Type
+             * @default conversation_initiation_client_data
+             * @constant
+             */
+            type: "conversation_initiation_client_data";
+        };
+        /**
+         * ElevenLabsPostCallWebhook
+         * @description Typed public shape for the ElevenLabs post-call webhook.
+         */
+        ElevenLabsPostCallWebhook: {
+            data: components["schemas"]["PostCallWebhookData"];
+            /** Event Timestamp */
+            event_timestamp: number;
+            /**
+             * Type
+             * @constant
+             */
+            type: "post_call_transcription";
+        } & {
+            [key: string]: unknown;
+        };
         /** ElevenLabsWebhookEvent */
         ElevenLabsWebhookEvent: {
-            /** Call Id */
-            call_id?: string | null;
+            /**
+             * Call Id
+             * @default null
+             */
+            call_id: string | null;
             /** Event Type */
             event_type: string;
             /** Idempotency Key */
@@ -235,11 +440,13 @@ export interface components {
          * FeeCategory
          * @enum {string}
          */
-        FeeCategory: "base_service" | "hourly_minimum" | "travel" | "fuel" | "stairs" | "elevator" | "long_carry" | "packing" | "materials" | "disassembly" | "storage" | "insurance" | "taxes" | "deposit" | "other";
+        FeeCategory: "base_service" | "hourly_minimum" | "travel" | "fuel" | "stairs" | "elevator" | "long_carry" | "packing" | "materials" | "disassembly" | "storage" | "insurance" | "tax" | "deposit" | "other";
         /** FeeLineItem */
         FeeLineItem: {
             /** Amount */
-            amount: string;
+            amount?: string | null;
+            /** @default known */
+            amount_status: components["schemas"]["AmountStatus"];
             category: components["schemas"]["FeeCategory"];
             /** Description */
             description: string;
@@ -248,7 +455,25 @@ export interface components {
              * @default true
              */
             disclosed_upfront: boolean;
+            /** Evidence Ids */
+            evidence_ids?: string[];
+            /**
+             * Mandatory
+             * @default false
+             */
+            mandatory: boolean;
+            /** Minimum Units */
+            minimum_units?: string | null;
+            /** Unit Rate */
+            unit_rate?: string | null;
+            /** Units */
+            units?: string | null;
         };
+        /**
+         * FindingSeverity
+         * @enum {string}
+         */
+        FindingSeverity: "info" | "warning" | "critical";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -274,6 +499,85 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /**
+         * IntakeDynamicVariables
+         * @description The complete custom-variable set defined by the Intake agent.
+         */
+        IntakeDynamicVariables: {
+            /** Agent Config Version */
+            agent_config_version: string;
+            /**
+             * Intake Session Id
+             * Format: uuid
+             */
+            intake_session_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /**
+         * IntakeSessionResponse
+         * @description Expose safe intake correlation and the result only after completion.
+         */
+        IntakeSessionResponse: {
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /**
+             * Intake Session Id
+             * Format: uuid
+             */
+            intake_session_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            job_spec?: components["schemas"]["JobSpecV1"] | null;
+            status: components["schemas"]["IntakeSessionStatus"];
+        };
+        /**
+         * IntakeSessionStatus
+         * @description Lifecycle of provider correlation before a normal JobRecord exists.
+         * @enum {string}
+         */
+        IntakeSessionStatus: "pending" | "in_progress" | "completed" | "failed";
+        /**
+         * IntakeSource
+         * @enum {string}
+         */
+        IntakeSource: "voice" | "document" | "merged" | "demo";
+        /**
+         * IntegrationStatusSnapshot
+         * @description Safe public status shape for all independently configured integrations.
+         */
+        IntegrationStatusSnapshot: {
+            live_voice: components["schemas"]["ProviderIntegrationStatus"];
+            openai: components["schemas"]["OpenAIIntegrationStatus"];
+            supabase: components["schemas"]["ProviderIntegrationStatus"];
+            tavily: components["schemas"]["ProviderIntegrationStatus"];
+        };
+        /** IntelligenceFinding */
+        IntelligenceFinding: {
+            /** Code */
+            code: string;
+            /** Description */
+            description: string;
+            /**
+             * Deterministic
+             * @default true
+             */
+            deterministic: boolean;
+            /** Evidence Ids */
+            evidence_ids?: string[];
+            fee_category?: components["schemas"]["FeeCategory"] | null;
+            /** Quote Id */
+            quote_id?: string | null;
+            severity: components["schemas"]["FindingSeverity"];
+            /** Vendor Id */
+            vendor_id?: string | null;
         };
         /** InventoryItem */
         InventoryItem: {
@@ -304,6 +608,43 @@ export interface components {
             /** Room */
             room: string;
         };
+        /**
+         * JobEvent
+         * @description Safe provider-neutral event exposed by orchestration.
+         */
+        JobEvent: {
+            /** Call Id */
+            call_id?: string | null;
+            /**
+             * Event Id
+             * Format: uuid
+             */
+            event_id?: string;
+            /** Event Type */
+            event_type: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Metadata */
+            metadata?: {
+                [key: string]: string | number | boolean | null;
+            };
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
+        /**
+         * JobEventsResponse
+         * @description Envelope safe normalized events for a single job.
+         */
+        JobEventsResponse: {
+            /** Events */
+            events: components["schemas"]["JobEvent"][];
+        };
         /** JobRecord */
         JobRecord: {
             /** Calls */
@@ -327,7 +668,7 @@ export interface components {
         /** JobSpecV1 */
         JobSpecV1: {
             /** Bedroom Count */
-            bedroom_count: number;
+            bedroom_count?: number | null;
             /**
              * Confirmed
              * @default false
@@ -335,26 +676,25 @@ export interface components {
             confirmed: boolean;
             /** Confirmed At */
             confirmed_at?: string | null;
-            /**
-             * Date Flexible
-             * @default false
-             */
-            date_flexible: boolean;
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
+            /** Date Flexible */
+            date_flexible?: boolean | null;
             destination: components["schemas"]["OriginDestinationAccess"];
             /** Insurance Preference */
-            insurance_preference: string;
+            insurance_preference?: string | null;
+            intake_source: components["schemas"]["IntakeSource"];
             /** Inventory */
-            inventory: components["schemas"]["InventoryItem"][];
+            inventory?: components["schemas"]["InventoryItem"][];
             /**
              * Job Id
              * Format: uuid
              */
             job_id?: string;
-            /**
-             * Move Date
-             * Format: date
-             */
-            move_date: string;
+            /** Locked Version */
+            locked_version?: "1.0" | null;
+            /** Move Date */
+            move_date?: string | null;
             origin: components["schemas"]["OriginDestinationAccess"];
             /** Oversized Or Fragile Items */
             oversized_or_fragile_items?: string[];
@@ -374,57 +714,94 @@ export interface components {
         JobState: "draft" | "intake_complete" | "confirmed" | "calling" | "quotes_ready" | "negotiating" | "completed" | "failed";
         /** MovingServices */
         MovingServices: {
-            /**
-             * Disassembly
-             * @default false
-             */
-            disassembly: boolean;
-            /**
-             * Packing
-             * @default false
-             */
-            packing: boolean;
-            /**
-             * Storage
-             * @default false
-             */
-            storage: boolean;
+            /** Disassembly */
+            disassembly?: boolean | null;
+            /** Packing */
+            packing?: boolean | null;
+            /** Storage */
+            storage?: boolean | null;
             /** Storage Days */
             storage_days?: number | null;
+        };
+        /**
+         * OpenAIIntegrationStatus
+         * @description OpenAI state plus grouped, content-free usage measurements.
+         */
+        OpenAIIntegrationStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Usage
+             * @default []
+             */
+            usage: components["schemas"]["UsageAggregate"][];
         };
         /** OriginDestinationAccess */
         OriginDestinationAccess: {
             /** Access Notes */
             access_notes?: string | null;
             /** Address Summary */
-            address_summary: string;
-            dwelling_type: components["schemas"]["DwellingType"];
-            /**
-             * Elevator Access
-             * @default false
-             */
-            elevator_access: boolean;
-            /**
-             * Floors
-             * @default 1
-             */
-            floors: number;
-            /**
-             * Parking Distance Feet
-             * @default 0
-             */
-            parking_distance_feet: number;
-            /**
-             * Stairs
-             * @default 0
-             */
-            stairs: number;
+            address_summary?: string | null;
+            dwelling_type?: components["schemas"]["DwellingType"] | null;
+            /** Elevator Access */
+            elevator_access?: boolean | null;
+            /** Floors */
+            floors?: number | null;
+            /** Parking Distance Feet */
+            parking_distance_feet?: number | null;
+            /** Stairs */
+            stairs?: number | null;
+        };
+        /**
+         * PostCallWebhookData
+         * @description Allowlisted fields used from ElevenLabs post-call data.
+         */
+        PostCallWebhookData: {
+            /** Agent Id */
+            agent_id: string;
+            /** Conversation Id */
+            conversation_id: string;
+            /** Status */
+            status: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ProvenanceReference */
+        ProvenanceReference: {
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Location */
+            location?: string | null;
+            /** Source Id */
+            source_id: string;
+            source_type: components["schemas"]["ProvenanceType"];
+        };
+        /**
+         * ProvenanceType
+         * @enum {string}
+         */
+        ProvenanceType: "document" | "voice_intake" | "agent_tool" | "transcript" | "demo_fixture" | "tavily";
+        /**
+         * ProviderIntegrationStatus
+         * @description Boolean-only state that cannot reveal provider configuration values.
+         */
+        ProviderIntegrationStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
         };
         /** QuoteV1 */
         QuoteV1: {
             /** Availability */
             availability: string;
+            /** @default unknown */
+            availability_status: components["schemas"]["AvailabilityStatus"];
             binding_type: components["schemas"]["BindingType"];
+            /** Comparable Total */
+            comparable_total?: string | null;
             /** Concessions */
             concessions?: string[];
             /**
@@ -433,10 +810,16 @@ export interface components {
              * @constant
              */
             currency: "USD";
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
             /** Deposit */
-            deposit: string;
+            deposit?: string | null;
             /** Fee Line Items */
             fee_line_items: components["schemas"]["FeeLineItem"][];
+            /** Findings */
+            findings?: components["schemas"]["IntelligenceFinding"][];
+            /** Headline Total */
+            headline_total?: string | null;
             /**
              * Job Id
              * Format: uuid
@@ -448,10 +831,17 @@ export interface components {
              * @constant
              */
             job_spec_version: "1.0";
+            /**
+             * Manually Fabricated
+             * @default false
+             */
+            manually_fabricated: boolean;
             /** Negotiated Total */
-            negotiated_total: string;
+            negotiated_total?: string | null;
             /** Original Total */
-            original_total: string;
+            original_total?: string | null;
+            /** Provenance */
+            provenance?: components["schemas"]["ProvenanceReference"][];
             /** Provisional Data */
             provisional_data?: {
                 [key: string]: unknown;
@@ -493,13 +883,17 @@ export interface components {
             /** Red Flags */
             red_flags?: string[];
             /** Total */
-            total: string;
+            total?: string | null;
             vendor: components["schemas"]["Vendor"];
         };
         /** RecommendationV1 */
         RecommendationV1: {
             /** Assumptions */
             assumptions?: string[];
+            /** Best Value Vendor Id */
+            best_value_vendor_id?: string | null;
+            /** Cheapest Vendor Id */
+            cheapest_vendor_id?: string | null;
             /** Evidence Ids */
             evidence_ids: string[];
             /**
@@ -507,6 +901,8 @@ export interface components {
              * Format: date-time
              */
             generated_at: string;
+            /** Hidden Fee Findings */
+            hidden_fee_findings?: components["schemas"]["IntelligenceFinding"][];
             /**
              * Job Id
              * Format: uuid
@@ -523,6 +919,8 @@ export interface components {
             summary: string;
             /** Transcript Evidence */
             transcript_evidence: components["schemas"]["TranscriptEvidence"][];
+            /** Uncertainty */
+            uncertainty?: string[];
             /**
              * Version
              * @default 1.0
@@ -535,14 +933,31 @@ export interface components {
              */
             winning_vendor_id: string;
         };
-        /** SourceContext */
-        SourceContext: {
+        /**
+         * RuntimeHealthResponse
+         * @description Expose the selected runtime mode without revealing configuration values.
+         */
+        RuntimeHealthResponse: {
             /**
-             * Intake Method
-             * @default demo
+             * Mode
              * @enum {string}
              */
-            intake_method: "voice" | "document" | "demo";
+            mode: "mock" | "live";
+            /**
+             * Service
+             * @default veramove-api
+             * @constant
+             */
+            service: "veramove-api";
+            /**
+             * Status
+             * @default ok
+             * @constant
+             */
+            status: "ok";
+        };
+        /** SourceContext */
+        SourceContext: {
             /** Vera Property Id */
             vera_property_id?: string | null;
             /** Vera User Id */
@@ -557,6 +972,8 @@ export interface components {
             call_id: string;
             /** Claim */
             claim: string;
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
             /** End Seconds */
             end_seconds: string;
             /**
@@ -573,6 +990,33 @@ export interface components {
             recording_url: string;
             /** Start Seconds */
             start_seconds: string;
+        };
+        /**
+         * UsageAggregate
+         * @description Safe grouped usage returned by the integration-status API.
+         */
+        UsageAggregate: {
+            /**
+             * Capability
+             * @enum {string}
+             */
+            capability: "document_extraction" | "recommendation_narration";
+            /** Failed Requests */
+            failed_requests: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model */
+            model: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Request Count */
+            request_count: number;
+            /** Successful Requests */
+            successful_requests: number;
+            /** Total Latency Ms */
+            total_latency_ms: number;
+            /** Total Tokens */
+            total_tokens: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -593,8 +1037,12 @@ export interface components {
             behavior_summary: string;
             /** Contact Label */
             contact_label: string;
+            /** @default synthetic */
+            data_classification: components["schemas"]["DataClassification"];
             /** Name */
             name: string;
+            /** Provenance */
+            provenance?: components["schemas"]["ProvenanceReference"][];
             /** Service Areas */
             service_areas: string[];
             /** Slug */
@@ -609,10 +1057,9 @@ export interface components {
         VendorDiscoveryResponse: {
             /**
              * Source
-             * @default synthetic_mock
-             * @constant
+             * @enum {string}
              */
-            source: "synthetic_mock";
+            source: "synthetic_mock" | "tavily";
             /** Vendors */
             vendors: components["schemas"]["Vendor"][];
         };
@@ -620,7 +1067,7 @@ export interface components {
          * VerificationStatus
          * @enum {string}
          */
-        VerificationStatus: "provisional" | "partially_verified" | "verified";
+        VerificationStatus: "provisional" | "partially_verified" | "verified" | "rejected";
         /** WebhookAck */
         WebhookAck: {
             /** Accepted */
@@ -637,6 +1084,210 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_call_recording_api_calls__call_id__recording_get: {
+        parameters: {
+            query: {
+                job_id: string;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated provider recording audio. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mp4": unknown;
+                    "audio/mpeg": unknown;
+                    "audio/wav": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repair_call_api_calls__call_id__repair_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-veramove-operator-secret"?: string | null;
+            };
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookAck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_intake_session_by_conversation_api_intake_conversations__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_job_from_document_api_intake_document_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentIntakeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_intake_session_api_intake_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+        };
+    };
+    get_intake_session_api_intake_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integration_status_api_integrations_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationStatusSnapshot"];
+                };
+            };
+        };
+    };
     create_job_api_jobs_post: {
         parameters: {
             query?: never;
@@ -763,6 +1414,37 @@ export interface operations {
             };
         };
     };
+    get_job_events_api_jobs__job_id__events_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobEventsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     negotiate_api_jobs__job_id__negotiate_post: {
         parameters: {
             query?: never;
@@ -866,7 +1548,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ElevenLabsWebhookEvent"];
+                "application/json": components["schemas"]["ElevenLabsWebhookEvent"] | components["schemas"]["ElevenLabsPostCallWebhook"];
             };
         };
         responses: {
@@ -879,13 +1561,37 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookAck"];
                 };
             };
-            /** @description Validation Error */
-            422: {
+        };
+    };
+    elevenlabs_conversation_initiation_api_webhooks_elevenlabs_pre_call_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Agent Id */
+                    agent_id: string;
+                    /** Call Sid */
+                    call_sid: string;
+                    /** Called Number */
+                    called_number?: string | null;
+                    /** Caller Id */
+                    caller_id?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ElevenLabsConversationInitiationResponse"];
                 };
             };
         };
@@ -905,7 +1611,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HealthResponse"];
+                    "application/json": components["schemas"]["HealthResponse"] | components["schemas"]["RuntimeHealthResponse"];
                 };
             };
         };

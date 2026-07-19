@@ -19,3 +19,19 @@ class DuplicateResource(DomainConflict):
 
 class InvalidStateTransition(DomainConflict):
     code = "invalid_state_transition"
+
+
+class ProviderConfigurationError(DomainError):
+    code = "provider_configuration_error"
+
+
+class ProviderRequestError(DomainError):
+    code = "provider_request_error"
+
+
+class WebhookAuthenticationError(DomainError):
+    code = "webhook_authentication_error"
+
+
+class WebhookPayloadError(DomainError):
+    code = "webhook_payload_error"

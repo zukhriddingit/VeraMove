@@ -1,0 +1,13 @@
+case_id,category,passed,expected,actual,data_classification
+transparent_quote,fee_extraction,true,2 known fee categories,2 known fee categories,synthetic
+hidden_fee_quote,hidden_fee_detection,true,3 hidden fees,3 hidden fees,synthetic
+premium_quote,recommendation,true,binding premium quote retained,binding premium quote retained,synthetic
+successful_negotiation,negotiation,true,500.00 reduction,500.00 reduction,synthetic
+refusal_to_itemize,call_outcome,true,documented_decline,documented_decline,synthetic
+callback_commitment,call_outcome,true,callback_commitment,callback_commitment,synthetic
+documented_decline,call_outcome,true,documented_decline,documented_decline,synthetic
+contradictory_totals,arithmetic,true,total conflict flagged,total conflict flagged,synthetic
+missing_fees,unknown_vs_zero,true,unknown retained,unknown retained,synthetic
+suspiciously_low_quote,red_flags,true,30 percent below median flagged,30 percent below median flagged,synthetic
+attempted_fake_competing_bid,verified_leverage,true,no leverage returned,no leverage returned,synthetic
+unclear_dollar_amount,strict_parsing,true,confirmation requested,confirmation requested,synthetic

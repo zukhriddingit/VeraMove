@@ -28,6 +28,14 @@ class DemoFixtures:
     def load_vendors(self) -> list[Vendor]:
         return [Vendor.model_validate(item) for item in self._read("vendors.json")]
 
+    def load_live_role_play_vendors(self) -> list[Vendor]:
+        """Return the fictional vendor identities reserved for supervised calls."""
+
+        return [
+            Vendor.model_validate(item)
+            for item in self._read("live_role_play_vendors.json")
+        ]
+
     def load_initial_quotes(self) -> list[QuoteV1]:
         return [QuoteV1.model_validate(item) for item in self._read("initial_quotes.json")]
 

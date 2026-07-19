@@ -1,0 +1,128 @@
+{
+  "agent_config_version": "2026-07-19.1",
+  "fields": [
+    {
+      "description": "Whether the caller explicitly consented to recording.",
+      "identifier": "recording_consent",
+      "type": "boolean"
+    },
+    {
+      "description": "Whether the caller agreed that the final readback was accurate; this never locks the job.",
+      "identifier": "summary_confirmed",
+      "type": "boolean"
+    },
+    {
+      "description": "Requested move date in YYYY-MM-DD form.",
+      "identifier": "move_date",
+      "type": "string"
+    },
+    {
+      "description": "Whether the requested move date is flexible.",
+      "identifier": "date_flexible",
+      "type": "boolean"
+    },
+    {
+      "description": "Fictional role-play origin locality/address summary exactly as stated.",
+      "identifier": "origin_address_summary",
+      "type": "string"
+    },
+    {
+      "description": "Origin dwelling type exactly as stated.",
+      "identifier": "origin_dwelling_type",
+      "type": "string"
+    },
+    {
+      "description": "Number of origin floors involved in the move.",
+      "identifier": "origin_floors",
+      "type": "integer"
+    },
+    {
+      "description": "Number of origin stair flights involved.",
+      "identifier": "origin_stairs",
+      "type": "integer"
+    },
+    {
+      "description": "Whether an elevator is available at the origin.",
+      "identifier": "origin_elevator_access",
+      "type": "boolean"
+    },
+    {
+      "description": "Estimated origin parking-to-door carry distance in feet.",
+      "identifier": "origin_parking_distance_feet",
+      "type": "integer"
+    },
+    {
+      "description": "Fictional role-play destination locality/address summary exactly as stated.",
+      "identifier": "destination_address_summary",
+      "type": "string"
+    },
+    {
+      "description": "Destination dwelling type exactly as stated.",
+      "identifier": "destination_dwelling_type",
+      "type": "string"
+    },
+    {
+      "description": "Number of destination floors involved in the move.",
+      "identifier": "destination_floors",
+      "type": "integer"
+    },
+    {
+      "description": "Number of destination stair flights involved.",
+      "identifier": "destination_stairs",
+      "type": "integer"
+    },
+    {
+      "description": "Whether an elevator is available at the destination.",
+      "identifier": "destination_elevator_access",
+      "type": "boolean"
+    },
+    {
+      "description": "Estimated destination parking-to-door carry distance in feet.",
+      "identifier": "destination_parking_distance_feet",
+      "type": "integer"
+    },
+    {
+      "description": "Number of bedrooms included in the move.",
+      "identifier": "bedroom_count",
+      "type": "integer"
+    },
+    {
+      "description": "JSON list of inventory items and quantities stated by the caller.",
+      "identifier": "inventory_json",
+      "type": "string"
+    },
+    {
+      "description": "JSON string list of oversized, fragile, heavy, or high-value items.",
+      "identifier": "special_items_json",
+      "type": "string"
+    },
+    {
+      "description": "Whether packing service was requested.",
+      "identifier": "packing",
+      "type": "boolean"
+    },
+    {
+      "description": "Whether disassembly service was requested.",
+      "identifier": "disassembly",
+      "type": "boolean"
+    },
+    {
+      "description": "Whether storage service was requested.",
+      "identifier": "storage",
+      "type": "boolean"
+    },
+    {
+      "description": "Requested storage duration in days; collect only when storage is requested.",
+      "identifier": "storage_days",
+      "type": "integer"
+    },
+    {
+      "description": "Protection or insurance preference exactly as stated.",
+      "identifier": "insurance_preference",
+      "type": "string"
+    }
+  ],
+  "provider": "elevenlabs",
+  "role": "intake",
+  "schema_type": "post_call_data_collection"
+}

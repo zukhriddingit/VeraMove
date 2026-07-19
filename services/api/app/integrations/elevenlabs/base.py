@@ -1,15 +1,33 @@
-"""Protocol for future ElevenLabs conversation and Twilio transport adapters."""
+"""Shared transport boundaries for ElevenLabs adapters."""
 
-from typing import Protocol
-
-from services.api.app.contracts import CallRecord, JobSpecV1, Vendor
+from typing import Any, Protocol
 
 
-class TwilioTransport(Protocol):
-    """Future outbound transport boundary, represented by a mock in this starter."""
+class JsonHttpTransport(Protocol):
+    """Small injectable JSON boundary that keeps orchestration network-free."""
 
-    def create_call_reference(self, vendor: Vendor, job_spec: JobSpecV1) -> str: ...
+    def post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        timeout_seconds: float,
+    ) -> dict[str, Any]: ...
 
 
-class VoiceVendorGateway(Protocol):
-    def create_calls(self, job_spec: JobSpecV1) -> list[CallRecord]: ...
+class ConversationHttpTransport(Protocol):
+    """Injectable read boundary for conversation details and audio."""
+
+    def get_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> dict[str, Any]: ...
+
+    def get_bytes(
+        self,
+        url: str,
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> tuple[bytes, str]: ...

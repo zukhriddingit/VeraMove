@@ -1,0 +1,84 @@
+version: 1
+agent_config_version: "2026-07-19.1"
+agent:
+  name: veramove-negotiator
+  display_name: VeraMove Outbound Negotiator
+  role: outbound_quote_and_negotiation
+  dashboard_sync: manual
+  prompt_file: prompt.md
+  data_collection_file: data-collection.json
+  fee_probes_file: generated-fee-probes.md
+  backend_boundaries_file: ../tools.yaml
+  provider_tool_ids: []
+  provider_tools_status: omitted_until_reviewed_ids_exist
+  provider_version:
+    version_description: "VeraMove 2026-07-19.1"
+    capture_after_save: [version_id, branch_id]
+    provider_ids_committed: false
+  structured_output: CallOutcome
+  first_message: >-
+    Hello, I'm VeraMove's AI assistant calling about a synthetic moving-services role-play. This
+    call may be recorded and processed by ElevenLabs. Do you consent to continue?
+  dynamic_variables:
+    - name: job_id
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: call_id
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: vendor_id
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: vendor_name
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: job_spec_version
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: job_spec_json
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: call_mode
+      type: string
+      required: true
+      allowed_values: [quote, negotiation]
+      source: verified_outbound_request
+    - name: agent_config_version
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: verified_competitor_quote_id
+      type: string
+      required: false
+      default: ""
+      required_in_modes: [negotiation]
+      source: verified_outbound_request
+    - name: verified_competitor_total
+      type: string
+      required: false
+      default: ""
+      required_in_modes: [negotiation]
+      source: verified_outbound_request
+    - name: verified_competitor_evidence_json
+      type: string
+      required: false
+      default: ""
+      required_in_modes: [negotiation]
+      source: verified_outbound_request
+    - name: negotiation_objective
+      type: string
+      required: false
+      default: ""
+      required_in_modes: [negotiation]
+      source: verified_outbound_request
+  success_evaluation: >-
+    Consent was obtained, the supplied locked move facts were preserved, every mandatory fee
+    category was addressed, and exactly one supported outcome was captured with evidence. In
+    negotiation mode, any competitor claim used only supplied verified leverage and the vendor
+    offered a measurable price or term improvement.

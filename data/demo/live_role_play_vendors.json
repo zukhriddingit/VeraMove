@@ -1,0 +1,53 @@
+[
+  {
+    "vendor_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    "name": "Atlas Role-Play Movers",
+    "slug": "atlas-role-play-movers",
+    "behavior_summary": "Fictional transparent mover used only by a consenting hackathon participant.",
+    "contact_label": "Consenting role-play destination slot 0",
+    "service_areas": ["Synthetic Greater Boston demo area"],
+    "data_classification": "role_play",
+    "provenance": [
+      {
+        "source_type": "demo_fixture",
+        "source_id": "synthetic-live-role-play-roster",
+        "location": "data/demo/live_role_play_vendors.json",
+        "excerpt": "Fictional vendor identity; not a claim about a real company."
+      }
+    ]
+  },
+  {
+    "vendor_id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    "name": "Harbor Demo Relocation",
+    "slug": "harbor-demo-relocation",
+    "behavior_summary": "Fictional fee-probing scenario used only by a consenting hackathon participant.",
+    "contact_label": "Consenting role-play destination slot 1",
+    "service_areas": ["Synthetic Greater Boston demo area"],
+    "data_classification": "role_play",
+    "provenance": [
+      {
+        "source_type": "demo_fixture",
+        "source_id": "synthetic-live-role-play-roster",
+        "location": "data/demo/live_role_play_vendors.json",
+        "excerpt": "Fictional vendor identity; not a claim about a real company."
+      }
+    ]
+  },
+  {
+    "vendor_id": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+    "name": "Beacon Synthetic Moving",
+    "slug": "beacon-synthetic-moving",
+    "behavior_summary": "Fictional negotiation scenario used only by a consenting hackathon participant.",
+    "contact_label": "Consenting role-play destination slot 2",
+    "service_areas": ["Synthetic Greater Boston demo area"],
+    "data_classification": "role_play",
+    "provenance": [
+      {
+        "source_type": "demo_fixture",
+        "source_id": "synthetic-live-role-play-roster",
+        "location": "data/demo/live_role_play_vendors.json",
+        "excerpt": "Fictional vendor identity; not a claim about a real company."
+      }
+    ]
+  }
+]

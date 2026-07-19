@@ -1,18 +1,25 @@
 """Shared fixtures for the mock API test suite."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
 from services.api.app.api.dependencies import get_repository
-from services.api.app.integrations.elevenlabs.mock import MockVoiceVendorGateway
+from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
+from services.api.app.integrations.elevenlabs.webhook import (
+    ElevenLabsWebhookProcessor,
+)
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.main import app
 from services.api.app.orchestration.fixtures import DemoFixtures
+from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
 from services.api.app.orchestration.service import VeraMoveService
-from services.api.app.repositories.memory import InMemoryJobRepository
+from services.api.app.repositories.memory import InMemoryRepository
+
+FIXED_NOW = datetime(2026, 7, 18, 16, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -32,13 +39,23 @@ def job_spec_payload(job_spec):
 
 @pytest.fixture
 def service(fixtures: DemoFixtures) -> VeraMoveService:
-    repository = InMemoryJobRepository()
+    repository = InMemoryRepository()
     return VeraMoveService(
-        repository=repository,
-        voice_gateway=MockVoiceVendorGateway(fixtures),
-        negotiation_gateway=MockNegotiationGateway(fixtures),
-        discovery_gateway=MockVendorDiscoveryGateway(fixtures),
+        jobs=repository,
+        calls=repository,
+        quotes=repository,
+        voice=MockVoiceProvider(fixtures),
+        intelligence=MockIntelligenceProvider(
+            fixtures,
+            MockNegotiationGateway(fixtures),
+        ),
+        discovery=MockVendorDiscoveryGateway(fixtures),
+        webhooks=ElevenLabsWebhookProcessor(
+            secret="synthetic-webhook-secret",
+            clock=lambda: FIXED_NOW,
+        ),
         fixtures=fixtures,
+        clock=lambda: FIXED_NOW,
     )
 
 

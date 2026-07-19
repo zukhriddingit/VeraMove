@@ -1,0 +1,4 @@
+{"data_classification":"synthetic","case_id":"transparent_quote","call_id":"10000000-0000-4000-8000-000000000001","outcome":"itemized_quote","quote_id":"20000000-0000-4000-8000-000000000001"}
+{"data_classification":"synthetic","case_id":"callback_commitment","call_id":"10000000-0000-4000-8000-000000000011","outcome":"callback_commitment","callback_at":"2026-08-01T15:30:00Z"}
+{"data_classification":"synthetic","case_id":"documented_decline","call_id":"10000000-0000-4000-8000-000000000012","outcome":"documented_decline","reason":"Synthetic dispatcher does not provide phone estimates."}
+{"data_classification":"synthetic","case_id":"failed_call","call_id":"10000000-0000-4000-8000-000000000013","outcome":"failed","reason":"Synthetic connection ended before a structured quote was available."}

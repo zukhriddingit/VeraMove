@@ -1,0 +1,38 @@
+version: 1
+agent_config_version: "2026-07-19.1"
+tools:
+  - name: save_quote
+    description: >-
+      VeraMove write boundary for one evidence-supported canonical quote associated with the active
+      call. Provider analysis alone is not verification.
+    required: [call_id, quote]
+    properties:
+      call_id: {type: string, format: uuid}
+      quote: {type: object}
+  - name: save_call_outcome
+    description: >-
+      VeraMove write boundary for exactly one supported terminal outcome after canonical validation.
+    required: [call_id, outcome, completed_at]
+    properties:
+      call_id: {type: string, format: uuid}
+      outcome: {type: object}
+      completed_at: {type: string, format: date-time}
+      recording_url: {type: string, format: uri}
+  - name: get_verified_competing_quote
+    description: >-
+      Trust boundary that returns eligible evidence-backed leverage for a different fictional vendor
+      and the same locked JobSpec version.
+    required: [job_id, target_vendor_id, job_spec_version]
+    properties:
+      job_id: {type: string, format: uuid}
+      target_vendor_id: {type: string, format: uuid}
+      job_spec_version: {type: string, const: "1.0"}
+  - name: request_callback
+    description: >-
+      VeraMove write boundary for a supported future callback commitment associated with the active
+      call.
+    required: [call_id, callback_at]
+    properties:
+      call_id: {type: string, format: uuid}
+      callback_at: {type: string, format: date-time}
+      recording_url: {type: string, format: uri}

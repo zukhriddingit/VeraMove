@@ -1,5 +1,33 @@
-# Negotiator agent boundary
+# VeraMove Outbound Negotiator agent
 
-Owner: Member 2. The future negotiator receives one locked `JobSpecV1`, structured vendor policy context, itemized quotes, and verified transcript evidence. It must return structured `CallOutcome` and `QuoteV1` objects, use only verified competitor facts, cite evidence for material claims, and never claim it booked or paid for a move.
+Owner: Prathmesh (GitHub handle pending; see `AGENTS.md`).
 
-This starter invokes no model or telephony service. The mock adapter returns deterministic synthetic data.
+This directory is the reviewed source package for the **VeraMove Outbound Negotiator** ElevenLabs
+agent. One agent handles both initial quote and evidence-gated negotiation calls. VeraMove selects
+the branch through the verified `call_mode` dynamic variable; this is not two separate agents.
+
+## Files
+
+- `agent.yaml` records the shared agent configuration, dynamic variables, mode requirements, first
+  message, and success evaluation.
+- `prompt.md` defines disclosure, role-play boundaries, quote and negotiation branches, and exact
+  supported outcomes.
+- `data-collection.json` is the generated 14-field post-call collection definition.
+- `generated-fee-probes.md` is generated exclusively from
+  `configs/moving.yaml:mandatory_fee_questions` and must be appended to the dashboard prompt.
+
+The repository tools manifest documents VeraMove's trust and write boundaries. The selected demo
+architecture resolves verified leverage before a call and canonicalizes results after the signed
+post-call webhook; it does not depend on an unreviewed real-time provider tool.
+
+These files do not auto-deploy. Follow `../elevenlabs-dashboard-checklist.md`, then record the active
+provider agent ID only in the deployment secret manager.
+
+Regenerate and verify the assets from the repository root:
+
+```bash
+.venv/bin/python scripts/generate_agent_assets.py
+.venv/bin/python scripts/generate_agent_assets.py --check
+```
+
+Never commit credentials, provider IDs, destination values, customer facts, transcripts, or audio.
