@@ -13,7 +13,7 @@ export function buildVoiceIntakeSpec(): JobSpecV1 {
   moveDate.setDate(moveDate.getDate() + 21);
   return {
     job_id: jobId,
-    version: 1,
+    version: "1.0",
     move_date: moveDate.toISOString().slice(0, 10),
     date_flexible: true,
     origin: {
