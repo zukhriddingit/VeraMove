@@ -68,7 +68,7 @@ export function buildDocumentIntakeSpec(): JobSpecV1 {
       address_summary: "[DEMO] 77 Meadowbrook Ln, Palo Alto CA",
       dwelling_type: "single_family_house",
       floors: 2,
-      stairs: true,
+      stairs: 24,
       elevator_access: false,
       parking_distance_feet: 15,
       access_notes: "Driveway access; large hedge near front door.",
