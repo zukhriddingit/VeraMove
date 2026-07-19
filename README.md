@@ -39,9 +39,9 @@ See [architecture details](docs/architecture.md), [API contract rules](docs/api-
 
 | Person | Owns |
 | --- | --- |
-| Toheeb ([@Olacode01](https://github.com/Olacode01)) | Backend orchestration, ElevenLabs voice/negotiation system |
+| Prathmesh Bhosale | Backend orchestration, ElevenLabs voice/negotiation system |
 | Zukhriuddin ([@zukhriddingit](https://github.com/zukhriddingit)) | Data & intelligence layer — schema, OpenAI parsing/comparison/recommendation, dataset |
-| Northeastern teammate | Frontend (`apps/web`) |
+| Toheeb ([@Olacode01](https://github.com/Olacode01)) | Frontend (`apps/web`) |
 | Arsalan ([@ars2711](https://github.com/ars2711)) | Product narrative & submission — everything in `docs/submission/`, final sign-off on the Project Summary, videos, and portal copy |
 
 Full ownership boundaries and the claim-verification workflow are in [`AGENTS.md`](AGENTS.md) and

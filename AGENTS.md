@@ -34,7 +34,7 @@ Ownership is by role, not by an arbitrary member number — a prior draft of thi
 person's work (backend + voice) across two "members" and left the narrative/submission role with no
 directory at all. Fixed below.
 
-### Toheeb (@Olacode01) — backend orchestration & voice
+### Prathmesh (@prathmesh-handle-tbd) — backend orchestration & voice
 
 - `services/api/app/api`
 - `services/api/app/orchestration`
@@ -53,7 +53,7 @@ directory at all. Fixed below.
 - `data`
 - `evals`
 
-### Northeastern teammate — frontend
+### Toheeb (@Olacode01) — frontend
 
 - `apps/web`
 - frontend tests
@@ -62,7 +62,7 @@ directory at all. Fixed below.
 
 - `docs/submission/` (project summary, video scripts, claim ledger, requirements mapping,
   final checklist — see that folder for the full list)
-- `docs/demo-ux.md` (narrative pass; Northeastern teammate owns the underlying UX build)
+- `docs/demo-ux.md` (narrative pass; Toheeb owns the underlying UX build)
 - `README.md`, jointly with the relevant technical owner for setup-command accuracy
 - Final review on any wording that will appear in a video, the Project Summary, or the
   submission portal, regardless of which directory it lives in. No claim about what the

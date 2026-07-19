@@ -40,14 +40,9 @@ def test_readme_has_required_sections(heading):
     assert f"## {heading}" in README
 
 
-def test_agents_declares_final_role_ownership_and_boundaries():
-    for owner in (
-        "Toheeb (@Olacode01)",
-        "Zukhriuddin (@zukhriddingit)",
-        "Northeastern teammate",
-        "Arsalan (@ars2711)",
-    ):
-        assert owner in AGENTS
+def test_agents_declares_all_member_ownership_and_boundaries():
+    for name in ["Prathmesh", "Zukhriuddin", "Toheeb", "Arsalan"]:
+        assert name in AGENTS
     assert "Do not rewrite another member's subsystem" in AGENTS
     assert "No-secrets rule" in AGENTS
     assert "No-real-PII rule" in AGENTS
@@ -57,8 +52,8 @@ def test_agents_declares_final_role_ownership_and_boundaries():
 
 def test_contributor_and_agent_docs_use_role_ownership():
     assert "role-scoped branch" in CONTRIBUTING
-    assert "Owner: Toheeb (@Olacode01)" in INTAKE_AGENT
-    assert "Owner: Toheeb (@Olacode01)" in NEGOTIATOR_AGENT
+    assert "Owner: Prathmesh" in INTAKE_AGENT
+    assert "Owner: Prathmesh" in NEGOTIATOR_AGENT
 
 
 def test_ci_has_no_deployment_or_secret_context():

@@ -1,6 +1,6 @@
 # VeraMove Intake agent
 
-Owner: Toheeb (@Olacode01).
+Owner: Prathmesh (GitHub handle pending; see `AGENTS.md`).
 
 This directory is the reviewed source package for the **VeraMove Intake** ElevenLabs agent. The
 agent interviews a customer using fictional role-play facts and produces an unconfirmed voice

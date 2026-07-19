@@ -1,6 +1,6 @@
 # VeraMove Outbound Negotiator agent
 
-Owner: Toheeb (@Olacode01).
+Owner: Prathmesh (GitHub handle pending; see `AGENTS.md`).
 
 This directory is the reviewed source package for the **VeraMove Outbound Negotiator** ElevenLabs
 agent. One agent handles both initial quote and evidence-gated negotiation calls. VeraMove selects
