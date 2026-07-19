@@ -96,6 +96,8 @@ function CallsPage() {
       {callsMut.error && <ErrorBox message={(callsMut.error as Error).message} />}
       {negMut.error && <ErrorBox message={(negMut.error as Error).message} />}
 
+      {state !== "confirmed" && <ConversationChecklist calls={calls} />}
+
       {quotes.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-sand p-10 text-center text-muted-foreground">
           {state === "confirmed"
@@ -107,6 +109,7 @@ function CallsPage() {
           {quotes.map((q) => <QuoteCard key={q.quote_id} q={q} />)}
         </div>
       )}
+
     </div>
   );
 }
