@@ -1,6 +1,7 @@
 """Structural checks for configuration, fixtures, and migration assets."""
 
 import json
+import re
 from pathlib import Path
 
 import yaml
@@ -86,7 +87,16 @@ def test_evaluation_covers_required_mock_outcomes():
     }
 
 
-def test_voice_agent_assets_are_safe_and_machine_readable():
+def test_exactly_two_professional_voice_agent_roles_exist():
+    role_directories = {
+        path.name
+        for path in (ROOT / "agents").iterdir()
+        if path.is_dir() and not path.name.startswith("__")
+    }
+    assert role_directories == {"intake", "negotiator"}
+
+
+def test_voice_agent_assets_are_professional_and_machine_readable():
     intake_prompt = (ROOT / "agents/intake/prompt.md").read_text(encoding="utf-8")
     negotiator_prompt = (ROOT / "agents/negotiator/prompt.md").read_text(encoding="utf-8")
     intake_config = yaml.safe_load(
@@ -97,24 +107,71 @@ def test_voice_agent_assets_are_safe_and_machine_readable():
     )
     tools = yaml.safe_load((ROOT / "agents/tools.yaml").read_text(encoding="utf-8"))
 
-    assert "Ask only for fields configured in configs/moving.yaml" in intake_prompt
-    assert "never infer inventory, access, price, or insurance facts" in intake_prompt
-    assert "Never confirm a job or place a vendor call yourself" in intake_prompt
-    assert "Use get_verified_competing_quote before mentioning a competitor" in (
-        negotiator_prompt
-    )
-    assert "Never invent a price, fee, concession, recording" in negotiator_prompt
-    assert "exactly one supported CallOutcome type" in negotiator_prompt
+    assert intake_config["agent_config_version"] == negotiator_config["agent_config_version"]
+    assert intake_config["agent_config_version"] == "2026-07-19.1"
+    assert intake_config["agent"]["display_name"] == "VeraMove Intake"
+    assert negotiator_config["agent"]["display_name"] == "VeraMove Outbound Negotiator"
+    assert intake_config["agent"]["data_collection_file"] == "data-collection.json"
+    assert negotiator_config["agent"]["data_collection_file"] == "data-collection.json"
+    assert negotiator_config["agent"]["fee_probes_file"] == "generated-fee-probes.md"
+    assert intake_config["agent"]["dashboard_sync"] == "manual"
+    assert negotiator_config["agent"]["dashboard_sync"] == "manual"
 
-    assert intake_config["version"] == 1
-    assert intake_config["agent"] == {
-        "name": "veramove-intake",
-        "prompt_file": "prompt.md",
-        "tools_file": "../tools.yaml",
-        "tool_names": [],
-        "structured_output": "JobSpecV1",
+    intake_variables = {
+        variable["name"] for variable in intake_config["agent"]["dynamic_variables"]
     }
-    assert negotiator_config["agent"]["name"] == "veramove-negotiator"
+    assert intake_variables == {"job_id", "intake_session_id", "agent_config_version"}
+    outbound_variables = {
+        variable["name"] for variable in negotiator_config["agent"]["dynamic_variables"]
+    }
+    assert outbound_variables == {
+        "job_id",
+        "call_id",
+        "vendor_id",
+        "vendor_name",
+        "job_spec_version",
+        "job_spec_json",
+        "call_mode",
+        "agent_config_version",
+        "verified_competitor_quote_id",
+        "verified_competitor_total",
+        "verified_competitor_evidence_json",
+        "negotiation_objective",
+    }
+    assert all(
+        variable["type"] == "string"
+        for variable in (
+            intake_config["agent"]["dynamic_variables"]
+            + negotiator_config["agent"]["dynamic_variables"]
+        )
+    )
+
+    for prompt in (intake_prompt.lower(), negotiator_prompt.lower()):
+        for phrase in (
+            "ai assistant",
+            "may be recorded",
+            "do you consent",
+            "asks to stop",
+            "never book",
+        ):
+            assert phrase in prompt
+    assert "read the complete move summary" in intake_prompt.lower()
+    assert "does not confirm or lock" in intake_prompt.lower()
+    assert "call_mode=quote" in negotiator_prompt
+    assert "call_mode=negotiation" in negotiator_prompt
+    assert "get_verified_competing_quote" in negotiator_prompt
+    assert "verified different-vendor" in negotiator_prompt.lower()
+    assert "synthetic role-play" in negotiator_prompt.lower()
+    assert all(
+        outcome in negotiator_prompt
+        for outcome in (
+            "itemized_quote",
+            "callback_commitment",
+            "documented_decline",
+            "failed",
+        )
+    )
+
     assert negotiator_config["agent"]["structured_output"] == "CallOutcome"
     assert negotiator_config["agent"]["tool_names"] == [
         "save_quote",
@@ -129,5 +186,106 @@ def test_voice_agent_assets_are_safe_and_machine_readable():
     serialized = "\n".join(
         (intake_prompt, negotiator_prompt, yaml.safe_dump(intake_config), yaml.safe_dump(tools)),
     ).lower()
-    for unsafe_key in ("xi-api-key", "sk-", "phone_number", "@example.com"):
+    for unsafe_key in ("xi-api-key", "sk-", "phone_number", "@example.com", "replace_me"):
         assert unsafe_key not in serialized
+    assert re.search(r"\+[1-9]\d{7,14}\b", serialized) is None
+
+
+def test_voice_data_collection_assets_match_the_approved_contract():
+    intake = json.loads((ROOT / "agents/intake/data-collection.json").read_text(encoding="utf-8"))
+    outbound = json.loads(
+        (ROOT / "agents/negotiator/data-collection.json").read_text(encoding="utf-8")
+    )
+    intake_fields = intake["fields"]
+    outbound_fields = outbound["fields"]
+
+    assert intake["agent_config_version"] == "2026-07-19.1"
+    assert outbound["agent_config_version"] == "2026-07-19.1"
+    assert len(intake_fields) == 24
+    assert len(outbound_fields) == 14
+    assert len(intake_fields) < 25
+    assert len(outbound_fields) < 25
+    assert [field["identifier"] for field in intake_fields] == [
+        "recording_consent",
+        "summary_confirmed",
+        "move_date",
+        "date_flexible",
+        "origin_address_summary",
+        "origin_dwelling_type",
+        "origin_floors",
+        "origin_stairs",
+        "origin_elevator_access",
+        "origin_parking_distance_feet",
+        "destination_address_summary",
+        "destination_dwelling_type",
+        "destination_floors",
+        "destination_stairs",
+        "destination_elevator_access",
+        "destination_parking_distance_feet",
+        "bedroom_count",
+        "inventory_json",
+        "special_items_json",
+        "packing",
+        "disassembly",
+        "storage",
+        "storage_days",
+        "insurance_preference",
+    ]
+    assert [field["identifier"] for field in outbound_fields] == [
+        "recording_consent",
+        "outcome_type",
+        "callback_at",
+        "outcome_reason",
+        "headline_total",
+        "deposit",
+        "original_total",
+        "negotiated_total",
+        "binding_type",
+        "availability_status",
+        "availability",
+        "fee_items_json",
+        "addressed_fee_categories_json",
+        "concessions_json",
+    ]
+    assert {field["type"] for field in intake_fields + outbound_fields} <= {
+        "string",
+        "boolean",
+        "integer",
+        "number",
+    }
+    assert len({field["identifier"] for field in intake_fields}) == len(intake_fields)
+    assert len({field["identifier"] for field in outbound_fields}) == len(outbound_fields)
+
+
+def test_generated_fee_probes_cover_every_mandatory_category_once():
+    config = yaml.safe_load((ROOT / "configs/moving.yaml").read_text(encoding="utf-8"))
+    probes = (ROOT / "agents/negotiator/generated-fee-probes.md").read_text(encoding="utf-8")
+    generated_categories = re.findall(r"^- `([a-z_]+)`: ", probes, flags=re.MULTILINE)
+    assert generated_categories == config["mandatory_fee_questions"]
+    assert len(generated_categories) == len(set(generated_categories))
+
+
+def test_elevenlabs_dashboard_checklist_is_complete_and_secret_free():
+    checklist = (ROOT / "agents/elevenlabs-dashboard-checklist.md").read_text(encoding="utf-8")
+    lowered = checklist.lower()
+    for phrase in (
+        "veramove intake",
+        "veramove outbound negotiator",
+        "2026-07-19.1",
+        "dynamic variables",
+        "data collection",
+        "success evaluation",
+        "first message",
+        "audio saving",
+        "retention",
+        "call limit",
+        "conversation initiation",
+        "post_call_transcription",
+        "retries",
+        "audio webhook",
+    ):
+        assert phrase in lowered
+    assert "audio webhook: disabled" in lowered
+    assert re.search(r"\+[1-9]\d{7,14}\b", checklist) is None
+    for unsafe_key in ("xi-api-key", "sk-", "replace_me"):
+        assert unsafe_key not in lowered

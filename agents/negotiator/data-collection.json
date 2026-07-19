@@ -1,0 +1,78 @@
+{
+  "agent_config_version": "2026-07-19.1",
+  "fields": [
+    {
+      "description": "Whether the role-play vendor consented to recording.",
+      "identifier": "recording_consent",
+      "type": "boolean"
+    },
+    {
+      "description": "Exactly itemized_quote, callback_commitment, documented_decline, or failed.",
+      "identifier": "outcome_type",
+      "type": "string"
+    },
+    {
+      "description": "Timezone-aware ISO 8601 callback time for callback_commitment; otherwise omit.",
+      "identifier": "callback_at",
+      "type": "string"
+    },
+    {
+      "description": "Brief supported reason for documented_decline or failed; otherwise omit.",
+      "identifier": "outcome_reason",
+      "type": "string"
+    },
+    {
+      "description": "Vendor's stated headline total, when provided.",
+      "identifier": "headline_total",
+      "type": "number"
+    },
+    {
+      "description": "Required deposit amount, when known.",
+      "identifier": "deposit",
+      "type": "number"
+    },
+    {
+      "description": "Target vendor's original comparable total in negotiation mode.",
+      "identifier": "original_total",
+      "type": "number"
+    },
+    {
+      "description": "Target vendor's improved comparable total in negotiation mode, when agreed.",
+      "identifier": "negotiated_total",
+      "type": "number"
+    },
+    {
+      "description": "Exact quote binding classification stated by the vendor.",
+      "identifier": "binding_type",
+      "type": "string"
+    },
+    {
+      "description": "Exact normalized availability status stated by the vendor.",
+      "identifier": "availability_status",
+      "type": "string"
+    },
+    {
+      "description": "Bounded availability detail exactly as stated.",
+      "identifier": "availability",
+      "type": "string"
+    },
+    {
+      "description": "JSON list of fee category, description, amount/status, rate, units, disclosure, and mandatory values.",
+      "identifier": "fee_items_json",
+      "type": "string"
+    },
+    {
+      "description": "JSON string list of every configured fee category directly addressed in the call.",
+      "identifier": "addressed_fee_categories_json",
+      "type": "string"
+    },
+    {
+      "description": "JSON string list of measurable concessions explicitly offered by the vendor.",
+      "identifier": "concessions_json",
+      "type": "string"
+    }
+  ],
+  "provider": "elevenlabs",
+  "role": "outbound_negotiator",
+  "schema_type": "post_call_data_collection"
+}

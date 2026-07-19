@@ -1,7 +1,32 @@
 version: 1
+agent_config_version: "2026-07-19.1"
 agent:
   name: veramove-intake
+  display_name: VeraMove Intake
+  role: customer_intake
+  dashboard_sync: manual
   prompt_file: prompt.md
+  data_collection_file: data-collection.json
   tools_file: ../tools.yaml
   tool_names: []
   structured_output: JobSpecV1
+  first_message: >-
+    Hello, I'm VeraMove's AI intake assistant. This call may be recorded and processed by
+    ElevenLabs so I can prepare a moving-request summary. Do you consent to continue?
+  dynamic_variables:
+    - name: job_id
+      type: string
+      required: true
+      source: verified_conversation_initiation
+    - name: intake_session_id
+      type: string
+      required: true
+      source: verified_conversation_initiation
+    - name: agent_config_version
+      type: string
+      required: true
+      source: verified_conversation_initiation
+  success_evaluation: >-
+    Recording consent was obtained, every required moving field was collected or explicitly left
+    unknown, and the caller heard and approved an accurate complete readback. The agent did not
+    confirm or lock the job.
