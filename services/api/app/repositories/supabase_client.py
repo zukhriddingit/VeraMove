@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -22,6 +23,29 @@ _ALLOWED_TABLES = frozenset(
         "event_log",
     }
 )
+_ALLOWED_RPCS = frozenset(
+    {
+        "veramove_claim_voice_webhook_receipt",
+        "veramove_fail_voice_webhook_receipt",
+        "veramove_finalize_voice_webhook",
+    }
+)
+_FORBIDDEN_VOICE_KEYS = frozenset(
+    {
+        "analysis",
+        "api_key",
+        "audio",
+        "from_number",
+        "phone",
+        "phone_number",
+        "raw_body",
+        "raw_payload",
+        "secret",
+        "to_number",
+        "transcript",
+    }
+)
+_PHONE_LIKE = re.compile(r"\+[1-9]\d{7,14}")
 _IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]*$")
 _FILTER_OPERATORS = frozenset({"eq", "neq", "gt", "gte", "lt", "lte", "in", "is"})
 _MAX_FILTERS = 20
@@ -79,6 +103,8 @@ class SupabaseTableClient(Protocol):
         filters: dict[str, str],
         values: dict[str, Any],
     ) -> dict[str, Any]: ...
+
+    def rpc(self, name: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class HttpxSupabaseTransport:
@@ -182,6 +208,22 @@ class SupabasePostgrestClient:
             prefer="return=representation",
         )
 
+    def rpc(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Call one allowlisted transactional function with a bounded safe payload."""
+
+        if name not in _ALLOWED_RPCS:
+            raise ValueError("Supabase RPC is not allowed")
+        self._validate_rpc_payload(payload)
+        body = self._request(
+            "POST",
+            f"rpc/{name}",
+            params={},
+            payload=payload,
+        )
+        if not isinstance(body, dict):
+            raise ProviderRequestError("Supabase request failed")
+        return body
+
     def _mutation(
         self,
         method: str,
@@ -198,11 +240,7 @@ class SupabasePostgrestClient:
             payload=payload,
             prefer=prefer,
         )
-        if (
-            not isinstance(body, list)
-            or len(body) != 1
-            or not isinstance(body[0], dict)
-        ):
+        if not isinstance(body, list) or len(body) != 1 or not isinstance(body[0], dict):
             raise ProviderRequestError("Supabase request failed")
         return body[0]
 
@@ -253,6 +291,31 @@ class SupabasePostgrestClient:
     def _validate_table(table: str) -> None:
         if table not in _ALLOWED_TABLES:
             raise ValueError("Supabase table is not allowed")
+
+    @classmethod
+    def _validate_rpc_payload(cls, payload: dict[str, Any]) -> None:
+        if not isinstance(payload, dict):
+            raise ValueError("Invalid Supabase RPC payload")
+
+        def inspect(value: Any) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if not isinstance(key, str) or key.casefold() in _FORBIDDEN_VOICE_KEYS:
+                        raise ValueError("Unsafe Supabase RPC payload")
+                    inspect(item)
+                return
+            if isinstance(value, list):
+                if len(value) > 1_000:
+                    raise ValueError("Supabase RPC payload is too large")
+                for item in value:
+                    inspect(item)
+                return
+            if isinstance(value, str) and _PHONE_LIKE.search(value) is not None:
+                raise ValueError("Unsafe Supabase RPC payload")
+
+        inspect(payload)
+        if len(json.dumps(payload, separators=(",", ":"), default=str)) > 1_000_000:
+            raise ValueError("Supabase RPC payload is too large")
 
     @classmethod
     def _validate_filters(cls, filters: dict[str, str]) -> None:

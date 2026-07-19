@@ -187,3 +187,56 @@ def test_postgrest_rejects_unapproved_or_unbounded_queries(table, filters):
         make_client(transport).select_many(table, filters)
 
     assert transport.requests == []
+
+
+def test_postgrest_rpc_calls_only_allowlisted_transactional_functions():
+    transport = RecordingTransport(SupabaseHttpResponse(200, {"claimed": True, "processed": False}))
+    payload = {
+        "p_idempotency_key": "synthetic-event-key",
+        "p_event_type": "post_call_transcription",
+        "p_lease_token": "11111111-1111-4111-8111-111111111111",
+        "p_lease_expires_at": "2026-07-19T12:05:00Z",
+        "p_now": "2026-07-19T12:00:00Z",
+    }
+
+    result = make_client(transport).rpc(
+        "veramove_claim_voice_webhook_receipt",
+        payload,
+    )
+
+    assert result == {"claimed": True, "processed": False}
+    method, url, _headers, params, sent = transport.requests[0]
+    assert method == "POST"
+    assert url == ("https://synthetic.supabase.co/rest/v1/rpc/veramove_claim_voice_webhook_receipt")
+    assert params == {}
+    assert sent == payload
+
+    with pytest.raises(ValueError, match="not allowed"):
+        make_client(transport).rpc("execute_arbitrary_sql", {})
+    assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "unsafe_fragment",
+    (
+        {"transcript": "private call text"},
+        {"analysis": {"summary": "private"}},
+        {"to_number": "+15550100001"},
+        {"nested": {"phone": "+15550100001"}},
+        {"nested": {"safe_label": "+15550100001"}},
+        {"api_key": "synthetic-secret"},
+        {"audio": "base64-private"},
+    ),
+)
+def test_postgrest_finalize_rpc_rejects_sensitive_or_phone_payloads(unsafe_fragment):
+    transport = RecordingTransport(SupabaseHttpResponse(200, {"processed": True}))
+    payload = {
+        "p_idempotency_key": "synthetic-event-key",
+        "p_lease_token": "11111111-1111-4111-8111-111111111111",
+        "p_attempt": {"payload": unsafe_fragment},
+    }
+
+    with pytest.raises(ValueError, match="Unsafe"):
+        make_client(transport).rpc("veramove_finalize_voice_webhook", payload)
+
+    assert transport.requests == []
