@@ -15,7 +15,113 @@ export const Route = createFileRoute("/calls/$jobId")({
   component: CallsPage,
 });
 
+type ChecklistItem = {
+  label: string;
+  description: string;
+  satisfied: boolean;
+  caption: string;
+};
+
+function ConversationChecklist({ calls }: { calls: CallRecord[] }) {
+  const hasCalls = calls.length > 0;
+  const callbackSurvived = calls.some((c) => c.outcome.type === "callback_commitment");
+  const allClosed =
+    hasCalls &&
+    calls.every((c) =>
+      ["itemized_quote", "callback_commitment", "documented_decline"].includes(c.outcome.type)
+    );
+
+  const items: ChecklistItem[] = [
+    {
+      label: "AI disclosure",
+      description:
+        "Every call opens with a clear AI disclosure and answers 'are you a robot?' honestly.",
+      satisfied: hasCalls,
+      caption: hasCalls ? "Built into every synthetic call" : "Pending first call",
+    },
+    {
+      label: "Friction survival",
+      description:
+        "At least one call survives real friction (hold music, a rushed dispatcher) and secures a structured callback instead of a dead end.",
+      satisfied: callbackSurvived,
+      caption: callbackSurvived ? "Observed in this batch" : "Not observed in this batch",
+    },
+    {
+      label: "Honesty line",
+      description:
+        "The agent may use a real verified competing quote as leverage. It must never invent inventory, fabricate a competitor's number, or misrepresent the job spec.",
+      satisfied: hasCalls,
+      caption: hasCalls ? "Built-in guardrail, not vendor-dependent" : "Pending first call",
+    },
+    {
+      label: "Structured close",
+      description:
+        "No call ends on a vague answer — every call closes as an itemized quote, a callback commitment, or a documented decline.",
+      satisfied: allClosed,
+      caption: allClosed
+        ? "All calls closed cleanly"
+        : hasCalls
+          ? "Some calls need follow-up"
+          : "Pending first call",
+    },
+  ];
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="mb-4 flex items-center gap-3">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+          4
+        </span>
+        <div>
+          <h2 className="font-display text-lg text-ink">Conversation-design checklist</h2>
+          <p className="text-xs text-muted-foreground">
+            What we expect from every synthetic call batch
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {items.map((item) => (
+          <div
+            key={item.label}
+            className={`rounded-xl border border-border p-4 ${
+              item.satisfied ? "bg-mint/15" : "bg-sand/50"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <span
+                className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${
+                  item.satisfied ? "bg-mint" : "bg-muted-foreground/30"
+                }`}
+              />
+              <div>
+                <div
+                  className={`text-sm font-semibold ${
+                    item.satisfied ? "text-mint-foreground" : "text-foreground"
+                  }`}
+                >
+                  {item.label}
+                </div>
+                <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {item.description}
+                </div>
+                <div
+                  className={`mt-2 text-[10px] font-medium uppercase tracking-wider ${
+                    item.satisfied ? "text-mint-foreground/80" : "text-muted-foreground/70"
+                  }`}
+                >
+                  {item.caption}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CallsPage() {
+
   const { jobId } = useParams({ from: "/calls/$jobId" });
   const qc = useQueryClient();
   const { data, isLoading, error } = useQuery({
