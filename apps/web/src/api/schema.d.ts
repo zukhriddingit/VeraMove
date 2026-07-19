@@ -4,6 +4,57 @@
  */
 
 export interface paths {
+    "/api/calls/{call_id}/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Call Recording */
+        get: operations["get_call_recording_api_calls__call_id__recording_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calls/{call_id}/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Repair Call */
+        post: operations["repair_call_api_calls__call_id__repair_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Intake Session By Conversation */
+        get: operations["get_intake_session_by_conversation_api_intake_conversations__conversation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/intake/document": {
         parameters: {
             query?: never;
@@ -15,6 +66,57 @@ export interface paths {
         put?: never;
         /** Create Job From Document */
         post: operations["create_job_from_document_api_intake_document_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Intake Session */
+        post: operations["create_intake_session_api_intake_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Intake Session */
+        get: operations["get_intake_session_api_intake_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Integration Status */
+        get: operations["integration_status_api_integrations_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -174,6 +276,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/webhooks/elevenlabs/pre-call": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Elevenlabs Conversation Initiation */
+        post: operations["elevenlabs_conversation_initiation_api_webhooks_elevenlabs_pre_call_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -239,11 +358,8 @@ export interface components {
              */
             job_id: string;
             outcome: components["schemas"]["CallOutcome"];
-            /**
-             * Recording Url
-             * Format: uri
-             */
-            recording_url: string;
+            /** Recording Url */
+            recording_url?: string | null;
             /**
              * Started At
              * Format: date-time
@@ -276,6 +392,19 @@ export interface components {
          */
         DwellingType: "apartment" | "condo" | "townhouse" | "house" | "storage_unit" | "other";
         /**
+         * ElevenLabsConversationInitiationResponse
+         * @description Exact ElevenLabs response envelope for inbound personalization.
+         */
+        ElevenLabsConversationInitiationResponse: {
+            dynamic_variables: components["schemas"]["IntakeDynamicVariables"];
+            /**
+             * Type
+             * @default conversation_initiation_client_data
+             * @constant
+             */
+            type: "conversation_initiation_client_data";
+        };
+        /**
          * ElevenLabsPostCallWebhook
          * @description Typed public shape for the ElevenLabs post-call webhook.
          */
@@ -293,8 +422,11 @@ export interface components {
         };
         /** ElevenLabsWebhookEvent */
         ElevenLabsWebhookEvent: {
-            /** Call Id */
-            call_id?: string | null;
+            /**
+             * Call Id
+             * @default null
+             */
+            call_id: string | null;
             /** Event Type */
             event_type: string;
             /** Idempotency Key */
@@ -369,10 +501,64 @@ export interface components {
             status: "ok";
         };
         /**
+         * IntakeDynamicVariables
+         * @description The complete custom-variable set defined by the Intake agent.
+         */
+        IntakeDynamicVariables: {
+            /** Agent Config Version */
+            agent_config_version: string;
+            /**
+             * Intake Session Id
+             * Format: uuid
+             */
+            intake_session_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+        };
+        /**
+         * IntakeSessionResponse
+         * @description Expose safe intake correlation and the result only after completion.
+         */
+        IntakeSessionResponse: {
+            /** Conversation Id */
+            conversation_id?: string | null;
+            /**
+             * Intake Session Id
+             * Format: uuid
+             */
+            intake_session_id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            job_spec?: components["schemas"]["JobSpecV1"] | null;
+            status: components["schemas"]["IntakeSessionStatus"];
+        };
+        /**
+         * IntakeSessionStatus
+         * @description Lifecycle of provider correlation before a normal JobRecord exists.
+         * @enum {string}
+         */
+        IntakeSessionStatus: "pending" | "in_progress" | "completed" | "failed";
+        /**
          * IntakeSource
          * @enum {string}
          */
         IntakeSource: "voice" | "document" | "merged" | "demo";
+        /**
+         * IntegrationStatusSnapshot
+         * @description Safe public status shape for all independently configured integrations.
+         */
+        IntegrationStatusSnapshot: {
+            live_voice: components["schemas"]["ProviderIntegrationStatus"];
+            openai: components["schemas"]["OpenAIIntegrationStatus"];
+            supabase: components["schemas"]["ProviderIntegrationStatus"];
+            tavily: components["schemas"]["ProviderIntegrationStatus"];
+        };
         /** IntelligenceFinding */
         IntelligenceFinding: {
             /** Code */
@@ -537,6 +723,21 @@ export interface components {
             /** Storage Days */
             storage_days?: number | null;
         };
+        /**
+         * OpenAIIntegrationStatus
+         * @description OpenAI state plus grouped, content-free usage measurements.
+         */
+        OpenAIIntegrationStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Usage
+             * @default []
+             */
+            usage: components["schemas"]["UsageAggregate"][];
+        };
         /** OriginDestinationAccess */
         OriginDestinationAccess: {
             /** Access Notes */
@@ -582,6 +783,16 @@ export interface components {
          * @enum {string}
          */
         ProvenanceType: "document" | "voice_intake" | "agent_tool" | "transcript" | "demo_fixture" | "tavily";
+        /**
+         * ProviderIntegrationStatus
+         * @description Boolean-only state that cannot reveal provider configuration values.
+         */
+        ProviderIntegrationStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Enabled */
+            enabled: boolean;
+        };
         /** QuoteV1 */
         QuoteV1: {
             /** Availability */
@@ -780,6 +991,33 @@ export interface components {
             /** Start Seconds */
             start_seconds: string;
         };
+        /**
+         * UsageAggregate
+         * @description Safe grouped usage returned by the integration-status API.
+         */
+        UsageAggregate: {
+            /**
+             * Capability
+             * @enum {string}
+             */
+            capability: "document_extraction" | "recommendation_narration";
+            /** Failed Requests */
+            failed_requests: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Model */
+            model: string;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Request Count */
+            request_count: number;
+            /** Successful Requests */
+            successful_requests: number;
+            /** Total Latency Ms */
+            total_latency_ms: number;
+            /** Total Tokens */
+            total_tokens: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -846,6 +1084,106 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    get_call_recording_api_calls__call_id__recording_get: {
+        parameters: {
+            query: {
+                job_id: string;
+                signature: string;
+            };
+            header?: never;
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Validated provider recording audio. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mp4": unknown;
+                    "audio/mpeg": unknown;
+                    "audio/wav": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    repair_call_api_calls__call_id__repair_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-veramove-operator-secret"?: string | null;
+            };
+            path: {
+                call_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WebhookAck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_intake_session_by_conversation_api_intake_conversations__conversation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_job_from_document_api_intake_document_post: {
         parameters: {
             query?: never;
@@ -875,6 +1213,77 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_intake_session_api_intake_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+        };
+    };
+    get_intake_session_api_intake_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    integration_status_api_integrations_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationStatusSnapshot"];
                 };
             };
         };
@@ -1152,13 +1561,37 @@ export interface operations {
                     "application/json": components["schemas"]["WebhookAck"];
                 };
             };
-            /** @description Validation Error */
-            422: {
+        };
+    };
+    elevenlabs_conversation_initiation_api_webhooks_elevenlabs_pre_call_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Agent Id */
+                    agent_id: string;
+                    /** Call Sid */
+                    call_sid: string;
+                    /** Called Number */
+                    called_number?: string | null;
+                    /** Caller Id */
+                    caller_id?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ElevenLabsConversationInitiationResponse"];
                 };
             };
         };

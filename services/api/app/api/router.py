@@ -4,12 +4,13 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Path, Query, Request, status
+from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response, status
 from pydantic import ValidationError
 
 from services.api.app.api.dependencies import (
     get_intake_session_service,
     get_integration_status,
+    get_live_voice_operator_service,
     get_service,
     get_settings,
 )
@@ -37,6 +38,9 @@ from services.api.app.orchestration.intake_sessions import (
     IntakeSessionService,
     verify_pre_call_secret,
 )
+from services.api.app.orchestration.live_voice_operator import (
+    LiveVoiceOperatorService,
+)
 from services.api.app.orchestration.service import VeraMoveService
 
 router = APIRouter()
@@ -44,6 +48,10 @@ Service = Annotated[VeraMoveService, Depends(get_service)]
 RuntimeSettings = Annotated[Settings, Depends(get_settings)]
 IntakeSessions = Annotated[IntakeSessionService, Depends(get_intake_session_service)]
 IntegrationStatus = Annotated[IntegrationStatusSnapshot, Depends(get_integration_status)]
+LiveVoiceOperator = Annotated[
+    LiveVoiceOperatorService,
+    Depends(get_live_voice_operator_service),
+]
 
 
 @router.get(
@@ -200,6 +208,56 @@ def negotiate(job_id: UUID, service: Service) -> JobRecord:
 @router.get("/api/jobs/{job_id}/report", response_model=RecommendationV1, tags=["reports"])
 def get_report(job_id: UUID, service: Service) -> RecommendationV1:
     return service.get_report(job_id)
+
+
+@router.get(
+    "/api/calls/{call_id}/recording",
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "audio/mpeg": {},
+                "audio/mp4": {},
+                "audio/wav": {},
+            },
+            "description": "Validated provider recording audio.",
+        }
+    },
+    tags=["calls"],
+)
+def get_call_recording(
+    call_id: UUID,
+    job_id: Annotated[UUID, Query()],
+    signature: Annotated[str, Query(pattern=r"^[a-f0-9]{64}$")],
+    operator: LiveVoiceOperator,
+) -> Response:
+    payload = operator.fetch_recording(call_id, job_id, signature)
+    return Response(
+        content=payload.content,
+        media_type=payload.media_type,
+        headers={
+            "Cache-Control": payload.cache_control,
+            "Content-Length": str(payload.content_length),
+        },
+    )
+
+
+@router.post(
+    "/api/calls/{call_id}/repair",
+    response_model=WebhookAck,
+    tags=["calls"],
+)
+def repair_call(
+    call_id: UUID,
+    operator: LiveVoiceOperator,
+    service: Service,
+    operator_secret: Annotated[
+        str | None,
+        Header(alias="x-veramove-operator-secret", max_length=512),
+    ] = None,
+) -> WebhookAck:
+    repair = operator.prepare_repair(call_id, operator_secret)
+    return service.handle_elevenlabs_repair(repair)
 
 
 @router.post(

@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from services.api.app.contracts import (
     CallOutcome,
     CallOutcomeType,
     CallStatus,
+    FeeCategory,
     JobRecord,
     JobSpecV1,
     JobState,
@@ -27,15 +28,28 @@ from services.api.app.core.errors import (
     ProviderConfigurationError,
     ProviderRequestError,
     ResourceNotFound,
+    WebhookPayloadError,
 )
 from services.api.app.core.state_machine import validate_transition
+from services.api.app.integrations.elevenlabs.models import VerifiedPostCallTranscription
 from services.api.app.integrations.elevenlabs.webhook import (
     ElevenLabsWebhookProcessor,
 )
 from services.api.app.integrations.tavily.base import VendorDiscoveryGateway
-from services.api.app.intelligence.quotes import is_measurable_quote_improvement
-from services.api.app.intelligence.ranking import RecommendationNarrator
+from services.api.app.intelligence.quotes import (
+    QuoteVerifier,
+    is_measurable_quote_improvement,
+)
+from services.api.app.intelligence.ranking import (
+    RecommendationNarrator,
+    is_quote_eligible,
+)
 from services.api.app.orchestration.fixtures import DemoFixtures
+from services.api.app.orchestration.live_voice_operator import (
+    CompletedConversationRepairInput,
+    ConversationRepairInput,
+    FailedConversationRepairInput,
+)
 from services.api.app.orchestration.models import (
     CallAttempt,
     CallKind,
@@ -43,13 +57,21 @@ from services.api.app.orchestration.models import (
     NegotiationContext,
     VoiceCallResult,
 )
-from services.api.app.orchestration.providers import IntelligenceProvider, VoiceProvider
+from services.api.app.orchestration.providers import (
+    IntelligenceProvider,
+    QuoteVerificationGateway,
+    VoiceProvider,
+)
+from services.api.app.orchestration.recording_capability import RecordingCapabilitySigner
 from services.api.app.orchestration.role_play import DiscoveryVendorRoster, VendorRoster
 from services.api.app.orchestration.tools import VoiceTools
+from services.api.app.orchestration.voice_materializer import VoiceMaterializer
 from services.api.app.repositories.base import (
     CallRepository,
+    IntakeSessionRepository,
     JobRepository,
     QuoteRepository,
+    VoiceMaterializationRepository,
 )
 
 
@@ -75,6 +97,10 @@ class VeraMoveService:
         vendor_roster: VendorRoster | None = None,
         recommendation_narrator: RecommendationNarrator | None = None,
         clock: Callable[[], datetime] = utc_now,
+        intake_sessions: IntakeSessionRepository | None = None,
+        quote_verifier: QuoteVerificationGateway | None = None,
+        recording_signer: RecordingCapabilitySigner | None = None,
+        required_fee_categories: set[FeeCategory] | None = None,
     ) -> None:
         self._jobs = jobs
         self._calls = calls
@@ -88,6 +114,24 @@ class VeraMoveService:
         self._recommendation_narrator = recommendation_narrator
         self._tools = VoiceTools(calls, quotes, clock=clock)
         self._clock = clock
+        self._mock_voice_webhook_compatibility = (
+            getattr(voice, "outbound_agent_id", "") == "synthetic-mock-outbound-agent"
+        )
+        self._voice_materializer = VoiceMaterializer(
+            jobs=jobs,
+            calls=calls,
+            quotes=quotes,
+            intake_sessions=(intake_sessions or cast(IntakeSessionRepository, jobs)),
+            materialization_repository=cast(VoiceMaterializationRepository, calls),
+            tools=self._tools,
+            verifier=quote_verifier or QuoteVerifier(),
+            recording_signer=recording_signer,
+            required_fee_categories=(
+                set(FeeCategory) if required_fee_categories is None else required_fee_categories
+            ),
+            recommendation_builder=self._build_recommendation,
+            clock=clock,
+        )
 
     def create_job(self, job_spec: JobSpecV1) -> JobRecord:
         if job_spec.confirmed:
@@ -267,9 +311,22 @@ class VeraMoveService:
             return record
 
         validate_transition(record.state, JobState.NEGOTIATING)
+        eligible_quotes = [
+            quote
+            for quote in record.quotes
+            if self._is_eligible_quote(
+                quote,
+                record.job_spec.job_id,
+                record.job_spec.version,
+            )
+        ]
+        if len({quote.vendor.vendor_id for quote in eligible_quotes}) < 2:
+            raise DomainConflict(
+                "Negotiation requires two verified same-version quotes from different vendors"
+            )
         priced_quotes = [
             (quote, total)
-            for quote in record.quotes
+            for quote in eligible_quotes
             if (total := self._quote_total(quote)) is not None
         ]
         if not priced_quotes:
@@ -376,7 +433,48 @@ class VeraMoveService:
         raw_body: bytes,
         signature_header: str | None,
     ) -> WebhookAck:
-        """Authenticate raw provider bytes and apply their safe normalized event."""
+        """Authenticate and canonicalize a provider event without retaining its envelope."""
+
+        try:
+            provider_event = self._webhooks.process_provider_event(
+                raw_body,
+                signature_header,
+            )
+        except WebhookPayloadError:
+            if not self._mock_voice_webhook_compatibility:
+                raise
+            return self._handle_legacy_mock_webhook(raw_body, signature_header)
+        if (
+            self._mock_voice_webhook_compatibility
+            and isinstance(provider_event, VerifiedPostCallTranscription)
+            and provider_event.dynamic_variables.call_id is None
+            and provider_event.dynamic_variables.intake_session_id is None
+        ):
+            return self._handle_legacy_mock_webhook(raw_body, signature_header)
+        return self._voice_materializer.materialize(provider_event)
+
+    def handle_elevenlabs_repair(
+        self,
+        repair: ConversationRepairInput,
+    ) -> WebhookAck:
+        """Route typed operator repair input through the canonical materializer."""
+
+        if isinstance(repair, CompletedConversationRepairInput):
+            return self._voice_materializer.materialize(repair.event)
+        if isinstance(repair, FailedConversationRepairInput):
+            return self._voice_materializer.materialize_failed_repair(
+                repair.attempt,
+                idempotency_key=repair.idempotency_key,
+                failure_code=repair.failure_code,
+            )
+        raise DomainConflict("Voice repair input is unsupported")
+
+    def _handle_legacy_mock_webhook(
+        self,
+        raw_body: bytes,
+        signature_header: str | None,
+    ) -> WebhookAck:
+        """Keep the credential-free synthetic harness compatible during migration."""
 
         event = self._webhooks.process(raw_body, signature_header)
         if not self._calls.reserve_webhook(event.idempotency_key):
@@ -521,10 +619,21 @@ class VeraMoveService:
 
     def _build_recommendation(self, record: JobRecord) -> RecommendationV1:
         template = self._fixtures.load_recommendation()
-        evidence = [item for quote in record.quotes for item in quote.transcript_evidence]
-        quotes_by_id = {quote.quote_id: quote for quote in record.quotes}
+        eligible_quotes = [
+            quote
+            for quote in record.quotes
+            if self._is_eligible_quote(
+                quote,
+                record.job_spec.job_id,
+                record.job_spec.version,
+            )
+        ]
+        if not eligible_quotes:
+            raise DomainConflict("Recommendation requires an eligible verified quote")
+        evidence = [item for quote in eligible_quotes for item in quote.transcript_evidence]
+        quotes_by_id = {quote.quote_id: quote for quote in eligible_quotes}
         quotes_by_vendor: dict[UUID, list[QuoteV1]] = {}
-        for quote in record.quotes:
+        for quote in eligible_quotes:
             quotes_by_vendor.setdefault(quote.vendor.vendor_id, []).append(quote)
 
         rankings: list[RecommendationRanking] = []
@@ -556,8 +665,11 @@ class VeraMoveService:
                 )
             )
 
-        uses_discovered_vendors = len(rankings) != len(quotes_by_vendor)
-        if uses_discovered_vendors:
+        uses_dynamic_ranking = (
+            len(rankings) != len(quotes_by_vendor)
+            or len(rankings) != len(template.rankings)
+        )
+        if uses_dynamic_ranking:
             rankings = self._rank_discovered_vendors(quotes_by_vendor)
 
         winner = rankings[0]
@@ -567,7 +679,7 @@ class VeraMoveService:
         hidden_fee_findings = template.hidden_fee_findings
         assumptions = template.assumptions
         uncertainty = template.uncertainty
-        if uses_discovered_vendors:
+        if uses_dynamic_ranking:
             summary = (
                 f"{winner.vendor.name} is the strongest evidence-backed role-play option "
                 "after comparing verified totals and documented concessions."
@@ -684,3 +796,18 @@ class VeraMoveService:
         if quote.comparable_total is not None:
             return quote.comparable_total
         return quote.negotiated_total
+
+    @staticmethod
+    def _is_eligible_quote(
+        quote: QuoteV1,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> bool:
+        return (
+            is_quote_eligible(
+                quote,
+                job_id=job_id,
+                job_spec_version=job_spec_version,
+            )
+            and (quote.comparable_total is not None or quote.negotiated_total is not None)
+        )

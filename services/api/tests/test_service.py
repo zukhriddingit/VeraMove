@@ -17,6 +17,7 @@ from services.api.app.core.errors import (
     InvalidStateTransition,
     ResourceNotFound,
 )
+from services.api.app.intelligence.ranking import is_quote_eligible
 
 
 class StaticDiscoveryGateway:
@@ -69,7 +70,7 @@ def test_mock_workflow(service, job_spec):
     report = service.get_report(job_spec.job_id)
     assert report.rankings[0].evidence_ids
     assert report.rankings[0].vendor.slug == "clearpath-movers"
-    assert len(report.transcript_evidence) == 4
+    assert len(report.transcript_evidence) == 3
     assert all(
         str(evidence.recording_url).startswith("https://recordings.example.com/")
         for evidence in report.transcript_evidence
@@ -77,9 +78,23 @@ def test_mock_workflow(service, job_spec):
     stored_evidence = {
         evidence.evidence_id: evidence
         for quote in completed.quotes
+        if is_quote_eligible(
+            quote,
+            job_id=completed.job_spec.job_id,
+            job_spec_version=completed.job_spec.version,
+        )
         for evidence in quote.transcript_evidence
     }
     assert {item.evidence_id: item for item in report.transcript_evidence} == stored_evidence
+    report_text = " ".join(
+        [
+            report.summary,
+            *report.assumptions,
+            *report.uncertainty,
+            *(finding.description for finding in report.hidden_fee_findings),
+        ]
+    )
+    assert "BudgetLift" not in report_text
 
 
 def test_confirmation_is_idempotent_and_defensive(service, job_spec):

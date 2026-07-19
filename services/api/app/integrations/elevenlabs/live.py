@@ -82,7 +82,13 @@ class ElevenLabsVoiceProvider:
             vendor,
             call_id,
             destination_slot,
-            {"call_mode": "quote"},
+            {
+                "call_mode": "quote",
+                "verified_competitor_quote_id": "",
+                "verified_competitor_total": "",
+                "verified_competitor_evidence_json": "",
+                "negotiation_objective": "",
+            },
         )
 
     def initiate_negotiation_call(

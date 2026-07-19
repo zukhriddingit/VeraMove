@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from services.api.app.api.dependencies import build_repository, build_service
-from services.api.app.contracts import DocumentParseResult, IntakeSource
+from services.api.app.contracts import DocumentParseResult, FeeCategory, IntakeSource
 from services.api.app.core.config import (
     LiveVoiceConfig,
     OpenAIConfig,
@@ -235,6 +235,26 @@ def test_complete_two_agent_live_wiring_performs_no_startup_network_calls() -> N
         "+15550100002",
         "+15550100003",
     )
+    assert service._voice_materializer._recording_signer is not None
+    assert service._voice_materializer._recording_signer.public_api_base_url == (
+        "https://api.veramove.example"
+    )
+    assert service._voice_materializer._required_fee_categories == {
+        FeeCategory.BASE_SERVICE,
+        FeeCategory.HOURLY_MINIMUM,
+        FeeCategory.TRAVEL,
+        FeeCategory.FUEL,
+        FeeCategory.STAIRS,
+        FeeCategory.ELEVATOR,
+        FeeCategory.LONG_CARRY,
+        FeeCategory.PACKING,
+        FeeCategory.MATERIALS,
+        FeeCategory.DISASSEMBLY,
+        FeeCategory.STORAGE,
+        FeeCategory.INSURANCE,
+        FeeCategory.TAX,
+        FeeCategory.DEPOSIT,
+    }
     assert voice_transport.requests == []
 
 

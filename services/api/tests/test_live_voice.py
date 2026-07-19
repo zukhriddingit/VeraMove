@@ -329,6 +329,10 @@ def test_live_provider_builds_native_outbound_payload(
     assert dynamic_variables["job_spec_version"] == job_spec.version
     assert dynamic_variables["agent_config_version"] == "2026-07-19.1"
     assert dynamic_variables["vendor_name"] == "ClearPath Movers"
+    assert dynamic_variables["verified_competitor_quote_id"] == ""
+    assert dynamic_variables["verified_competitor_total"] == ""
+    assert dynamic_variables["verified_competitor_evidence_json"] == ""
+    assert dynamic_variables["negotiation_objective"] == ""
     assert json.loads(dynamic_variables["job_spec_json"])["job_id"] == str(job_spec.job_id)
     assert result.reference.conversation_id == "conv-1"
     assert result.reference.provider_call_id == "CA1"

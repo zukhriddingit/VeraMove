@@ -11,7 +11,11 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
     assert document["info"]["title"] == "VeraMove API"
     for path in (
         "/health",
+        "/api/integrations/status",
         "/api/intake/document",
+        "/api/intake/sessions",
+        "/api/intake/sessions/{session_id}",
+        "/api/intake/conversations/{conversation_id}",
         "/api/jobs",
         "/api/jobs/{job_id}",
         "/api/jobs/{job_id}/events",
@@ -19,7 +23,10 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
         "/api/jobs/{job_id}/calls",
         "/api/jobs/{job_id}/negotiate",
         "/api/jobs/{job_id}/report",
+        "/api/calls/{call_id}/recording",
+        "/api/calls/{call_id}/repair",
         "/api/webhooks/elevenlabs",
+        "/api/webhooks/elevenlabs/pre-call",
         "/api/vendors/discover",
     ):
         assert path in document["paths"]
@@ -31,5 +38,22 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
         "RuntimeHealthResponse",
         "JobEventsResponse",
         "ElevenLabsPostCallWebhook",
+        "ElevenLabsConversationInitiationResponse",
+        "IntakeSessionResponse",
+        "IntegrationStatusSnapshot",
     ):
         assert schema in document["components"]["schemas"]
+
+    webhook_schema = document["paths"]["/api/webhooks/elevenlabs"]["post"]["requestBody"][
+        "content"
+    ]["application/json"]["schema"]
+    assert webhook_schema == {
+        "anyOf": [
+            {"$ref": "#/components/schemas/ElevenLabsWebhookEvent"},
+            {"$ref": "#/components/schemas/ElevenLabsPostCallWebhook"},
+        ]
+    }
+    recording = document["components"]["schemas"]["CallRecord"]["properties"][
+        "recording_url"
+    ]
+    assert {item.get("type") for item in recording["anyOf"]} == {"string", "null"}

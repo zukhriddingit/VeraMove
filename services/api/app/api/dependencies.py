@@ -1,22 +1,33 @@
 """Application wiring for independently enabled, fail-closed providers."""
 
 from datetime import UTC, datetime
+from functools import lru_cache
+from pathlib import Path
 from typing import Protocol
 
+import yaml
 from fastapi import Request
 
 from services.api.app.api.integration_status import (
     IntegrationStatusReporter,
     IntegrationStatusSnapshot,
 )
+from services.api.app.contracts import FeeCategory
 from services.api.app.core.config import Settings
 from services.api.app.core.errors import ProviderConfigurationError
 from services.api.app.integrations.elevenlabs.base import JsonHttpTransport
+from services.api.app.integrations.elevenlabs.conversations import (
+    ElevenLabsConversationClient,
+    HttpxConversationTransport,
+)
 from services.api.app.integrations.elevenlabs.live import (
     ElevenLabsVoiceProvider,
     HttpxJsonTransport,
 )
 from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
+from services.api.app.integrations.elevenlabs.recordings import (
+    ElevenLabsRecordingClient,
+)
 from services.api.app.integrations.elevenlabs.webhook import (
     ElevenLabsWebhookProcessor,
 )
@@ -38,7 +49,13 @@ from services.api.app.observability.usage import UsageRecorder
 from services.api.app.orchestration.fixtures import DemoFixtures
 from services.api.app.orchestration.intake_sessions import IntakeSessionService
 from services.api.app.orchestration.live_intelligence import LiveIntelligenceProvider
+from services.api.app.orchestration.live_voice_operator import (
+    LiveVoiceOperatorService,
+)
 from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
+from services.api.app.orchestration.recording_capability import (
+    RecordingCapabilitySigner,
+)
 from services.api.app.orchestration.role_play import FixtureRolePlayVendorRoster
 from services.api.app.orchestration.service import VeraMoveService, utc_now
 from services.api.app.repositories.base import (
@@ -55,6 +72,7 @@ from services.api.app.repositories.supabase_client import (
 )
 
 _repository = InMemoryRepository()
+_MOVING_CONFIG_PATH = Path(__file__).resolve().parents[4] / "configs" / "moving.yaml"
 
 
 class ApplicationRepository(
@@ -109,10 +127,58 @@ def get_intake_session_service(request: Request) -> IntakeSessionService:
     )
 
 
+def get_live_voice_operator_service(request: Request) -> LiveVoiceOperatorService:
+    """Compose server-only provider reads for signed playback and explicit repair."""
+
+    settings: Settings = request.app.state.settings
+    config = settings.require_live_voice_config()
+    assert config.api_key is not None
+    assert config.public_api_base_url is not None
+    assert config.recording_signing_secret is not None
+    assert config.operator_secret is not None
+    transport = HttpxConversationTransport()
+    return LiveVoiceOperatorService(
+        calls=request.app.state.repository,
+        signer=RecordingCapabilitySigner(
+            config.public_api_base_url,
+            config.recording_signing_secret,
+        ),
+        conversations=ElevenLabsConversationClient(
+            api_key=config.api_key,
+            api_base_url=config.api_base_url,
+            transport=transport,
+        ),
+        recordings=ElevenLabsRecordingClient(
+            api_key=config.api_key,
+            api_base_url=config.api_base_url,
+            transport=transport,
+        ),
+        operator_secret=config.operator_secret,
+    )
+
+
 def mock_now() -> datetime:
     """Keep synthetic provider timestamps ordered and demo responses deterministic."""
 
     return datetime(2026, 7, 18, 16, 0, tzinfo=UTC)
+
+
+@lru_cache(maxsize=1)
+def required_fee_categories() -> set[FeeCategory]:
+    """Load the canonical mandatory fee checklist owned by moving.yaml."""
+
+    payload = yaml.safe_load(_MOVING_CONFIG_PATH.read_text(encoding="utf-8"))
+    raw_categories = payload.get("mandatory_fee_questions") if isinstance(payload, dict) else None
+    if not isinstance(raw_categories, list) or not raw_categories:
+        raise ProviderConfigurationError(
+            "configs/moving.yaml must define mandatory_fee_questions"
+        )
+    try:
+        return {FeeCategory(value) for value in raw_categories}
+    except (TypeError, ValueError) as exc:
+        raise ProviderConfigurationError(
+            "configs/moving.yaml contains an invalid mandatory fee category"
+        ) from exc
 
 
 def build_repository(
@@ -144,6 +210,11 @@ def build_service(
     """Compose mock or live boundaries without initiating provider activity."""
 
     fixtures = DemoFixtures()
+    live_voice_config = (
+        settings.require_live_voice_config()
+        if settings.app_mode == "live" and settings.live_voice.live_calls_enabled
+        else None
+    )
     app_usage_recorder = usage_recorder if usage_recorder is not None else UsageRecorder()
     if settings.app_mode == "mock":
         voice = MockVoiceProvider(fixtures)
@@ -225,6 +296,16 @@ def build_service(
         ),
         recommendation_narrator=recommendation_narrator,
         clock=service_clock,
+        intake_sessions=repository,
+        recording_signer=(
+            RecordingCapabilitySigner(
+                live_voice_config.public_api_base_url,
+                live_voice_config.recording_signing_secret,
+            )
+            if live_voice_config is not None
+            else None
+        ),
+        required_fee_categories=required_fee_categories(),
     )
     service._integration_status = IntegrationStatusReporter(
         settings,

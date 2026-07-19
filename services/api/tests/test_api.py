@@ -8,15 +8,21 @@ from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
+from services.api.app.api.dependencies import (
+    get_live_voice_operator_service,
+    get_service,
+)
 from services.api.app.contracts import (
     DataClassification,
     IntakeSource,
     JobRecord,
     JobState,
+    WebhookAck,
 )
 from services.api.app.core.config import LiveVoiceConfig, Settings
 from services.api.app.main import create_app
 from services.api.app.orchestration.intake_sessions import IntakeSessionService
+from services.api.app.orchestration.live_voice_operator import RecordingProxyPayload
 
 WEBHOOK_SECRET = "synthetic-webhook-secret"
 WEBHOOK_TIMESTAMP = int(datetime(2026, 7, 18, 16, 0, tzinfo=UTC).timestamp())
@@ -70,6 +76,65 @@ def test_configured_public_origin_passes_cors_preflight(monkeypatch):
     assert response.headers["access-control-allow-origin"] == ("https://veramove-demo.example")
 
 
+def test_recording_route_streams_validated_audio_with_no_store():
+    call_id = uuid4()
+    job_id = uuid4()
+
+    class Operator:
+        def fetch_recording(self, received_call_id, received_job_id, signature):
+            assert (received_call_id, received_job_id, signature) == (
+                call_id,
+                job_id,
+                "a" * 64,
+            )
+            return RecordingProxyPayload(
+                content=b"synthetic-audio",
+                media_type="audio/mpeg",
+                content_length=len(b"synthetic-audio"),
+            )
+
+    application = create_app(Settings())
+    application.dependency_overrides[get_live_voice_operator_service] = Operator
+    with TestClient(application) as test_client:
+        response = test_client.get(
+            f"/api/calls/{call_id}/recording",
+            params={"job_id": str(job_id), "signature": "a" * 64},
+        )
+
+    assert response.status_code == 200
+    assert response.content == b"synthetic-audio"
+    assert response.headers["content-type"] == "audio/mpeg"
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_repair_route_forwards_authenticated_typed_input_to_canonical_service():
+    call_id = uuid4()
+    prepared = object()
+
+    class Operator:
+        def prepare_repair(self, received_call_id, supplied_secret):
+            assert received_call_id == call_id
+            assert supplied_secret == "synthetic-operator-secret"
+            return prepared
+
+    class Service:
+        def handle_elevenlabs_repair(self, repair):
+            assert repair is prepared
+            return WebhookAck(accepted=True, duplicate=False)
+
+    application = create_app(Settings())
+    application.dependency_overrides[get_live_voice_operator_service] = Operator
+    application.dependency_overrides[get_service] = Service
+    with TestClient(application) as test_client:
+        response = test_client.post(
+            f"/api/calls/{call_id}/repair",
+            headers={"x-veramove-operator-secret": "synthetic-operator-secret"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"accepted": True, "duplicate": False}
+
+
 def test_api_happy_path(client, job_spec_payload):
     created = client.post("/api/jobs", json=job_spec_payload)
     assert created.status_code == 201
@@ -96,7 +161,7 @@ def test_api_happy_path(client, job_spec_payload):
     report = client.get(f"/api/jobs/{job_id}/report")
     assert report.status_code == 200
     assert report.json()["rankings"][0]["evidence_ids"]
-    assert len(report.json()["transcript_evidence"]) == 4
+    assert len(report.json()["transcript_evidence"]) == 3
     assert all(item["recording_url"] for item in report.json()["transcript_evidence"])
 
 
