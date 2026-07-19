@@ -20,11 +20,12 @@ export interface LocationSpec {
   address_summary: string;
   dwelling_type: string;
   floors: number;
-  stairs: boolean;
+  stairs: number;
   elevator_access: boolean;
   parking_distance_feet: number;
   access_notes?: string;
 }
+
 
 export interface InventoryItem {
   item_id: string;
