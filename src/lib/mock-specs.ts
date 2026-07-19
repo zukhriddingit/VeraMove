@@ -77,7 +77,7 @@ export function buildDocumentIntakeSpec(): JobSpecV1 {
       address_summary: "[DEMO] 4415 Fern Hollow Rd, San Jose CA",
       dwelling_type: "single_family_house",
       floors: 2,
-      stairs: true,
+      stairs: 16,
       elevator_access: false,
       parking_distance_feet: 30,
       access_notes: "HOA quiet hours after 8pm.",
