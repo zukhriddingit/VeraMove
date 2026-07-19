@@ -1,7 +1,7 @@
 # VeraMove Two-Agent Live Voice Design
 
 **Date:** 2026-07-19  
-**Status:** Direction approved; written-spec review pending  
+**Status:** Approved for implementation
 **Scope:** Professional intake and outbound voice agents, exactly-three controlled role-play calls,
 signed post-call canonicalization, recording evidence, and live-demo observability.
 
