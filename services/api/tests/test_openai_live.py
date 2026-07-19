@@ -17,14 +17,13 @@ from services.api.app.integrations.openai.live import (
     OpenAIResponsesClient,
     OpenAIResponsesNarrativeClient,
 )
+from services.api.app.observability.usage import UsageRecord, UsageRecorder
 
 
 class RecordingTransport:
     def __init__(self, response: dict[str, Any]) -> None:
         self.response = response
-        self.requests: list[
-            tuple[str, dict[str, str], dict[str, Any]]
-        ] = []
+        self.requests: list[tuple[str, dict[str, str], dict[str, Any]]] = []
 
     def post(
         self,
@@ -74,9 +73,7 @@ def document_result(fixtures) -> dict[str, Any]:
 
 def contains_key(value: Any, key: str) -> bool:
     if isinstance(value, dict):
-        return key in value or any(
-            contains_key(item, key) for item in value.values()
-        )
+        return key in value or any(contains_key(item, key) for item in value.values())
     if isinstance(value, list):
         return any(contains_key(item, key) for item in value)
     return False
@@ -109,9 +106,7 @@ def test_openai_document_request_uses_strict_responses_schema(fixtures):
     schema = payload["text"]["format"]["schema"]
     assert set(schema["required"]) == set(schema["properties"])
     job_spec_schema = schema["$defs"]["JobSpecV1"]
-    assert set(job_spec_schema["required"]) == set(
-        job_spec_schema["properties"]
-    )
+    assert set(job_spec_schema["required"]) == set(job_spec_schema["properties"])
     assert not contains_key(schema, "default")
     assert payload["input"][1]["content"] == [
         {
@@ -335,3 +330,91 @@ def test_openai_narrative_request_is_grounded_and_cannot_mutate_inputs(fixtures)
     user_payload = json.loads(payload["input"][1]["content"][0]["text"])
     assert user_payload["rankings"] == rankings_before
     assert user_payload["findings"] == findings_before
+
+
+def test_openai_clients_record_safe_usage_without_prompts_responses_or_secrets(fixtures):
+    recorder = UsageRecorder()
+    raw_document = "SYNTHETIC_PRIVATE_DOCUMENT_MARKER"
+    secret = "synthetic-openai-secret-marker"
+    document_response = completed_response(document_result(fixtures))
+    document_response.update(
+        {
+            "id": "resp_synthetic_document",
+            "usage": {"input_tokens": 120, "output_tokens": 30, "total_tokens": 150},
+        }
+    )
+    document_client = OpenAIResponsesClient(
+        api_key=secret,
+        transport=RecordingTransport(document_response),
+        usage_recorder=recorder,
+    )
+
+    document_client.parse(
+        model="gpt-5.6-luna",
+        system_prompt="SYNTHETIC_PRIVATE_PROMPT_MARKER",
+        content=raw_document.encode(),
+        mime_type="text/plain",
+        source_id="synthetic.txt",
+        response_schema=DocumentParseResult,
+    )
+
+    narrative_response = completed_response_text("SYNTHETIC_PRIVATE_RESPONSE_MARKER")
+    narrative_response.update(
+        {
+            "id": "resp_synthetic_narrative",
+            "usage": {"input_tokens": 80, "output_tokens": 12, "total_tokens": 92},
+        }
+    )
+    recommendation = fixtures.load_recommendation()
+    narrative_client = OpenAIResponsesNarrativeClient(
+        api_key=secret,
+        transport=RecordingTransport(narrative_response),
+        usage_recorder=recorder,
+    )
+    narrative_client.explain(
+        model="gpt-5.6-terra",
+        job_spec=fixtures.load_job(),
+        rankings=recommendation.rankings,
+        findings=recommendation.hidden_fee_findings,
+    )
+
+    records = recorder.snapshot()
+    assert [(record.capability, record.total_tokens) for record in records] == [
+        ("document_extraction", 150),
+        ("recommendation_narration", 92),
+    ]
+    assert [record.provider_request_id for record in records] == [
+        "resp_synthetic_document",
+        "resp_synthetic_narrative",
+    ]
+    serialized = json.dumps([record.model_dump(mode="json") for record in records])
+    for sensitive in (
+        raw_document,
+        secret,
+        "SYNTHETIC_PRIVATE_PROMPT_MARKER",
+        "SYNTHETIC_PRIVATE_RESPONSE_MARKER",
+    ):
+        assert sensitive not in serialized
+
+
+def test_usage_recorder_is_bounded_and_aggregates_safe_dimensions():
+    recorder = UsageRecorder(max_records=2)
+    for index, category in enumerate(("success", "provider_error", "success")):
+        recorder.record(
+            UsageRecord(
+                capability="document_extraction",
+                model="gpt-synthetic",
+                input_tokens=index,
+                output_tokens=1,
+                total_tokens=index + 1,
+                latency_ms=10,
+                success_category=category,
+            )
+        )
+
+    assert len(recorder.snapshot()) == 2
+    aggregate = recorder.aggregates()[0]
+    assert aggregate.request_count == 2
+    assert aggregate.successful_requests == 1
+    assert aggregate.failed_requests == 1
+    assert aggregate.total_tokens == 5

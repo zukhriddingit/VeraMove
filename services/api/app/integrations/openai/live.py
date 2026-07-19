@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from copy import deepcopy
+from time import perf_counter
 from typing import Any
 
 import httpx
@@ -17,6 +18,7 @@ from services.api.app.contracts import (
 )
 from services.api.app.core.errors import ProviderRequestError
 from services.api.app.integrations.openai.base import OpenAIJsonTransport
+from services.api.app.observability.usage import UsageRecord, UsageRecorder
 
 NARRATIVE_SYSTEM_PROMPT = """\
 Explain the already-determined VeraMove ranking. Preserve vendor order, totals,
@@ -71,9 +73,7 @@ class HttpxOpenAITransport:
         except (httpx.HTTPError, ValueError) as exc:
             raise ProviderRequestError("OpenAI request failed") from exc
         if not isinstance(result, dict):
-            raise ProviderRequestError(
-                "OpenAI returned an invalid response envelope"
-            )
+            raise ProviderRequestError("OpenAI returned an invalid response envelope")
         return result
 
 
@@ -83,20 +83,82 @@ class _OpenAIResponsesBase:
         api_key: str,
         api_base_url: str = "https://api.openai.com",
         transport: OpenAIJsonTransport | None = None,
+        usage_recorder: UsageRecorder | None = None,
     ) -> None:
         self._api_key = api_key
         self._api_base_url = api_base_url.rstrip("/")
         self._transport = transport or HttpxOpenAITransport()
+        self._usage_recorder = usage_recorder
 
-    def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._transport.post(
-            f"{self._api_base_url}/v1/responses",
-            {
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-            },
-            payload,
+    def _post(
+        self,
+        payload: dict[str, Any],
+        capability: str,
+    ) -> tuple[dict[str, Any], float]:
+        started = perf_counter()
+        try:
+            response = self._transport.post(
+                f"{self._api_base_url}/v1/responses",
+                {
+                    "Authorization": f"Bearer {self._api_key}",
+                    "Content-Type": "application/json",
+                },
+                payload,
+            )
+        except Exception:
+            self._record_usage(
+                capability,
+                str(payload.get("model") or "unknown"),
+                None,
+                started,
+                "provider_error",
+            )
+            raise
+        return response, started
+
+    def _record_usage(
+        self,
+        capability: str,
+        model: str,
+        response: dict[str, Any] | None,
+        started: float,
+        success_category: str,
+    ) -> None:
+        if self._usage_recorder is None:
+            return
+        usage = response.get("usage") if isinstance(response, dict) else None
+        safe_usage = usage if isinstance(usage, dict) else {}
+
+        def token_count(name: str) -> int:
+            value = safe_usage.get(name)
+            return (
+                value
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                else 0
+            )
+
+        input_tokens = token_count("input_tokens")
+        output_tokens = token_count("output_tokens")
+        total_tokens = token_count("total_tokens") or input_tokens + output_tokens
+        request_id = response.get("id") if isinstance(response, dict) else None
+        safe_request_id = (
+            request_id.strip()[:200] if isinstance(request_id, str) and request_id.strip() else None
         )
+        try:
+            self._usage_recorder.record(
+                UsageRecord(
+                    capability=capability,
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=total_tokens,
+                    latency_ms=max(0, int((perf_counter() - started) * 1000)),
+                    success_category=success_category,
+                    provider_request_id=safe_request_id,
+                )
+            )
+        except Exception:
+            return
 
     @staticmethod
     def _output_text(response: dict[str, Any]) -> str:
@@ -124,16 +186,12 @@ class _OpenAIResponsesBase:
                     if isinstance(text, str) and text.strip():
                         texts.append(text)
                     else:
-                        raise ProviderRequestError(
-                            "OpenAI returned empty output text"
-                        )
+                        raise ProviderRequestError("OpenAI returned empty output text")
 
         if refusal_found:
             raise ProviderRequestError("OpenAI refused the request")
         if len(texts) != 1:
-            raise ProviderRequestError(
-                "OpenAI response must contain exactly one output text"
-            )
+            raise ProviderRequestError("OpenAI response must contain exactly one output text")
         return texts[0]
 
 
@@ -150,44 +208,65 @@ class OpenAIResponsesClient(_OpenAIResponsesBase):
         source_id: str,
         response_schema: type[DocumentParseResult],
     ) -> dict[str, Any]:
-        response = self._post(
-            {
-                "model": model,
-                "reasoning": {"effort": "none"},
-                "input": [
-                    {
-                        "role": "system",
-                        "content": [
-                            {"type": "input_text", "text": system_prompt}
-                        ],
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            self._content_part(content, mime_type, source_id)
-                        ],
-                    },
-                ],
-                "text": {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "document_parse_result",
-                        "strict": True,
-                        "schema": _strict_json_schema(
-                            response_schema.model_json_schema()
-                        ),
-                    }
+        payload = {
+            "model": model,
+            "reasoning": {"effort": "none"},
+            "input": [
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": system_prompt}],
                 },
-            }
-        )
+                {
+                    "role": "user",
+                    "content": [self._content_part(content, mime_type, source_id)],
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "document_parse_result",
+                    "strict": True,
+                    "schema": _strict_json_schema(response_schema.model_json_schema()),
+                }
+            },
+        }
+        response, started = self._post(payload, "document_extraction")
         try:
             result = json.loads(self._output_text(response))
         except json.JSONDecodeError as exc:
-            raise ProviderRequestError(
-                "OpenAI returned invalid structured output"
-            ) from exc
+            self._record_usage(
+                "document_extraction",
+                model,
+                response,
+                started,
+                "invalid_response",
+            )
+            raise ProviderRequestError("OpenAI returned invalid structured output") from exc
+        except ProviderRequestError:
+            self._record_usage(
+                "document_extraction",
+                model,
+                response,
+                started,
+                "invalid_response",
+            )
+            raise
         if not isinstance(result, dict):
+            self._record_usage(
+                "document_extraction",
+                model,
+                response,
+                started,
+                "invalid_response",
+            )
             raise ProviderRequestError("OpenAI returned invalid structured output")
+        self._record_usage(
+            "document_extraction",
+            model,
+            response,
+            started,
+            "success",
+        )
         return result
 
     @staticmethod
@@ -200,9 +279,7 @@ class OpenAIResponsesClient(_OpenAIResponsesBase):
             try:
                 text = content.decode("utf-8")
             except UnicodeDecodeError as exc:
-                raise ProviderRequestError(
-                    "OpenAI document text must be valid UTF-8"
-                ) from exc
+                raise ProviderRequestError("OpenAI document text must be valid UTF-8") from exc
             return {"type": "input_text", "text": text}
 
         encoded = base64.b64encode(content).decode("ascii")
@@ -236,38 +313,49 @@ class OpenAIResponsesNarrativeClient(_OpenAIResponsesBase):
         grounded_input = json.dumps(
             {
                 "job_spec": job_spec.model_dump(mode="json"),
-                "rankings": [
-                    ranking.model_dump(mode="json") for ranking in rankings
-                ],
-                "findings": [
-                    finding.model_dump(mode="json") for finding in findings
-                ],
+                "rankings": [ranking.model_dump(mode="json") for ranking in rankings],
+                "findings": [finding.model_dump(mode="json") for finding in findings],
             },
             separators=(",", ":"),
             sort_keys=True,
         )
-        response = self._post(
-            {
-                "model": model,
-                "reasoning": {"effort": "none"},
-                "input": [
-                    {
-                        "role": "system",
-                        "content": [
-                            {
-                                "type": "input_text",
-                                "text": NARRATIVE_SYSTEM_PROMPT,
-                            }
-                        ],
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "input_text", "text": grounded_input}
-                        ],
-                    },
-                ],
-                "text": {"format": {"type": "text"}},
-            }
+        payload = {
+            "model": model,
+            "reasoning": {"effort": "none"},
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": NARRATIVE_SYSTEM_PROMPT,
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": grounded_input}],
+                },
+            ],
+            "text": {"format": {"type": "text"}},
+        }
+        response, started = self._post(payload, "recommendation_narration")
+        try:
+            result = self._output_text(response)
+        except Exception:
+            self._record_usage(
+                "recommendation_narration",
+                model,
+                response,
+                started,
+                "invalid_response",
+            )
+            raise
+        self._record_usage(
+            "recommendation_narration",
+            model,
+            response,
+            started,
+            "success",
         )
-        return self._output_text(response)
+        return result
