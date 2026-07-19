@@ -116,4 +116,7 @@ def discover_vendors(
     origin: Annotated[str | None, Query(max_length=200)] = None,
     destination: Annotated[str | None, Query(max_length=200)] = None,
 ) -> VendorDiscoveryResponse:
-    return VendorDiscoveryResponse(vendors=service.discover_vendors(origin, destination))
+    return VendorDiscoveryResponse(
+        vendors=service.discover_vendors(origin, destination),
+        source=service.vendor_discovery_source,
+    )

@@ -452,7 +452,7 @@ class WebhookAck(ContractModel):
 
 class VendorDiscoveryResponse(ContractModel):
     vendors: list[Vendor]
-    source: Literal["synthetic_mock"] = "synthetic_mock"
+    source: Literal["synthetic_mock", "tavily"]
 
 
 class DocumentParseResult(ContractModel):

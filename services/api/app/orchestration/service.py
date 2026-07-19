@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID, uuid4
 
 from services.api.app.contracts import (
@@ -178,12 +179,12 @@ class VeraMoveService:
             return record
 
         validate_transition(record.state, JobState.CALLING)
+        vendors = self._initial_vendors(record)
         record.state = JobState.CALLING
         record.updated_at = self._clock()
         self._jobs.save(record)
 
-        vendors = self._fixtures.load_vendors()[: self._voice.initial_call_limit]
-        for vendor in vendors:
+        for vendor in vendors[: self._voice.initial_call_limit]:
             self.initiate_single_quote_call(job_id, vendor)
 
         record = self.get_job(job_id)
@@ -328,6 +329,22 @@ class VeraMoveService:
 
     def discover_vendors(self, origin: str | None, destination: str | None) -> list[Vendor]:
         return self._discovery.discover(origin, destination)
+
+    @property
+    def vendor_discovery_source(self) -> Literal["synthetic_mock", "tavily"]:
+        return self._discovery.source
+
+    def _initial_vendors(self, record: JobRecord) -> list[Vendor]:
+        candidates = self._discovery.discover(
+            record.job_spec.origin.address_summary,
+            record.job_spec.destination.address_summary,
+        )
+        distinct: dict[UUID, Vendor] = {}
+        for vendor in candidates:
+            distinct.setdefault(vendor.vendor_id, vendor)
+        if len(distinct) < 3:
+            raise DomainConflict("Initial calling requires three distinct vendors")
+        return list(distinct.values())[:3]
 
     def _new_attempt(
         self,

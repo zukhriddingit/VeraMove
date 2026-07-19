@@ -6,6 +6,21 @@ from services.api.app.contracts import CallStatus, IntakeSource, JobState
 from services.api.app.core.errors import DomainConflict, InvalidStateTransition
 
 
+class StaticDiscoveryGateway:
+    source = "tavily"
+
+    def __init__(self, vendors):
+        self._vendors = vendors
+
+    def discover(self, origin, destination):
+        del origin, destination
+        return [vendor.model_copy(deep=True) for vendor in self._vendors]
+
+    def source_call_list(self, query):
+        del query
+        return [vendor.model_copy(deep=True) for vendor in self._vendors]
+
+
 def test_mock_workflow(service, job_spec):
     created = service.create_job(job_spec)
     assert created.state is JobState.INTAKE_COMPLETE
@@ -103,6 +118,50 @@ def test_batch_uses_exact_confirmed_snapshot_and_does_not_redial(
     assert len(attempts) == 3
     assert all(item.job_spec_snapshot == confirmed.job_spec for item in attempts)
     assert len({item.call_id for item in attempts}) == 3
+
+
+def test_batch_uses_first_three_distinct_discovery_vendors(
+    service,
+    fixtures,
+    job_spec,
+):
+    discovery_vendors = list(reversed(fixtures.load_vendors()))
+    service._discovery = StaticDiscoveryGateway(discovery_vendors)
+    service.create_job(job_spec)
+    service.confirm_job(job_spec.job_id)
+
+    result = service.start_calls(job_spec.job_id)
+
+    assert len(result.calls) == 3
+    assert [call.vendor.vendor_id for call in result.calls] == [
+        vendor.vendor_id for vendor in discovery_vendors[:3]
+    ]
+
+
+def test_batch_rejects_short_distinct_discovery_before_state_or_call_side_effects(
+    service,
+    fixtures,
+    job_spec,
+):
+    vendors = fixtures.load_vendors()
+    service._discovery = StaticDiscoveryGateway(
+        [vendors[0], vendors[1], vendors[1]],
+    )
+    service.create_job(job_spec)
+    service.confirm_job(job_spec.job_id)
+
+    with pytest.raises(DomainConflict, match="three distinct vendors"):
+        service.start_calls(job_spec.job_id)
+
+    stored = service.get_job(job_spec.job_id)
+    assert stored.state is JobState.CONFIRMED
+    assert stored.calls == []
+    assert stored.quotes == []
+    assert service.list_call_attempts(job_spec.job_id) == []
+
+
+def test_mock_service_reports_truthful_vendor_discovery_source(service):
+    assert service.vendor_discovery_source == "synthetic_mock"
 
 
 def test_batch_completes_remaining_vendors_after_single_call(

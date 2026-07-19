@@ -16,6 +16,8 @@ from services.api.app.integrations.tavily.base import TavilySearchClient
 
 
 class CachedTavilyVendorDiscovery:
+    source = "tavily"
+
     def __init__(
         self,
         client: TavilySearchClient,

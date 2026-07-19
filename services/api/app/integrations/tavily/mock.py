@@ -5,6 +5,8 @@ from services.api.app.orchestration.fixtures import DemoFixtures
 
 
 class MockVendorDiscoveryGateway:
+    source = "synthetic_mock"
+
     def __init__(self, fixtures: DemoFixtures) -> None:
         self._fixtures = fixtures
         self._cache: dict[tuple[str, str, str, int], list[Vendor]] = {}
