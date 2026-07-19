@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from typing import Any
+from uuid import uuid4
 
 from services.api.app.contracts import DocumentParseResult, IntakeSource, JobSpecV1
 from services.api.app.integrations.openai.base import StructuredDocumentClient
@@ -37,7 +38,10 @@ def _normalize_document_result(
         if isinstance(response, DocumentParseResult)
         else deepcopy(response)
     )
-    job_spec = JobSpecV1.model_validate(payload.get("job_spec"))
+    job_spec = JobSpecV1.model_validate(payload.get("job_spec")).model_copy(
+        update={"job_id": uuid4()},
+        deep=True,
+    )
     payload["job_spec"] = job_spec.model_dump(mode="python")
     payload["missing_fields"] = job_spec.missing_required_fields()
     return DocumentParseResult.model_validate(payload)

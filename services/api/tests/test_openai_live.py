@@ -215,6 +215,7 @@ def test_http_transport_maps_timeout_to_safe_error(monkeypatch):
 
 def test_document_parser_supports_plain_text_and_enforces_postconditions(fixtures):
     result = document_result(fixtures)
+    model_supplied_job_id = result["job_spec"]["job_id"]
     parser = OpenAIDocumentParser(
         OpenAIResponsesClient(
             api_key="synthetic",
@@ -233,6 +234,14 @@ def test_document_parser_supports_plain_text_and_enforces_postconditions(fixture
     assert parsed.job_spec.confirmed is False
     assert parsed.job_spec.confirmed_at is None
     assert parsed.job_spec.locked_version is None
+    assert str(parsed.job_spec.job_id) != model_supplied_job_id
+
+    second = parser.parse_document(
+        b"SYNTHETIC two-bedroom move",
+        "text/plain",
+        "synthetic.txt",
+    )
+    assert second.job_spec.job_id != parsed.job_spec.job_id
 
 
 def test_document_parser_normalizes_model_missing_fields_without_mutating_response(

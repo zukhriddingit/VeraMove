@@ -359,6 +359,44 @@ def test_tools_store_valid_itemized_outcome_and_quote(
     assert repository.list_calls(attempt.job_id) == [call]
 
 
+def test_tools_persist_parent_call_before_quote_for_relational_storage(
+    confirmed_record,
+    fixtures,
+):
+    class ForeignKeyEnforcingRepository(InMemoryRepository):
+        def save_quote(self, quote):
+            call_id = quote.transcript_evidence[0].call_id
+            if not any(
+                call.call_id == call_id
+                for call in self.list_calls(quote.job_id)
+            ):
+                raise AssertionError("quote requires its parent call")
+            return super().save_quote(quote)
+
+    repository = ForeignKeyEnforcingRepository()
+    repository.create(confirmed_record)
+    attempt = make_attempt(confirmed_record.job_spec, fixtures.load_vendors()[0])
+    repository.create_attempt(attempt)
+    result = MockVoiceProvider(fixtures).initiate_quote_call(
+        attempt.job_spec_snapshot,
+        attempt.vendor,
+        attempt.call_id,
+    )
+    assert result.outcome is not None
+    assert result.completed_at is not None
+    assert result.recording_url is not None
+
+    call = VoiceTools(repository, repository).save_call_outcome(
+        attempt.call_id,
+        result.outcome,
+        result.completed_at,
+        result.recording_url,
+    )
+
+    assert repository.list_calls(attempt.job_id) == [call]
+    assert repository.list_quotes(attempt.job_id) == [call.outcome.quote]
+
+
 @pytest.mark.parametrize(
     ("outcome", "expected_status"),
     [

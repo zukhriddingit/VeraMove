@@ -81,10 +81,11 @@ class VoiceTools:
             outcome=outcome,
             recording_url=recording_url,
         )
+        self._calls.save_attempt(completed_attempt)
+        saved_call = self._calls.save_call(call)
         if quote is not None:
             self._quotes.save_quote(quote)
-        self._calls.save_attempt(completed_attempt)
-        return self._calls.save_call(call)
+        return saved_call
 
     def get_verified_competing_quote(
         self,
