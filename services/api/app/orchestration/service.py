@@ -21,6 +21,7 @@ from services.api.app.contracts import (
 )
 from services.api.app.core.errors import (
     DomainConflict,
+    DomainError,
     ProviderConfigurationError,
     ProviderRequestError,
     ResourceNotFound,
@@ -164,7 +165,7 @@ class VeraMoveService:
                 vendor,
                 attempt.call_id,
             )
-        except (ProviderConfigurationError, ProviderRequestError):
+        except DomainError:
             self._record_provider_failure(attempt)
             raise
         return self._record_provider_result(attempt, result)

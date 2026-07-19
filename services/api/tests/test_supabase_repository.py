@@ -12,8 +12,11 @@ import pytest
 from services.api.app.contracts import (
     CallRecord,
     CallStatus,
+    DataClassification,
     JobRecord,
     JobState,
+    ProvenanceReference,
+    ProvenanceType,
     VerificationStatus,
 )
 from services.api.app.core.errors import (
@@ -310,6 +313,75 @@ def test_supabase_canonical_call_and_quote_upsert_exact_aggregate(
     assert quote_row["verified_payload"] == quote.verified_data
     assert len(table_client.tables["transcript_evidence"]) == len(
         quote.transcript_evidence
+    )
+
+
+def test_supabase_round_trips_discovered_vendor_role_play_outcome(
+    repository,
+    table_client,
+    confirmed_record,
+    fixtures,
+):
+    repository.create(confirmed_record)
+    vendor = fixtures.load_vendors()[0].model_copy(
+        update={
+            "vendor_id": uuid4(),
+            "name": "Example Moving Cooperative",
+            "slug": "example-moving-cooperative",
+            "behavior_summary": (
+                "Role-play discovery candidate; no real behavior is inferred."
+            ),
+            "contact_label": "Role-play channel; no contact details stored.",
+            "data_classification": DataClassification.ROLE_PLAY,
+            "provenance": [
+                ProvenanceReference(
+                    source_type=ProvenanceType.TAVILY,
+                    source_id="vendor.example.com",
+                    location="https://vendor.example.com/moving",
+                )
+            ],
+        },
+        deep=True,
+    )
+    attempt = make_attempt(confirmed_record, vendor)
+    repository.create_attempt(attempt)
+    result = MockVoiceProvider(fixtures).initiate_quote_call(
+        confirmed_record.job_spec,
+        vendor,
+        attempt.call_id,
+    )
+    assert result.outcome is not None
+    assert result.outcome.quote is not None
+    assert result.completed_at is not None
+    assert result.recording_url is not None
+    quote = result.outcome.quote
+    call = CallRecord(
+        call_id=attempt.call_id,
+        job_id=attempt.job_id,
+        vendor=vendor,
+        status=CallStatus.COMPLETED,
+        started_at=FIXED_NOW,
+        completed_at=result.completed_at,
+        outcome=result.outcome,
+        recording_url=result.recording_url,
+    )
+
+    repository.save_call(call)
+    repository.save_quote(quote)
+
+    stored = repository.get(attempt.job_id)
+    assert stored is not None
+    assert stored.calls == [call]
+    assert stored.quotes == [quote]
+    assert table_client.tables["vendors"][str(vendor.vendor_id)][
+        "data_classification"
+    ] == DataClassification.ROLE_PLAY.value
+    assert table_client.tables["quotes"][str(quote.quote_id)][
+        "data_classification"
+    ] == DataClassification.ROLE_PLAY.value
+    assert all(
+        row["data_classification"] == DataClassification.ROLE_PLAY.value
+        for row in table_client.tables["transcript_evidence"].values()
     )
 
 

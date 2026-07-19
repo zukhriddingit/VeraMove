@@ -12,7 +12,11 @@ from services.api.app.contracts import (
     ProvenanceReference,
     ProvenanceType,
 )
-from services.api.app.core.errors import DomainConflict, InvalidStateTransition
+from services.api.app.core.errors import (
+    DomainConflict,
+    InvalidStateTransition,
+    ResourceNotFound,
+)
 
 
 class StaticDiscoveryGateway:
@@ -28,6 +32,14 @@ class StaticDiscoveryGateway:
     def source_call_list(self, query):
         del query
         return [vendor.model_copy(deep=True) for vendor in self._vendors]
+
+
+class FailingDomainVoice:
+    initial_call_limit = 3
+
+    def initiate_quote_call(self, job_spec, vendor, call_id):
+        del job_spec, vendor, call_id
+        raise ResourceNotFound("Synthetic provider-domain failure")
 
 
 def test_mock_workflow(service, job_spec):
@@ -226,6 +238,21 @@ def test_batch_rejects_short_distinct_discovery_before_state_or_call_side_effect
     assert stored.calls == []
     assert stored.quotes == []
     assert service.list_call_attempts(job_spec.job_id) == []
+
+
+def test_provider_domain_failure_does_not_leave_job_calling(service, job_spec):
+    service._voice = FailingDomainVoice()
+    service.create_job(job_spec)
+    service.confirm_job(job_spec.job_id)
+
+    with pytest.raises(ResourceNotFound, match="Synthetic provider-domain failure"):
+        service.start_calls(job_spec.job_id)
+
+    attempts = service.list_call_attempts(job_spec.job_id)
+    assert len(attempts) == 1
+    assert attempts[0].status is CallStatus.FAILED
+    assert attempts[0].completed_at is not None
+    assert service.get_job(job_spec.job_id).state is JobState.FAILED
 
 
 def test_mock_service_reports_truthful_vendor_discovery_source(service):
