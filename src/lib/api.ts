@@ -76,11 +76,22 @@ export interface FeeLineItem {
 }
 
 
+export interface Vendor {
+  vendor_id: string;
+  name: string;
+  slug: string;
+  behavior_summary: string;
+  contact_label: string;
+  service_areas: string[];
+  data_classification: string;
+  provenance: string[];
+}
+
 export interface QuoteV1 {
   quote_id: string;
   job_id: string;
   job_spec_version: "1.0";
-  vendor: { vendor_id: string; name: string };
+  vendor: Vendor;
   currency: string;
   original_total: string;
   negotiated_total: string;
@@ -104,27 +115,30 @@ export type CallOutcomeType =
 
 export interface CallOutcome {
   type: CallOutcomeType;
-  summary?: string;
-  notes?: string;
+  // Nested quote shape not yet fully verified against QuoteV1; loosely typed
+  // until backend confirms field names (e.g. availability vs availability_status,
+  // headline_total/comparable_total, etc.).
+  quote?: Record<string, unknown> | null;
+  callback_at?: string | null;
+  reason?: string | null;
 }
 
 export interface CallRecord {
   call_id: string;
   job_id: string;
-  vendor_id: string;
-  vendor_name?: string;
-  recording_url?: string;
-  transcript?: string;
+  vendor: Vendor;
+  status: string;
+  started_at: string;
+  completed_at?: string | null;
   outcome: CallOutcome;
-  created_at: string;
-  updated_at: string;
+  recording_url: string;
 }
 
 
 export interface RecommendationRanking {
   quote_id: string;
   rank: number;
-  vendor: { vendor_id: string; name: string };
+  vendor: Vendor;
   total: string;
   rationale: string[];
   red_flags?: string[];
