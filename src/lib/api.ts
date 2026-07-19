@@ -79,17 +79,18 @@ export interface FeeLineItem {
 export interface QuoteV1 {
   quote_id: string;
   job_id: string;
-  job_spec_version: number;
+  job_spec_version: "1.0";
   vendor: { vendor_id: string; name: string };
   currency: string;
-  original_total: number;
-  negotiated_total: number;
-  deposit: number;
+  original_total: string;
+  negotiated_total: string;
+  deposit: string;
   binding_type: "binding" | "non_binding";
   availability: string;
   verification_status: "verified" | "partially_verified" | "unverified";
   concessions?: string[];
   fee_line_items: FeeLineItem[];
+
   red_flags?: string[];
   recording_url?: string;
   transcript_evidence?: string;
