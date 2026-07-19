@@ -4,7 +4,10 @@ import json
 import re
 from pathlib import Path
 
+import pytest
 import yaml
+
+from scripts.generate_agent_assets import elevenlabs_data_collection
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -116,6 +119,16 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
     assert negotiator_config["agent"]["fee_probes_file"] == "generated-fee-probes.md"
     assert intake_config["agent"]["dashboard_sync"] == "manual"
     assert negotiator_config["agent"]["dashboard_sync"] == "manual"
+    for config in (intake_config, negotiator_config):
+        agent = config["agent"]
+        assert agent["backend_boundaries_file"] == "../tools.yaml"
+        assert agent["provider_tool_ids"] == []
+        assert agent["provider_tools_status"] == "omitted_until_reviewed_ids_exist"
+        assert agent["provider_version"] == {
+            "version_description": "VeraMove 2026-07-19.1",
+            "capture_after_save": ["version_id", "branch_id"],
+            "provider_ids_committed": False,
+        }
 
     intake_variables = {
         variable["name"] for variable in intake_config["agent"]["dynamic_variables"]
@@ -145,6 +158,12 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
             + negotiator_config["agent"]["dynamic_variables"]
         )
     )
+    assert {f"{{{{{name}}}}}" for name in intake_variables} <= set(
+        re.findall(r"\{\{[a-z_]+\}\}", intake_prompt)
+    )
+    assert {f"{{{{{name}}}}}" for name in outbound_variables} <= set(
+        re.findall(r"\{\{[a-z_]+\}\}", negotiator_prompt)
+    )
 
     for prompt in (intake_prompt.lower(), negotiator_prompt.lower()):
         for phrase in (
@@ -173,15 +192,12 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
     )
 
     assert negotiator_config["agent"]["structured_output"] == "CallOutcome"
-    assert negotiator_config["agent"]["tool_names"] == [
+    assert [tool["name"] for tool in tools["tools"]] == [
         "save_quote",
         "save_call_outcome",
         "get_verified_competing_quote",
         "request_callback",
     ]
-
-    tool_names = [tool["name"] for tool in tools["tools"]]
-    assert tool_names == negotiator_config["agent"]["tool_names"]
     assert all("required" in tool and "properties" in tool for tool in tools["tools"])
     serialized = "\n".join(
         (intake_prompt, negotiator_prompt, yaml.safe_dump(intake_config), yaml.safe_dump(tools)),
@@ -256,6 +272,31 @@ def test_voice_data_collection_assets_match_the_approved_contract():
     assert len({field["identifier"] for field in intake_fields}) == len(intake_fields)
     assert len({field["identifier"] for field in outbound_fields}) == len(outbound_fields)
 
+    intake_provider = elevenlabs_data_collection(intake)
+    outbound_provider = elevenlabs_data_collection(outbound)
+    assert list(intake_provider) == [field["identifier"] for field in intake_fields]
+    assert list(outbound_provider) == [field["identifier"] for field in outbound_fields]
+    assert all(
+        set(provider_field) == {"type", "description"}
+        for provider_field in (*intake_provider.values(), *outbound_provider.values())
+    )
+
+
+def test_elevenlabs_data_collection_transform_rejects_ambiguous_fields():
+    with pytest.raises(ValueError, match="duplicate"):
+        elevenlabs_data_collection(
+            {
+                "fields": [
+                    {"identifier": "total", "type": "number", "description": "First."},
+                    {"identifier": "total", "type": "number", "description": "Second."},
+                ]
+            }
+        )
+    with pytest.raises(ValueError, match="unsupported"):
+        elevenlabs_data_collection(
+            {"fields": [{"identifier": "items", "type": "array", "description": "Items."}]}
+        )
+
 
 def test_generated_fee_probes_cover_every_mandatory_category_once():
     config = yaml.safe_load((ROOT / "configs/moving.yaml").read_text(encoding="utf-8"))
@@ -279,10 +320,17 @@ def test_elevenlabs_dashboard_checklist_is_complete_and_secret_free():
         "audio saving",
         "retention",
         "call limit",
-        "conversation initiation",
+        "conversation_initiation_client_data_webhook",
         "post_call_transcription",
         "retries",
         "audio webhook",
+        "call_initiation_failure",
+        "retry_enabled",
+        "secret_id",
+        "version_id",
+        "branch_id",
+        "assignment",
+        "twilio recording",
     ):
         assert phrase in lowered
     assert "audio webhook: disabled" in lowered

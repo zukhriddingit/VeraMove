@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = ROOT / "configs" / "moving.yaml"
 DEFAULT_OUTPUT_ROOT = ROOT / "agents"
 AGENT_CONFIG_VERSION = "2026-07-19.1"
+ELEVENLABS_DATA_COLLECTION_TYPES = frozenset({"boolean", "integer", "number", "string"})
 
 GENERATED_ASSET_PATHS = (
     Path("intake/data-collection.json"),
@@ -189,6 +190,35 @@ def _collection_document(role: str, fields: tuple[tuple[str, str, str], ...]) ->
     return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
+def elevenlabs_data_collection(document: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Convert a reviewed collection document to ElevenLabs' keyed API shape."""
+
+    fields = document.get("fields")
+    if not isinstance(fields, list):
+        raise ValueError("data collection fields must be a list")
+
+    provider_fields: dict[str, dict[str, str]] = {}
+    for field in fields:
+        if not isinstance(field, dict):
+            raise ValueError("every data collection field must be an object")
+        identifier = field.get("identifier")
+        field_type = field.get("type")
+        description = field.get("description")
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise ValueError("every data collection field needs a nonempty identifier")
+        if identifier in provider_fields:
+            raise ValueError(f"duplicate data collection identifier: {identifier}")
+        if field_type not in ELEVENLABS_DATA_COLLECTION_TYPES:
+            raise ValueError(f"unsupported ElevenLabs data collection type: {field_type}")
+        if not isinstance(description, str) or not description.strip():
+            raise ValueError(f"data collection field {identifier} needs a description")
+        provider_fields[identifier] = {
+            "type": field_type,
+            "description": description.strip(),
+        }
+    return provider_fields
+
+
 def _fee_probe_document(categories: list[str]) -> str:
     lines = [
         "# Generated mandatory fee probes",
@@ -261,10 +291,26 @@ def check_agent_assets(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--check", action="store_true", help="Fail if committed assets are stale.")
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--check", action="store_true", help="Fail if committed assets are stale.")
+    action.add_argument(
+        "--print-elevenlabs-data-collection",
+        choices=("intake", "outbound"),
+        help="Print one provider-ready Data Collection object without changing files.",
+    )
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     args = parser.parse_args()
+
+    if args.print_elevenlabs_data_collection:
+        relative_path = (
+            GENERATED_ASSET_PATHS[0]
+            if args.print_elevenlabs_data_collection == "intake"
+            else GENERATED_ASSET_PATHS[1]
+        )
+        document = json.loads(render_agent_assets(args.config)[relative_path])
+        print(json.dumps(elevenlabs_data_collection(document), indent=2, sort_keys=True))
+        return 0
 
     if args.check:
         stale = check_agent_assets(output_root=args.output_root, config_path=args.config)

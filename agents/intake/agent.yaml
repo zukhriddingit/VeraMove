@@ -7,8 +7,13 @@ agent:
   dashboard_sync: manual
   prompt_file: prompt.md
   data_collection_file: data-collection.json
-  tools_file: ../tools.yaml
-  tool_names: []
+  backend_boundaries_file: ../tools.yaml
+  provider_tool_ids: []
+  provider_tools_status: omitted_until_reviewed_ids_exist
+  provider_version:
+    version_description: "VeraMove 2026-07-19.1"
+    capture_after_save: [version_id, branch_id]
+    provider_ids_committed: false
   structured_output: JobSpecV1
   first_message: >-
     Hello, I'm VeraMove's AI intake assistant. This call may be recorded and processed by

@@ -8,12 +8,13 @@ agent:
   prompt_file: prompt.md
   data_collection_file: data-collection.json
   fee_probes_file: generated-fee-probes.md
-  tools_file: ../tools.yaml
-  tool_names:
-    - save_quote
-    - save_call_outcome
-    - get_verified_competing_quote
-    - request_callback
+  backend_boundaries_file: ../tools.yaml
+  provider_tool_ids: []
+  provider_tools_status: omitted_until_reviewed_ids_exist
+  provider_version:
+    version_description: "VeraMove 2026-07-19.1"
+    capture_after_save: [version_id, branch_id]
+    provider_ids_committed: false
   structured_output: CallOutcome
   first_message: >-
     Hello, I'm VeraMove's AI assistant calling about a synthetic moving-services role-play. This
@@ -55,21 +56,25 @@ agent:
     - name: verified_competitor_quote_id
       type: string
       required: false
+      default: ""
       required_in_modes: [negotiation]
       source: verified_outbound_request
     - name: verified_competitor_total
       type: string
       required: false
+      default: ""
       required_in_modes: [negotiation]
       source: verified_outbound_request
     - name: verified_competitor_evidence_json
       type: string
       required: false
+      default: ""
       required_in_modes: [negotiation]
       source: verified_outbound_request
     - name: negotiation_objective
       type: string
       required: false
+      default: ""
       required_in_modes: [negotiation]
       source: verified_outbound_request
   success_evaluation: >-

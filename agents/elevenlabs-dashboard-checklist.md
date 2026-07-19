@@ -1,126 +1,180 @@
 # ElevenLabs two-agent dashboard checklist
 
-Use this checklist to manually synchronize repository agent configuration version
-`2026-07-19.1`. The YAML files are reviewed source manifests; they do not automatically update the
-ElevenLabs dashboard. Never copy credentials, destination values, provider IDs, or participant data
-into this document.
+Use this checklist to manually synchronize repository configuration marker `2026-07-19.1` with
+ElevenLabs. The YAML files are reviewed source manifests, not provider payloads. Do not commit API
+keys, webhook secrets, workspace secret IDs, agent IDs, branch/version IDs, phone-number IDs,
+destination numbers, or participant data.
 
-## Workspace prerequisites
+## Before changing the dashboard
 
-- [ ] Confirm provider credits are available.
-- [ ] Confirm the workspace concurrency and daily call limit allow the supervised three-call run.
-- [ ] Keep live calling disabled in VeraMove until both agents pass preflight.
-- [ ] Use only consenting teammates and fictional customer/vendor facts.
-- [ ] Configure a short, nonzero retention period that covers the demo and deletion check.
-- [ ] Audio webhook: disabled. VeraMove streams audio on demand instead of accepting pushed bytes.
-- [ ] Post-call transcription webhook retries: enabled.
+- [ ] Keep `LIVE_CALLS_ENABLED=false` until the redacted preflight passes.
+- [ ] Confirm credits and a daily call limit of at least three. Concurrency one is sufficient for
+      sequential dispatch; concurrency three allows parallel dispatch.
+- [ ] Confirm exactly three unique, currently consenting teammate destination numbers are stored
+      only in Render's `LIVE_TEST_TO_NUMBERS` secret value.
+- [ ] Use only fictional move and vendor facts.
+- [ ] Audio webhook: disabled. VeraMove streams retained audio on demand and does not accept pushed
+      base64 audio.
+
+## Provider version and tools rule
+
+- [ ] Save each reviewed agent with version description `VeraMove 2026-07-19.1`.
+- [ ] After saving, record the opaque `version_id` and `branch_id` only in the secure release log;
+      never paste them into repository files or chat.
+- [ ] Treat `2026-07-19.1` as VeraMove's review marker, not an ElevenLabs `version_id`.
+- [ ] Attach no ElevenLabs tools. `agents/tools.yaml` documents VeraMove backend boundaries only;
+      leave provider `tool_ids` empty until reviewed, real provider tool IDs exist.
 
 ## Agent 1 — VeraMove Intake
 
 - [ ] Display name: `VeraMove Intake`.
-- [ ] Prompt/config version: `2026-07-19.1`.
 - [ ] Copy `agents/intake/prompt.md` as the system prompt.
-- [ ] First message: “Hello, I'm VeraMove's AI intake assistant. This call may be recorded and
-      processed by ElevenLabs so I can prepare a moving-request summary. Do you consent to
-      continue?”
-- [ ] Dynamic variables (all required strings): `job_id`, `intake_session_id`,
-      `agent_config_version`.
-- [ ] Conversation initiation webhook: enabled for the imported inbound number and pointed at the
-      deployed VeraMove authenticated pre-call endpoint.
-- [ ] Prompt override in the conversation initiation response: disabled.
-- [ ] Audio Saving: enabled.
-- [ ] Retention: short and nonzero.
-- [ ] Success evaluation: consent obtained; every required field is known or explicitly unknown; an
-      accurate complete readback was approved; the agent did not confirm or lock the job.
+- [ ] Use the exact first message from `agents/intake/agent.yaml`.
+- [ ] Define required string dynamic variables `job_id`, `intake_session_id`, and
+      `agent_config_version`; the prompt must visibly contain the matching `{{variable}}`
+      placeholders.
+- [ ] In Agent Security, enable
+      `enable_conversation_initiation_client_data_from_webhook` for Intake only.
+- [ ] Keep client prompt override disabled. The pre-call response may supply dynamic variables but
+      must not replace the reviewed system prompt.
+- [ ] Enable Audio Saving and set `retention_days` to an explicit value from 1 through 7.
+- [ ] Set the success evaluation to the reviewed value in `agents/intake/agent.yaml`.
 
 ### Intake Data Collection
 
-Create these 24 identifiers using the exact primitive types from
-`agents/intake/data-collection.json`:
+Generate the exact API object without modifying files:
 
-| Identifier | Type |
-| --- | --- |
-| `recording_consent` | boolean |
-| `summary_confirmed` | boolean |
-| `move_date` | string |
-| `date_flexible` | boolean |
-| `origin_address_summary` | string |
-| `origin_dwelling_type` | string |
-| `origin_floors` | integer |
-| `origin_stairs` | integer |
-| `origin_elevator_access` | boolean |
-| `origin_parking_distance_feet` | integer |
-| `destination_address_summary` | string |
-| `destination_dwelling_type` | string |
-| `destination_floors` | integer |
-| `destination_stairs` | integer |
-| `destination_elevator_access` | boolean |
-| `destination_parking_distance_feet` | integer |
-| `bedroom_count` | integer |
-| `inventory_json` | string |
-| `special_items_json` | string |
-| `packing` | boolean |
-| `disassembly` | boolean |
-| `storage` | boolean |
-| `storage_days` | integer |
-| `insurance_preference` | string |
+```bash
+.venv/bin/python scripts/generate_agent_assets.py \
+  --print-elevenlabs-data-collection intake
+```
+
+Paste the printed object under `platform_settings.data_collection`, or create the same 24 fields in
+the Analysis tab. Every value contains only `type` and `description`; the object key is the field
+identifier. Verify `recording_consent`, `summary_confirmed`, the complete access/inventory/service
+set, and `insurance_preference` against `agents/intake/data-collection.json`.
 
 ## Agent 2 — VeraMove Outbound Negotiator
 
 - [ ] Display name: `VeraMove Outbound Negotiator`.
-- [ ] Prompt/config version: `2026-07-19.1`.
 - [ ] Copy `agents/negotiator/prompt.md`, followed by
       `agents/negotiator/generated-fee-probes.md`, as the system prompt.
-- [ ] First message: “Hello, I'm VeraMove's AI assistant calling about a synthetic moving-services
-      role-play. This call may be recorded and processed by ElevenLabs. Do you consent to continue?”
-- [ ] Dynamic variables (required strings in both modes): `job_id`, `call_id`, `vendor_id`,
-      `vendor_name`, `job_spec_version`, `job_spec_json`, `call_mode`, `agent_config_version`.
-- [ ] Dynamic variables (required strings only for `call_mode=negotiation`):
-      `verified_competitor_quote_id`, `verified_competitor_total`,
-      `verified_competitor_evidence_json`, `negotiation_objective`.
-- [ ] Allowed `call_mode` values: `quote`, `negotiation`.
-- [ ] Conversation initiation webhook: disabled for outbound calls; VeraMove supplies verified
-      dynamic variables when initiating each call.
-- [ ] Audio Saving: enabled.
-- [ ] Retention: the same short, nonzero period used for Intake.
-- [ ] Success evaluation: consent obtained; locked facts preserved; every mandatory fee category
-      addressed; exactly one supported outcome captured; negotiation uses only verified leverage and
-      records a measurable improvement.
+- [ ] Use the exact first message from `agents/negotiator/agent.yaml`.
+- [ ] Define all 12 string dynamic variables from `agents/negotiator/agent.yaml`; give the four
+      negotiation-only variables their documented empty-string defaults. The prompt must visibly
+      contain every matching `{{variable}}` placeholder.
+- [ ] Keep `enable_conversation_initiation_client_data_from_webhook=false` for Outbound. VeraMove
+      supplies verified variables directly with each outbound call request.
+- [ ] Enable Audio Saving and use the same explicit 1–7 day retention as Intake.
+- [ ] Set the success evaluation to the reviewed value in `agents/negotiator/agent.yaml`.
 
 ### Outbound Data Collection
 
-Create these 14 identifiers using the exact primitive types from
-`agents/negotiator/data-collection.json`:
+Generate the exact API object without modifying files:
 
-| Identifier | Type |
-| --- | --- |
-| `recording_consent` | boolean |
-| `outcome_type` | string |
-| `callback_at` | string |
-| `outcome_reason` | string |
-| `headline_total` | number |
-| `deposit` | number |
-| `original_total` | number |
-| `negotiated_total` | number |
-| `binding_type` | string |
-| `availability_status` | string |
-| `availability` | string |
-| `fee_items_json` | string |
-| `addressed_fee_categories_json` | string |
-| `concessions_json` | string |
+```bash
+.venv/bin/python scripts/generate_agent_assets.py \
+  --print-elevenlabs-data-collection outbound
+```
 
-## Shared webhook and release checks
+Paste the printed object under `platform_settings.data_collection`, or create the same 14 fields in
+the Analysis tab. Verify the four allowed outcome types, quote totals/terms, fee evidence, and
+concessions against `agents/negotiator/data-collection.json`.
 
-- [ ] Configure only `post_call_transcription` delivery to the deployed
-      `/api/webhooks/elevenlabs` HTTPS endpoint.
-- [ ] Configure the provider signing secret through dashboard and deployment secret controls; do
-      not place it in prompt text or dynamic variables.
-- [ ] Enable post-call transcription retries and verify the endpoint returns success only after a
-      durable acknowledgement.
-- [ ] Confirm the observed dashboard prompt/config version matches `2026-07-19.1` before calling.
-- [ ] Confirm Audio Saving is enabled and retention is nonzero on both agents.
-- [ ] Confirm exactly two VeraMove agents exist for this workflow—one Intake and one shared Outbound
-      Negotiator.
-- [ ] Keep the audio webhook disabled; do not configure a separate audio delivery target.
-- [ ] Complete one supervised synthetic intake and one operator-only outbound smoke before enabling
-      the full three-call run.
+## Authenticated workspace pre-call webhook
+
+1. Create a workspace secret through `POST /v1/convai/secrets` using this request shape. Enter the
+   value through a secure operator surface and never save the completed request:
+
+   ```json
+   {
+     "type": "new",
+     "name": "VeraMove pre-call",
+     "value": "VALUE_FROM_RENDER_ELEVENLABS_PRECALL_SECRET"
+   }
+   ```
+
+2. Put the same random value in Render as `ELEVENLABS_PRECALL_SECRET`. Keep the returned
+   `secret_id` only in the provider configuration.
+3. Update `PATCH /v1/convai/settings` so the workspace initiation configuration has this exact
+   locator shape:
+
+   ```json
+   {
+     "conversation_initiation_client_data_webhook": {
+       "url": "https://YOUR_RENDER_HOST/api/webhooks/elevenlabs/pre-call",
+       "request_headers": {
+         "X-VeraMove-Precall-Secret": {
+           "secret_id": "WORKSPACE_SECRET_ID"
+         }
+       }
+     }
+   }
+   ```
+
+4. Confirm only Intake has the per-agent webhook enablement switch on. Outbound must remain off.
+
+## HMAC post-call webhook, events, and retries
+
+1. Create one HMAC workspace webhook through `POST /v1/workspace/webhooks` for
+   `https://YOUR_RENDER_HOST/api/webhooks/elevenlabs`. Put the one-time returned
+   `webhook_secret` in Render as `ELEVENLABS_WEBHOOK_SECRET`; do not store it anywhere else.
+2. Update that webhook through `PATCH /v1/workspace/webhooks/WEBHOOK_ID` with all required fields:
+
+   ```json
+   {
+     "is_disabled": false,
+     "name": "VeraMove post-call",
+     "retry_enabled": true
+   }
+   ```
+
+   Retries currently apply to post-call transcription delivery. The VeraMove receiver is
+   idempotent, so a retry must never create a duplicate canonical outcome.
+3. Attach the webhook through `PATCH /v1/convai/settings` using this exact product configuration:
+
+   ```json
+   {
+     "webhooks": {
+       "post_call_webhook_id": "WEBHOOK_ID",
+       "events": ["transcript", "call_initiation_failure"],
+       "transcript_format": "json",
+       "send_audio": false
+     }
+   }
+   ```
+
+   `transcript` produces the `post_call_transcription` delivery. The initiation-failure event is
+   also required so unreachable, declined, or unanswered outbound attempts can terminate safely.
+4. Verify the workspace webhook list shows the attached HMAC webhook enabled and not auto-disabled.
+   The current list response does not expose `retry_enabled`, so confirm retries manually in the
+   webhook settings after every webhook recreation.
+
+## One imported Twilio number, two directions
+
+- [ ] Update the imported phone number with `agent_id` set to VeraMove Intake. This assignment
+      controls inbound calls and must remain on Intake.
+- [ ] Set Render `ELEVENLABS_PHONE_NUMBER_ID` to that imported phone-number ID. VeraMove reuses the
+      same ID when initiating all outbound calls while explicitly selecting the Outbound agent; do
+      not reassign the number to Outbound.
+- [ ] Call the imported number once and confirm it reaches Intake.
+- [ ] Run the separately authorized one-call smoke and confirm the same number is the outbound
+      caller ID while the Outbound agent speaks.
+
+## Recording and retention warning
+
+- [ ] Confirm `record_voice=true` and an explicit `retention_days` from 1 through 7 on both agents.
+- [ ] Keep workspace `send_audio=false`; it is independent of Audio Saving.
+- [ ] Treat Twilio recording as a separate data store. If an outbound request uses
+      `call_recording_enabled=true`, ElevenLabs agent retention does not prove that Twilio's copy is
+      deleted. Verify Twilio recording retention/deletion separately or disable Twilio recording
+      after deciding which evidence source the demo requires.
+
+## Final release checks
+
+- [ ] Run `.venv/bin/python scripts/generate_agent_assets.py --check`.
+- [ ] Run `.venv/bin/python scripts/live_voice_preflight.py --check-only` after every agent,
+      webhook, secret, phone assignment, or deployment change.
+- [ ] Confirm the preflight reports only booleans, counts, and one-way hashes.
+- [ ] Complete one supervised synthetic Intake call, then one separately authorized outbound smoke,
+      before enabling the exactly-three-call role-play run.
