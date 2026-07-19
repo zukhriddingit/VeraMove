@@ -6,7 +6,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from services.api.app.contracts import (
     CallStatus,
@@ -446,13 +446,50 @@ class VeraMoveService:
                 )
             )
 
+        uses_discovered_vendors = len(rankings) != len(quotes_by_vendor)
+        if uses_discovered_vendors:
+            rankings = self._rank_discovered_vendors(quotes_by_vendor)
+
+        winner = rankings[0]
+        priced_rankings = [item for item in rankings if item.total is not None]
+        cheapest = min(priced_rankings, key=lambda item: item.total, default=None)
+        summary = template.summary
+        hidden_fee_findings = template.hidden_fee_findings
+        assumptions = template.assumptions
+        uncertainty = template.uncertainty
+        if uses_discovered_vendors:
+            summary = (
+                f"{winner.vendor.name} is the strongest evidence-backed role-play option "
+                "after comparing verified totals and documented concessions."
+            )
+            hidden_fee_findings = []
+            assumptions = [
+                "Discovered companies are represented only by synthetic role-play outcomes."
+            ]
+            uncertainty = [
+                "Role-play prices and availability are not claims about real companies."
+            ]
+
         recommendation = template.model_copy(
             update={
+                "recommendation_id": uuid5(
+                    NAMESPACE_URL,
+                    f"recommendation:{record.job_spec.job_id}:{record.job_spec.version}",
+                ),
                 "job_id": record.job_spec.job_id,
                 "generated_at": self._clock(),
+                "summary": summary,
+                "winning_vendor_id": winner.vendor.vendor_id,
+                "cheapest_vendor_id": (
+                    cheapest.vendor.vendor_id if cheapest is not None else None
+                ),
+                "best_value_vendor_id": winner.vendor.vendor_id,
                 "rankings": rankings,
                 "evidence_ids": [item.evidence_id for item in evidence],
                 "transcript_evidence": evidence,
+                "assumptions": assumptions,
+                "uncertainty": uncertainty,
+                "hidden_fee_findings": hidden_fee_findings,
             },
             deep=True,
         )
@@ -467,6 +504,62 @@ class VeraMoveService:
                 deep=True,
             )
         return recommendation
+
+    @classmethod
+    def _rank_discovered_vendors(
+        cls,
+        quotes_by_vendor: dict[UUID, list[QuoteV1]],
+    ) -> list[RecommendationRanking]:
+        selected: list[tuple[QuoteV1, Decimal | None, list]] = []
+        for vendor_quotes in quotes_by_vendor.values():
+            quote = min(
+                vendor_quotes,
+                key=lambda item: (
+                    cls._quote_total(item) is None,
+                    cls._quote_total(item) or Decimal("Infinity"),
+                ),
+            )
+            evidence = [
+                item
+                for vendor_quote in vendor_quotes
+                for item in vendor_quote.transcript_evidence
+            ]
+            selected.append((quote, cls._quote_total(quote), evidence))
+        selected.sort(
+            key=lambda item: (
+                item[1] is None,
+                item[1] or Decimal("Infinity"),
+                item[0].vendor.slug,
+            )
+        )
+        return [
+            RecommendationRanking(
+                rank=rank,
+                vendor=quote.vendor,
+                quote_id=quote.quote_id,
+                total=total,
+                rationale=[
+                    (
+                        f"Comparable synthetic total: {total} USD."
+                        if total is not None
+                        else "Comparable synthetic total is unknown."
+                    ),
+                    f"Binding status: {quote.binding_type.value}.",
+                    f"{len(evidence)} transcript evidence item(s) support this ranking.",
+                    *(
+                        [f"{len(quote.concessions)} documented concession(s)."]
+                        if quote.concessions
+                        else []
+                    ),
+                ],
+                red_flags=[
+                    *quote.red_flags,
+                    *(finding.description for finding in quote.findings),
+                ],
+                evidence_ids=[item.evidence_id for item in evidence],
+            )
+            for rank, (quote, total, evidence) in enumerate(selected, start=1)
+        ]
 
     @staticmethod
     def _is_complete(result: VoiceCallResult) -> bool:

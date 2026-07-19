@@ -217,6 +217,24 @@ def test_batch_creates_three_role_play_quotes_for_discovered_vendors(
         for quote in result.quotes
     )
 
+    completed = service.negotiate(job_spec.job_id)
+    negotiated = completed.quotes[-1]
+    matching_initial = next(
+        quote
+        for quote in result.quotes
+        if quote.vendor.vendor_id == negotiated.vendor.vendor_id
+    )
+    report = service.get_report(job_spec.job_id)
+
+    assert completed.state is JobState.COMPLETED
+    assert negotiated.comparable_total < matching_initial.comparable_total
+    assert len(report.rankings) == 3
+    assert {ranking.vendor.vendor_id for ranking in report.rankings} == {
+        vendor.vendor_id for vendor in discovered_vendors
+    }
+    assert report.winning_vendor_id == negotiated.vendor.vendor_id
+    assert all(ranking.evidence_ids for ranking in report.rankings)
+
 
 def test_batch_rejects_short_distinct_discovery_before_state_or_call_side_effects(
     service,
