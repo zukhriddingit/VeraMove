@@ -1,12 +1,17 @@
 """FastAPI entry point for VeraMove."""
 
+from collections.abc import Callable
+from typing import Any
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
 from services.api.app.api.dependencies import build_repository, build_service
+from services.api.app.api.models import ElevenLabsPostCallWebhook, PostCallWebhookData
 from services.api.app.api.router import router
-from services.api.app.contracts import ErrorDetail, ErrorResponse
+from services.api.app.contracts import ElevenLabsWebhookEvent, ErrorDetail, ErrorResponse
 from services.api.app.core.config import Settings
 from services.api.app.core.errors import (
     DomainConflict,
@@ -59,7 +64,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(status_code=status_code, content=body.model_dump(mode="json"))
 
     application.include_router(router)
+    application.openapi = _openapi_factory(application)
     return application
+
+
+def _openapi_factory(application: FastAPI) -> Callable[[], dict[str, Any]]:
+    """Register raw-body webhook schemas without making FastAPI parse before HMAC verification."""
+
+    def build_openapi() -> dict[str, Any]:
+        if application.openapi_schema is not None:
+            return application.openapi_schema
+        schema = get_openapi(
+            title=application.title,
+            version=application.version,
+            summary=application.summary,
+            description=application.description,
+            routes=application.routes,
+        )
+        components = schema.setdefault("components", {}).setdefault("schemas", {})
+        for model in (
+            PostCallWebhookData,
+            ElevenLabsWebhookEvent,
+            ElevenLabsPostCallWebhook,
+        ):
+            model_schema = model.model_json_schema(
+                ref_template="#/components/schemas/{model}",
+            )
+            definitions = model_schema.pop("$defs", {})
+            components.update(definitions)
+            components[model.__name__] = model_schema
+        application.openapi_schema = schema
+        return schema
+
+    return build_openapi
 
 
 app = create_app()

@@ -4,7 +4,7 @@ import json
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path, Query, Request, status
+from fastapi import APIRouter, Depends, Path, Query, Request, status
 from pydantic import ValidationError
 
 from services.api.app.api.dependencies import (
@@ -20,7 +20,6 @@ from services.api.app.api.models import (
     IntakeSessionResponse,
     JobEventsResponse,
     RuntimeHealthResponse,
-    WebhookRequest,
 )
 from services.api.app.contracts import (
     HealthResponse,
@@ -195,10 +194,24 @@ def get_report(job_id: UUID, service: Service) -> RecommendationV1:
     "/api/webhooks/elevenlabs",
     response_model=WebhookAck,
     tags=["webhooks"],
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": {
+                        "anyOf": [
+                            {"$ref": "#/components/schemas/ElevenLabsWebhookEvent"},
+                            {"$ref": "#/components/schemas/ElevenLabsPostCallWebhook"},
+                        ]
+                    },
+                }
+            },
+        }
+    },
 )
 async def elevenlabs_webhook(
     request: Request,
-    _event: Annotated[WebhookRequest, Body()],
     service: Service,
 ) -> WebhookAck:
     return service.handle_elevenlabs_webhook(
