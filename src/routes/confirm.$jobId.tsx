@@ -26,8 +26,20 @@ function ConfirmPage() {
     onSuccess: (job) => qc.setQueryData(["job", jobId], job),
   });
 
-  if (isLoading) return <PageShell jobId={jobId}><LoadingCard label="Loading job…" /></PageShell>;
-  if (error) return <PageShell jobId={jobId}><ErrorBox message={(error as Error).message} /></PageShell>;
+  if (isLoading)
+    return (
+      <div className="space-y-6">
+        <Stepper current="confirm" jobId={jobId} />
+        <LoadingCard label="Loading job…" />
+      </div>
+    );
+  if (error)
+    return (
+      <div className="space-y-6">
+        <Stepper current="confirm" jobId={jobId} />
+        <ErrorBox message={(error as Error).message} />
+      </div>
+    );
   if (!data) return null;
 
   const job = data;
