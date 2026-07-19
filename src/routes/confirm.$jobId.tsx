@@ -136,7 +136,7 @@ function LocationCard({ title, loc }: { title: string; loc: LocationSpec }) {
       <Row label="Address" value={loc.address_summary} />
       <Row label="Dwelling" value={loc.dwelling_type} />
       <Row label="Floors" value={String(loc.floors)} />
-      <Row label="Stairs" value={loc.stairs ? "Yes" : "No"} />
+      <Row label="Stairs" value={String(loc.stairs)} />
       <Row label="Elevator" value={loc.elevator_access ? "Yes" : "No"} />
       <Row label="Parking distance" value={`${loc.parking_distance_feet} ft`} />
       {loc.access_notes && <Row label="Access notes" value={loc.access_notes} />}

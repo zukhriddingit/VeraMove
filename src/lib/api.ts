@@ -20,11 +20,12 @@ export interface LocationSpec {
   address_summary: string;
   dwelling_type: string;
   floors: number;
-  stairs: boolean;
+  stairs: number;
   elevator_access: boolean;
   parking_distance_feet: number;
   access_notes?: string;
 }
+
 
 export interface InventoryItem {
   item_id: string;
@@ -51,7 +52,8 @@ export interface SourceContext {
 
 export interface JobSpecV1 {
   job_id: string;
-  version: number;
+  version: "1.0";
+
   move_date: string;
   date_flexible: boolean;
   origin: LocationSpec;
@@ -68,25 +70,27 @@ export interface JobSpecV1 {
 
 export interface FeeLineItem {
   description: string;
-  amount: number;
+  amount: string;
   category: string;
   disclosed_upfront: boolean;
 }
 
+
 export interface QuoteV1 {
   quote_id: string;
   job_id: string;
-  job_spec_version: number;
+  job_spec_version: "1.0";
   vendor: { vendor_id: string; name: string };
   currency: string;
-  original_total: number;
-  negotiated_total: number;
-  deposit: number;
+  original_total: string;
+  negotiated_total: string;
+  deposit: string;
   binding_type: "binding" | "non_binding";
   availability: string;
   verification_status: "verified" | "partially_verified" | "unverified";
   concessions?: string[];
   fee_line_items: FeeLineItem[];
+
   red_flags?: string[];
   recording_url?: string;
   transcript_evidence?: string;
@@ -96,11 +100,12 @@ export interface RecommendationRanking {
   quote_id: string;
   rank: number;
   vendor: { vendor_id: string; name: string };
-  total: number;
+  total: string;
   rationale: string[];
   red_flags?: string[];
   evidence_ids: string[];
 }
+
 
 export interface TranscriptEvidence {
   evidence_id: string;
@@ -159,10 +164,12 @@ export const api = {
   discoverVendors: () => request<unknown>("/api/vendors/discover"),
 };
 
-export function formatCurrency(amount: number, currency = "USD"): string {
+export function formatCurrency(amount: string, currency = "USD"): string {
+  const n = Number.parseFloat(amount);
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
   } catch {
-    return `$${amount.toFixed(2)}`;
+    return `$${n.toFixed(2)}`;
   }
 }
+

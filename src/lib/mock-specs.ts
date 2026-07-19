@@ -13,14 +13,14 @@ export function buildVoiceIntakeSpec(): JobSpecV1 {
   moveDate.setDate(moveDate.getDate() + 21);
   return {
     job_id: jobId,
-    version: 1,
+    version: "1.0",
     move_date: moveDate.toISOString().slice(0, 10),
     date_flexible: true,
     origin: {
       address_summary: "[DEMO] 482 Linden Apt 3B, Oakland CA",
       dwelling_type: "apartment",
       floors: 1,
-      stairs: true,
+      stairs: 18,
       elevator_access: false,
       parking_distance_feet: 60,
       access_notes: "Narrow stairwell; permit parking on street.",
@@ -29,7 +29,7 @@ export function buildVoiceIntakeSpec(): JobSpecV1 {
       address_summary: "[DEMO] 1290 Harbor View Condos #504, Alameda CA",
       dwelling_type: "condo",
       floors: 1,
-      stairs: false,
+      stairs: 0,
       elevator_access: true,
       parking_distance_feet: 25,
       access_notes: "Freight elevator must be reserved 48h ahead.",
@@ -61,14 +61,14 @@ export function buildDocumentIntakeSpec(): JobSpecV1 {
   moveDate.setDate(moveDate.getDate() + 35);
   return {
     job_id: jobId,
-    version: 1,
+    version: "1.0",
     move_date: moveDate.toISOString().slice(0, 10),
     date_flexible: false,
     origin: {
       address_summary: "[DEMO] 77 Meadowbrook Ln, Palo Alto CA",
       dwelling_type: "single_family_house",
       floors: 2,
-      stairs: true,
+      stairs: 24,
       elevator_access: false,
       parking_distance_feet: 15,
       access_notes: "Driveway access; large hedge near front door.",
@@ -77,7 +77,7 @@ export function buildDocumentIntakeSpec(): JobSpecV1 {
       address_summary: "[DEMO] 4415 Fern Hollow Rd, San Jose CA",
       dwelling_type: "single_family_house",
       floors: 2,
-      stairs: true,
+      stairs: 16,
       elevator_access: false,
       parking_distance_feet: 30,
       access_notes: "HOA quiet hours after 8pm.",
