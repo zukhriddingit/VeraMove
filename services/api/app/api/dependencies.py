@@ -33,6 +33,7 @@ from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.orchestration.fixtures import DemoFixtures
 from services.api.app.orchestration.live_intelligence import LiveIntelligenceProvider
 from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
+from services.api.app.orchestration.role_play import FixtureRolePlayVendorRoster
 from services.api.app.orchestration.service import VeraMoveService, utc_now
 from services.api.app.repositories.base import (
     CallRepository,
@@ -181,6 +182,11 @@ def build_service(
         discovery=discovery,
         webhooks=webhooks,
         fixtures=fixtures,
+        vendor_roster=(
+            FixtureRolePlayVendorRoster(fixtures)
+            if settings.app_mode == "live"
+            else None
+        ),
         recommendation_narrator=recommendation_narrator,
         clock=service_clock,
     )

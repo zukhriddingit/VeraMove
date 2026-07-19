@@ -40,6 +40,7 @@ from services.api.app.orchestration.models import (
     VoiceCallResult,
 )
 from services.api.app.orchestration.providers import IntelligenceProvider, VoiceProvider
+from services.api.app.orchestration.role_play import DiscoveryVendorRoster, VendorRoster
 from services.api.app.orchestration.tools import VoiceTools
 from services.api.app.repositories.base import (
     CallRepository,
@@ -67,6 +68,7 @@ class VeraMoveService:
         discovery: VendorDiscoveryGateway,
         webhooks: ElevenLabsWebhookProcessor,
         fixtures: DemoFixtures,
+        vendor_roster: VendorRoster | None = None,
         recommendation_narrator: RecommendationNarrator | None = None,
         clock: Callable[[], datetime] = utc_now,
     ) -> None:
@@ -76,6 +78,7 @@ class VeraMoveService:
         self._voice = voice
         self._intelligence = intelligence
         self._discovery = discovery
+        self._vendor_roster = vendor_roster
         self._webhooks = webhooks
         self._fixtures = fixtures
         self._recommendation_narrator = recommendation_narrator
@@ -334,10 +337,8 @@ class VeraMoveService:
         return self._discovery.source
 
     def _initial_vendors(self, record: JobRecord) -> list[Vendor]:
-        candidates = self._discovery.discover(
-            record.job_spec.origin.address_summary,
-            record.job_spec.destination.address_summary,
-        )
+        roster = self._vendor_roster or DiscoveryVendorRoster(self._discovery)
+        candidates = roster.initial_vendors(record.job_spec)
         distinct: dict[UUID, Vendor] = {}
         for vendor in candidates:
             distinct.setdefault(vendor.vendor_id, vendor)
