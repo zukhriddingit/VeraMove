@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
+from datetime import datetime
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -20,6 +21,7 @@ from services.api.app.contracts import (
 from services.api.app.core.errors import (
     DomainConflict,
     DuplicateResource,
+    ProviderRequestError,
     ResourceNotFound,
 )
 from services.api.app.orchestration.intake_sessions import (
@@ -27,6 +29,18 @@ from services.api.app.orchestration.intake_sessions import (
     validate_intake_session_update,
 )
 from services.api.app.orchestration.models import CallAttempt, JobEvent
+from services.api.app.repositories.base import (
+    VoiceIntakeCompletion,
+    VoiceIntakeFinalizeRequest,
+    VoiceIntakeMaterialization,
+    VoiceWebhookClaimResult,
+    VoiceWebhookFailure,
+    VoiceWebhookFailureResult,
+    VoiceWebhookFinalizeRequest,
+    VoiceWebhookFinalizeResult,
+    VoiceWebhookLease,
+    VoiceWebhookMaterialization,
+)
 from services.api.app.repositories.supabase_client import (
     SupabaseDuplicate,
     SupabaseTableClient,
@@ -167,6 +181,8 @@ class SupabaseRepository:
         return [CallRecord.model_validate(deepcopy(row["payload"])) for row in rows]
 
     def reserve_webhook(self, idempotency_key: str) -> bool:
+        """Compatibility path for legacy normalized events; new voice flows use leases."""
+
         webhook_id = uuid5(NAMESPACE_URL, f"webhook:{idempotency_key}")
         try:
             self._client.insert(
@@ -184,6 +200,174 @@ class SupabaseRepository:
         except SupabaseDuplicate:
             return False
         return True
+
+    def claim_voice_webhook_receipt(
+        self,
+        lease: VoiceWebhookLease,
+    ) -> VoiceWebhookClaimResult:
+        candidate = VoiceWebhookLease.model_validate(lease.model_dump(mode="python"))
+        response = self._client.rpc(
+            "veramove_claim_voice_webhook_receipt",
+            {
+                "p_idempotency_key": candidate.idempotency_key,
+                "p_event_type": candidate.event_type,
+                "p_lease_token": str(candidate.lease_token),
+                "p_lease_expires_at": candidate.lease_expires_at.isoformat(),
+                "p_now": candidate.now.isoformat(),
+            },
+        )
+        try:
+            return VoiceWebhookClaimResult.model_validate(response)
+        except ValueError as exc:
+            raise ProviderRequestError("Supabase voice receipt response was invalid") from exc
+
+    def fail_voice_webhook_receipt(
+        self,
+        idempotency_key: str,
+        lease_token: UUID,
+        failure_code: str,
+        retryable: bool,
+        now: datetime,
+    ) -> VoiceWebhookFailureResult:
+        request = VoiceWebhookFailure(
+            idempotency_key=idempotency_key,
+            lease_token=lease_token,
+            failure_code=failure_code,
+            retryable=retryable,
+            now=now,
+        )
+        response = self._client.rpc(
+            "veramove_fail_voice_webhook_receipt",
+            {
+                "p_idempotency_key": request.idempotency_key,
+                "p_lease_token": str(request.lease_token),
+                "p_failure_code": request.failure_code,
+                "p_retryable": request.retryable,
+                "p_now": request.now.isoformat(),
+            },
+        )
+        try:
+            return VoiceWebhookFailureResult.model_validate(response)
+        except ValueError as exc:
+            raise ProviderRequestError("Supabase voice receipt response was invalid") from exc
+
+    def finalize_voice_webhook(
+        self,
+        idempotency_key: str,
+        lease_token: UUID,
+        materialization: VoiceWebhookMaterialization,
+        now: datetime,
+    ) -> VoiceWebhookFinalizeResult:
+        request = VoiceWebhookFinalizeRequest(
+            idempotency_key=idempotency_key,
+            lease_token=lease_token,
+            materialization=materialization,
+            now=now,
+        )
+        candidate = request.materialization
+        external_call_id = (
+            candidate.attempt.reference.provider_call_id
+            if candidate.attempt.reference is not None
+            else None
+        )
+        quote_row = self._quote_row(candidate.quote) if candidate.quote is not None else None
+        evidence_rows = (
+            [
+                self._evidence_row(candidate.quote, evidence)
+                for evidence in candidate.quote.transcript_evidence
+            ]
+            if candidate.quote is not None
+            else []
+        )
+        job_row = {
+            **self._job_row(candidate.job),
+            "expected_revision": candidate.expected_revision,
+        }
+        event = self._safe_event(candidate.event)
+        response = self._client.rpc(
+            "veramove_finalize_voice_webhook",
+            {
+                "p_idempotency_key": request.idempotency_key,
+                "p_lease_token": str(request.lease_token),
+                "p_attempt": self._attempt_row(candidate.attempt),
+                "p_call": self._call_row(candidate.call, external_call_id),
+                "p_quote": quote_row,
+                "p_evidence": evidence_rows,
+                "p_job": job_row,
+                "p_event": {
+                    "id": str(event.event_id),
+                    "job_id": str(event.job_id),
+                    "call_id": str(event.call_id) if event.call_id is not None else None,
+                    "event_type": event.event_type,
+                    "idempotency_key": request.idempotency_key,
+                    "data_classification": candidate.job.job_spec.data_classification.value,
+                    "payload": event.model_dump(mode="json"),
+                },
+                "p_now": request.now.isoformat(),
+            },
+        )
+        try:
+            return VoiceWebhookFinalizeResult.model_validate(response)
+        except ValueError as exc:
+            raise ProviderRequestError("Supabase voice finalization response was invalid") from exc
+
+    def finalize_voice_intake_webhook(
+        self,
+        idempotency_key: str,
+        lease_token: UUID,
+        materialization: VoiceIntakeMaterialization,
+        now: datetime,
+    ) -> VoiceWebhookFinalizeResult:
+        request = VoiceIntakeFinalizeRequest(
+            idempotency_key=idempotency_key,
+            lease_token=lease_token,
+            materialization=materialization,
+            now=now,
+        )
+        candidate = request.materialization
+        session_row = self._intake_session_row(candidate.session)
+        if isinstance(candidate, VoiceIntakeCompletion):
+            safe_event = self._safe_event(candidate.event)
+            job_row: dict[str, Any] | None = self._job_row(candidate.job)
+            event_row: dict[str, Any] = {
+                "id": str(safe_event.event_id),
+                "job_id": str(safe_event.job_id),
+                "call_id": None,
+                "event_type": safe_event.event_type,
+                "idempotency_key": request.idempotency_key,
+                "data_classification": candidate.job.job_spec.data_classification.value,
+                "payload": safe_event.model_dump(mode="json"),
+            }
+        else:
+            job_row = None
+            event_row = {"event_type": candidate.event_type}
+        response = self._client.rpc(
+            "veramove_finalize_voice_intake_webhook",
+            {
+                "p_idempotency_key": request.idempotency_key,
+                "p_lease_token": str(request.lease_token),
+                "p_kind": candidate.kind,
+                "p_session": session_row,
+                "p_job": job_row,
+                "p_event": event_row,
+                "p_now": request.now.isoformat(),
+            },
+        )
+        try:
+            return VoiceWebhookFinalizeResult.model_validate(response)
+        except ValueError as exc:
+            raise ProviderRequestError(
+                "Supabase voice intake finalization response was invalid"
+            ) from exc
+
+    def get_job_revision(self, job_id: UUID) -> int:
+        rows = self._client.select_many("jobs", {"id": f"eq.{job_id}"})
+        if not rows:
+            raise ResourceNotFound(f"Job {job_id} was not found")
+        revision = rows[0].get("aggregate_revision", 0)
+        if not isinstance(revision, int) or isinstance(revision, bool) or revision < 0:
+            raise ProviderRequestError("Supabase job revision was invalid")
+        return revision
 
     def append_event(self, event: JobEvent) -> JobEvent:
         self._require_job(event.job_id)
@@ -420,6 +604,19 @@ class SupabaseRepository:
                 attempt.reference.provider_call_id if attempt.reference is not None else None
             ),
             "idempotency_key": f"call:{attempt.call_id}",
+            "kind": attempt.kind.value,
+            "job_spec_version": attempt.job_spec_version,
+            "destination_slot": attempt.destination_slot,
+            "expected_agent_id": attempt.expected_agent_id,
+            "agent_config_version": attempt.agent_config_version,
+            "call_mode": attempt.call_mode,
+            "job_spec_sha256": attempt.job_spec_sha256,
+            "negotiation_context": (
+                attempt.negotiation_context.model_dump(mode="json")
+                if attempt.negotiation_context is not None
+                else {}
+            ),
+            "provider_version_id": attempt.provider_version_id,
             "status": attempt.status.value,
             "data_classification": attempt.vendor.data_classification.value,
             "payload": attempt.model_dump(mode="json"),

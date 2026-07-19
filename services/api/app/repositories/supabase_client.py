@@ -28,6 +28,7 @@ _ALLOWED_RPCS = frozenset(
     {
         "veramove_claim_voice_webhook_receipt",
         "veramove_fail_voice_webhook_receipt",
+        "veramove_finalize_voice_intake_webhook",
         "veramove_finalize_voice_webhook",
     }
 )

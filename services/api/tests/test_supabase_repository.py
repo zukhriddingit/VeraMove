@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +13,7 @@ from services.api.app.contracts import (
     CallRecord,
     CallStatus,
     DataClassification,
+    IntakeSource,
     JobRecord,
     JobState,
     ProvenanceReference,
@@ -34,6 +35,12 @@ from services.api.app.orchestration.models import (
     CallKind,
     JobEvent,
     VoiceCallReference,
+)
+from services.api.app.repositories.base import (
+    VoiceIntakeCompletion,
+    VoiceIntakeFailure,
+    VoiceWebhookLease,
+    VoiceWebhookMaterialization,
 )
 from services.api.app.repositories.supabase import SupabaseRepository
 from services.api.app.repositories.supabase_client import SupabaseDuplicate
@@ -61,6 +68,24 @@ class FakeSupabaseTableClient:
         }
         self.operations: list[tuple[str, str, dict[str, Any]]] = []
         self.failure: Exception | None = None
+        self.rpc_responses: dict[str, dict[str, Any]] = {
+            "veramove_claim_voice_webhook_receipt": {
+                "claimed": True,
+                "processed": False,
+            },
+            "veramove_fail_voice_webhook_receipt": {
+                "failed": True,
+                "retryable": True,
+            },
+            "veramove_finalize_voice_webhook": {
+                "processed": True,
+                "duplicate": False,
+            },
+            "veramove_finalize_voice_intake_webhook": {
+                "processed": True,
+                "duplicate": False,
+            },
+        }
 
     def select_many(
         self,
@@ -114,6 +139,11 @@ class FakeSupabaseTableClient:
         self.tables[table][key].update(deepcopy(values))
         self.operations.append(("update", table, deepcopy(values)))
         return deepcopy(self.tables[table][key])
+
+    def rpc(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._maybe_fail()
+        self.operations.append(("rpc", name, deepcopy(payload)))
+        return deepcopy(self.rpc_responses[name])
 
     def _has_duplicate_unique_value(self, table: str, row: dict[str, Any]) -> bool:
         unique_columns = {
@@ -413,6 +443,253 @@ def test_supabase_save_persists_recommendation(
 def test_supabase_webhook_reservation_is_atomic(repository):
     assert repository.reserve_webhook("synthetic-event") is True
     assert repository.reserve_webhook("synthetic-event") is False
+
+
+def test_supabase_voice_receipt_adapters_use_validated_rpc_payloads(
+    repository,
+    table_client,
+    confirmed_record,
+    fixtures,
+):
+    repository.create(confirmed_record)
+    attempt = make_attempt(confirmed_record, fixtures.load_vendors()[0])
+    repository.create_attempt(attempt)
+    result = MockVoiceProvider(fixtures).initiate_quote_call(
+        confirmed_record.job_spec,
+        attempt.vendor,
+        attempt.call_id,
+    )
+    assert result.outcome is not None
+    assert result.outcome.quote is not None
+    assert result.completed_at is not None
+    assert result.recording_url is not None
+    completed_attempt = attempt.model_copy(
+        update={
+            "status": CallStatus.COMPLETED,
+            "completed_at": result.completed_at,
+            "provider_version_id": "synthetic-version",
+        },
+        deep=True,
+    )
+    call = CallRecord(
+        call_id=attempt.call_id,
+        job_id=attempt.job_id,
+        vendor=attempt.vendor,
+        status=CallStatus.COMPLETED,
+        started_at=attempt.started_at,
+        completed_at=result.completed_at,
+        outcome=result.outcome,
+        recording_url=result.recording_url,
+    )
+    quote = result.outcome.quote
+    job = confirmed_record.model_copy(
+        update={
+            "state": JobState.CALLING,
+            "calls": [call],
+            "quotes": [quote],
+            "updated_at": result.completed_at,
+        },
+        deep=True,
+    )
+    event = JobEvent(
+        job_id=attempt.job_id,
+        call_id=attempt.call_id,
+        event_type="post_call_transcription",
+        occurred_at=result.completed_at,
+        metadata={"provider_status": "done"},
+    )
+    materialization = VoiceWebhookMaterialization(
+        attempt=completed_attempt,
+        call=call,
+        quote=quote,
+        job=job,
+        event=event,
+        expected_revision=repository.get_job_revision(attempt.job_id),
+    )
+    now = datetime(2026, 7, 19, 2, 0, tzinfo=UTC)
+    token = uuid4()
+    lease = VoiceWebhookLease(
+        idempotency_key="synthetic-supabase-voice-event",
+        event_type="post_call_transcription",
+        lease_token=token,
+        lease_expires_at=now + timedelta(minutes=5),
+        now=now,
+    )
+
+    assert repository.claim_voice_webhook_receipt(lease).claimed is True
+    assert repository.fail_voice_webhook_receipt(
+        lease.idempotency_key,
+        token,
+        "transient_storage",
+        True,
+        now,
+    ).retryable is True
+    assert repository.finalize_voice_webhook(
+        lease.idempotency_key,
+        token,
+        materialization,
+        now,
+    ).duplicate is False
+
+    rpc_operations = [item for item in table_client.operations if item[0] == "rpc"]
+    assert [item[1] for item in rpc_operations] == [
+        "veramove_claim_voice_webhook_receipt",
+        "veramove_fail_voice_webhook_receipt",
+        "veramove_finalize_voice_webhook",
+    ]
+    finalize_payload = rpc_operations[-1][2]
+    assert set(finalize_payload) == {
+        "p_idempotency_key",
+        "p_lease_token",
+        "p_attempt",
+        "p_call",
+        "p_quote",
+        "p_evidence",
+        "p_job",
+        "p_event",
+        "p_now",
+    }
+    assert finalize_payload["p_job"]["expected_revision"] == 0
+    assert finalize_payload["p_attempt"]["destination_slot"] == 0
+    assert finalize_payload["p_attempt"]["job_spec_sha256"] == attempt.job_spec_sha256
+    serialized = repr(finalize_payload).lower()
+    for forbidden in (
+        "raw_body",
+        "raw_payload",
+        "full transcript",
+        "+15550100001",
+        "api_key",
+        "synthetic-supabase-secret",
+        "audio_bytes",
+    ):
+        assert forbidden not in serialized
+
+
+def test_supabase_voice_intake_finalizer_uses_one_safe_typed_rpc(
+    repository,
+    table_client,
+    confirmed_record,
+):
+    now = datetime(2026, 7, 19, 2, 30, tzinfo=UTC)
+    session = IntakeSession(
+        intake_session_id=uuid4(),
+        job_id=confirmed_record.job_spec.job_id,
+        expected_agent_id="synthetic-intake-agent",
+        agent_config_version="2026-07-19.1",
+        status=IntakeSessionStatus.IN_PROGRESS,
+        conversation_id="synthetic-intake-conversation",
+        created_at=now - timedelta(minutes=1),
+        updated_at=now - timedelta(minutes=1),
+    )
+    repository.create_intake_session(session)
+    completed_session = session.model_copy(
+        update={
+            "status": IntakeSessionStatus.COMPLETED,
+            "updated_at": now,
+            "completed_at": now,
+        },
+        deep=True,
+    )
+    voice_spec = confirmed_record.job_spec.model_copy(
+        update={
+            "intake_source": IntakeSource.VOICE,
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+        },
+        deep=True,
+    )
+    job = JobRecord(
+        job_spec=voice_spec,
+        state=JobState.INTAKE_COMPLETE,
+        created_at=now,
+        updated_at=now,
+    )
+    event = JobEvent(
+        job_id=session.job_id,
+        event_type="post_call_transcription",
+        occurred_at=now,
+        metadata={"provider_status": "done"},
+    )
+    completion = VoiceIntakeCompletion(
+        session=completed_session,
+        job=job,
+        event=event,
+    )
+    token = uuid4()
+
+    assert repository.finalize_voice_intake_webhook(
+        "synthetic-intake-completion-event",
+        token,
+        completion,
+        now,
+    ).duplicate is False
+
+    completion_rpc = table_client.operations[-1]
+    assert completion_rpc[:2] == (
+        "rpc",
+        "veramove_finalize_voice_intake_webhook",
+    )
+    completion_payload = completion_rpc[2]
+    assert set(completion_payload) == {
+        "p_idempotency_key",
+        "p_lease_token",
+        "p_kind",
+        "p_session",
+        "p_job",
+        "p_event",
+        "p_now",
+    }
+    assert completion_payload["p_kind"] == "completed"
+    assert completion_payload["p_session"]["status"] == "completed"
+    assert completion_payload["p_job"]["state"] == "intake_complete"
+    assert completion_payload["p_event"]["idempotency_key"] == (
+        "synthetic-intake-completion-event"
+    )
+
+    failure_session = IntakeSession(
+        intake_session_id=uuid4(),
+        job_id=uuid4(),
+        expected_agent_id="synthetic-intake-agent",
+        agent_config_version="2026-07-19.1",
+        status=IntakeSessionStatus.IN_PROGRESS,
+        conversation_id="synthetic-failed-intake-conversation",
+        created_at=now - timedelta(minutes=1),
+        updated_at=now - timedelta(minutes=1),
+    )
+    repository.create_intake_session(failure_session)
+    failure = VoiceIntakeFailure(
+        session=failure_session.model_copy(
+            update={
+                "status": IntakeSessionStatus.FAILED,
+                "failure_code": "provider_no_answer",
+                "updated_at": now,
+            },
+            deep=True,
+        ),
+        event_type="call_initiation_failure",
+    )
+    repository.finalize_voice_intake_webhook(
+        "synthetic-intake-failure-event",
+        token,
+        failure,
+        now,
+    )
+    failure_payload = table_client.operations[-1][2]
+    assert failure_payload["p_kind"] == "failed"
+    assert failure_payload["p_job"] is None
+    assert failure_payload["p_event"] == {"event_type": "call_initiation_failure"}
+
+    serialized = repr(completion_payload) + repr(failure_payload)
+    for forbidden in (
+        "'transcript':",
+        "'analysis':",
+        "'phone_number':",
+        "+15550100001",
+        "'audio':",
+        "'api_key':",
+    ):
+        assert forbidden not in serialized.lower()
 
 
 def test_supabase_intake_session_is_idempotent_and_stores_only_safe_correlation(

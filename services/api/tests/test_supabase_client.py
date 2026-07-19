@@ -216,6 +216,38 @@ def test_postgrest_rpc_calls_only_allowlisted_transactional_functions():
     assert len(transport.requests) == 1
 
 
+def test_postgrest_allows_typed_intake_transaction_rpc():
+    transport = RecordingTransport(
+        SupabaseHttpResponse(200, {"processed": True, "duplicate": False})
+    )
+    payload = {
+        "p_idempotency_key": "synthetic-intake-event-key",
+        "p_lease_token": "11111111-1111-4111-8111-111111111111",
+        "p_kind": "failed",
+        "p_session": {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "reserved_job_id": "33333333-3333-4333-8333-333333333333",
+            "status": "failed",
+            "failure_code": "provider_no_answer",
+        },
+        "p_job": None,
+        "p_event": {"event_type": "call_initiation_failure"},
+        "p_now": "2026-07-19T12:00:00Z",
+    }
+
+    result = make_client(transport).rpc(
+        "veramove_finalize_voice_intake_webhook",
+        payload,
+    )
+
+    assert result == {"processed": True, "duplicate": False}
+    method, url, _headers, params, sent = transport.requests[0]
+    assert method == "POST"
+    assert url.endswith("/rest/v1/rpc/veramove_finalize_voice_intake_webhook")
+    assert params == {}
+    assert sent == payload
+
+
 @pytest.mark.parametrize(
     "unsafe_fragment",
     (
