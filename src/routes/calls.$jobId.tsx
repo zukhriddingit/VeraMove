@@ -53,6 +53,7 @@ function CallsPage() {
 
   return (
     <div className="space-y-8">
+      <Stepper current="calls" jobId={jobId} />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Step 3 · Vendor calls</div>
