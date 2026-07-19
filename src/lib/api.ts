@@ -164,10 +164,12 @@ export const api = {
   discoverVendors: () => request<unknown>("/api/vendors/discover"),
 };
 
-export function formatCurrency(amount: number, currency = "USD"): string {
+export function formatCurrency(amount: string, currency = "USD"): string {
+  const n = Number.parseFloat(amount);
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(n);
   } catch {
-    return `$${amount.toFixed(2)}`;
+    return `$${n.toFixed(2)}`;
   }
 }
+
