@@ -20,7 +20,7 @@ export function buildVoiceIntakeSpec(): JobSpecV1 {
       address_summary: "[DEMO] 482 Linden Apt 3B, Oakland CA",
       dwelling_type: "apartment",
       floors: 1,
-      stairs: true,
+      stairs: 18,
       elevator_access: false,
       parking_distance_feet: 60,
       access_notes: "Narrow stairwell; permit parking on street.",
