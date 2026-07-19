@@ -41,6 +41,7 @@ function IntakePage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
+      <Stepper current="intake" />
       <div>
         <h1 className="font-display text-4xl text-ink">Start a demo intake</h1>
         <p className="mt-2 text-muted-foreground">
