@@ -237,6 +237,15 @@ def get_job(job_id: UUID, service: Service) -> JobRecord:
     return service.get_job(job_id)
 
 
+@router.put("/api/jobs/{job_id}", response_model=JobRecord, tags=["jobs"])
+def replace_job_spec(
+    job_id: UUID,
+    job_spec: JobSpecV1,
+    service: Service,
+) -> JobRecord:
+    return service.replace_job_spec(job_id, job_spec)
+
+
 @router.get(
     "/api/jobs/{job_id}/events",
     response_model=JobEventsResponse,

@@ -108,6 +108,53 @@ def test_confirmation_is_idempotent_and_defensive(service, job_spec):
     assert stored.job_spec.origin.address_summary != "Mutated outside repository"
 
 
+def test_unconfirmed_job_spec_can_be_replaced_before_confirmation(service, job_spec):
+    created = service.create_job(job_spec)
+    replacement = created.job_spec.model_copy(update={"bedroom_count": 3}, deep=True)
+
+    updated = service.replace_job_spec(job_spec.job_id, replacement)
+
+    assert updated.state is JobState.INTAKE_COMPLETE
+    assert updated.job_spec.bedroom_count == 3
+    assert updated.created_at == created.created_at
+    assert updated.updated_at >= created.updated_at
+    assert service.get_job(job_spec.job_id) == updated
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("job_id", uuid4()),
+        ("intake_source", IntakeSource.DOCUMENT),
+        ("data_classification", DataClassification.ROLE_PLAY),
+    ],
+)
+def test_unconfirmed_job_spec_replacement_preserves_identity(
+    service,
+    job_spec,
+    field,
+    value,
+):
+    created = service.create_job(job_spec)
+    replacement = created.job_spec.model_copy(update={field: value}, deep=True)
+
+    with pytest.raises(DomainConflict, match="identity"):
+        service.replace_job_spec(job_spec.job_id, replacement)
+
+    assert service.get_job(job_spec.job_id) == created
+
+
+def test_confirmed_job_spec_cannot_be_replaced(service, job_spec):
+    service.create_job(job_spec)
+    confirmed = service.confirm_job(job_spec.job_id)
+    replacement = job_spec.model_copy(update={"bedroom_count": 3}, deep=True)
+
+    with pytest.raises(DomainConflict, match="unconfirmed intake"):
+        service.replace_job_spec(job_spec.job_id, replacement)
+
+    assert service.get_job(job_spec.job_id) == confirmed
+
+
 def test_document_intake_creates_fresh_document_job(service, job_spec):
     created = service.create_job_from_document("Synthetic inventory document.")
 

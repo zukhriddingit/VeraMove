@@ -168,6 +168,47 @@ def test_api_happy_path(client, job_spec_payload):
     assert all(item["recording_url"] for item in report.json()["transcript_evidence"])
 
 
+def test_unconfirmed_job_spec_update_round_trips_through_api(client, job_spec_payload):
+    created = client.post("/api/jobs", json=job_spec_payload)
+    assert created.status_code == 201
+    job_id = created.json()["job_spec"]["job_id"]
+    replacement = created.json()["job_spec"]
+    replacement["bedroom_count"] = 3
+
+    updated = client.put(f"/api/jobs/{job_id}", json=replacement)
+
+    assert updated.status_code == 200
+    assert updated.json()["state"] == "intake_complete"
+    assert updated.json()["job_spec"]["bedroom_count"] == 3
+    assert client.get(f"/api/jobs/{job_id}").json() == updated.json()
+
+
+def test_job_spec_update_rejects_mismatched_or_confirmed_identity(client, job_spec_payload):
+    created = client.post("/api/jobs", json=job_spec_payload)
+    job_id = created.json()["job_spec"]["job_id"]
+    mismatched = created.json()["job_spec"]
+    mismatched["job_id"] = str(uuid4())
+
+    mismatch_response = client.put(f"/api/jobs/{job_id}", json=mismatched)
+    assert mismatch_response.status_code == 409
+    assert mismatch_response.json()["error"]["code"] == "domain_conflict"
+
+    confirmed = client.post(f"/api/jobs/{job_id}/confirm")
+    assert confirmed.status_code == 200
+    replacement = confirmed.json()["job_spec"]
+    replacement.update(
+        {
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+            "bedroom_count": 4,
+        }
+    )
+    confirmed_response = client.put(f"/api/jobs/{job_id}", json=replacement)
+    assert confirmed_response.status_code == 409
+    assert confirmed_response.json()["error"]["code"] == "domain_conflict"
+
+
 def test_complete_document_to_report_flow_is_idempotent(client):
     intake = client.post(
         "/api/intake/document",

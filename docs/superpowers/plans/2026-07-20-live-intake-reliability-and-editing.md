@@ -120,7 +120,7 @@ git commit -m "fix: normalize live intake provider payloads"
 - Modify: `services/api/app/orchestration/service.py`
 - Modify: `services/api/app/api/router.py`
 - Test: `services/api/tests/test_api.py`
-- Test: `services/api/tests/test_orchestration.py`
+- Test: `services/api/tests/test_service.py`
 
 **Interfaces:**
 - Consumes: `replace_job_spec(job_id: UUID, replacement: JobSpecV1) -> JobRecord`.
@@ -140,7 +140,7 @@ assert response.json()["job_spec"]["bedroom_count"] == 3
 - [ ] **Step 2: Verify the route does not exist**
 
 ```bash
-PYTHONPATH=. .venv/bin/pytest services/api/tests/test_api.py services/api/tests/test_orchestration.py -q
+PYTHONPATH=. .venv/bin/pytest services/api/tests/test_api.py services/api/tests/test_service.py -q
 ```
 
 Expected: replacement tests fail with HTTP 405 or a missing service method.
@@ -168,7 +168,7 @@ def replace_job_spec(job_id: UUID, job_spec: JobSpecV1, service: Service) -> Job
 - [ ] **Step 5: Run focused service and API tests**
 
 ```bash
-PYTHONPATH=. .venv/bin/pytest services/api/tests/test_api.py services/api/tests/test_orchestration.py -q
+PYTHONPATH=. .venv/bin/pytest services/api/tests/test_api.py services/api/tests/test_service.py -q
 ```
 
 Expected: all focused tests pass.
@@ -186,7 +186,7 @@ Expected: `packages/contracts/openapi.json` and `apps/web/src/api/schema.d.ts` c
 
 ```bash
 git add services/api/app/orchestration/service.py services/api/app/api/router.py \
-  services/api/tests/test_api.py services/api/tests/test_orchestration.py \
+  services/api/tests/test_api.py services/api/tests/test_service.py \
   packages/contracts/openapi.json apps/web/src/api/schema.d.ts
 git commit -m "feat: persist unconfirmed job spec edits"
 ```
@@ -375,4 +375,3 @@ Start from `/intake`, complete one fictional interview, and verify:
 
 Report the deployed commits, commands run, test counts, live job/session IDs, webhook status, and any
 remaining demo risk without including credentials, phone numbers, or transcript content.
-

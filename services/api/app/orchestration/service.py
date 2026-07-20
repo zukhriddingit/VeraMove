@@ -157,6 +157,40 @@ class VeraMoveService:
             raise ResourceNotFound(f"Job {job_id} was not found")
         return record
 
+    def replace_job_spec(self, job_id: UUID, replacement: JobSpecV1) -> JobRecord:
+        """Replace one unconfirmed intake draft without changing its correlation identity."""
+
+        record = self.get_job(job_id)
+        if (
+            record.state is not JobState.INTAKE_COMPLETE
+            or record.job_spec.confirmed
+            or replacement.confirmed
+            or record.calls
+            or record.quotes
+            or self._calls.list_attempts(job_id)
+        ):
+            raise DomainConflict("Only an unconfirmed intake JobSpec can be replaced")
+        immutable_fields = (
+            "job_id",
+            "version",
+            "intake_source",
+            "source_context",
+            "data_classification",
+        )
+        if any(
+            getattr(record.job_spec, field) != getattr(replacement, field)
+            for field in immutable_fields
+        ):
+            raise DomainConflict("Unconfirmed JobSpec identity cannot be changed")
+        updated = record.model_copy(
+            update={
+                "job_spec": replacement,
+                "updated_at": self._clock(),
+            },
+            deep=True,
+        )
+        return self._jobs.save(updated)
+
     def confirm_job(self, job_id: UUID) -> JobRecord:
         record = self.get_job(job_id)
         if record.job_spec.confirmed:
