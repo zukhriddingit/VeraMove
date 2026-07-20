@@ -353,6 +353,40 @@ def test_quote_normalizes_unknown_provider_fee(job_spec, fixtures):
     assert quote.verified_data["addressed_fee_categories"] == ["other"]
 
 
+def test_quote_reconciles_null_provider_fee_defaults(job_spec, fixtures):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(
+        attempt,
+        collected_data={
+            "fee_items_json": json.dumps(
+                [
+                    {
+                        "fee_category": "travel",
+                        "description": None,
+                        "amount": "not stated",
+                        "amount_status": "known",
+                        "disclosed_upfront": None,
+                        "mandatory": None,
+                    }
+                ]
+            ),
+            "addressed_fee_categories_json": json.dumps(["travel"]),
+        },
+    )
+
+    result = materialize(event, attempt)
+
+    quote = result.outcome.quote
+    assert quote is not None
+    fee = quote.fee_line_items[0]
+    assert fee.category is FeeCategory.TRAVEL
+    assert fee.description == "Travel fee"
+    assert fee.amount is None
+    assert fee.amount_status is AmountStatus.UNKNOWN
+    assert fee.disclosed_upfront is True
+    assert fee.mandatory is False
+
+
 def test_quote_still_rejects_unsafe_provider_fee_amount(job_spec, fixtures):
     attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
     event = make_event(

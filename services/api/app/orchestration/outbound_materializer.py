@@ -38,6 +38,21 @@ from services.api.app.orchestration.providers import QuoteVerificationGateway
 MAX_JSON_ITEMS = 40
 MAX_CONCESSIONS = 20
 MAX_PROVIDER_CATEGORY_LENGTH = 100
+UNKNOWN_PROVIDER_VALUES = frozenset(
+    {
+        "",
+        "n/a",
+        "na",
+        "none",
+        "not applicable",
+        "not available",
+        "not provided",
+        "not specified",
+        "not stated",
+        "null",
+        "unknown",
+    }
+)
 PROVIDER_DECIMAL_PATTERN = re.compile(
     r"^\$?(?:\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?)$"
 )
@@ -263,8 +278,22 @@ def _fee_items(value: Any) -> list[FeeLineItem]:
         raise DomainConflict("fee_items_json must contain 1 to 40 items")
     try:
         return [FeeLineItem.model_validate(_normalize_fee_item(item)) for item in raw]
-    except (DomainConflict, ValidationError) as exc:
-        raise DomainConflict("fee_items_json contains an invalid fee") from exc
+    except DomainConflict as exc:
+        raise DomainConflict(f"fee_items_json contains an invalid fee: {exc}") from exc
+    except ValidationError as exc:
+        issues = sorted(
+            {
+                f"{'.'.join(str(part) for part in error['loc'])}:{error['type']}"
+                for error in exc.errors(
+                    include_url=False,
+                    include_context=False,
+                    include_input=False,
+                )
+            }
+        )
+        raise DomainConflict(
+            "fee_items_json contains an invalid fee: " + ", ".join(issues[:8])
+        ) from exc
 
 
 def _normalize_fee_item(value: Any) -> dict[str, Any]:
@@ -283,26 +312,40 @@ def _normalize_fee_item(value: Any) -> dict[str, Any]:
         normalized.get("category"),
         allow_missing=True,
     ).value
+    if not isinstance(normalized.get("description"), str) or not normalized[
+        "description"
+    ].strip():
+        normalized["description"] = (
+            normalized["category"].replace("_", " ").capitalize() + " fee"
+        )
     for field_name in ("amount", "unit_rate", "units", "minimum_units"):
         if field_name in normalized:
             normalized[field_name] = _provider_decimal(
                 normalized[field_name],
                 field_name,
             )
-    amount_status = normalized.get("amount_status")
-    if amount_status is None:
-        has_amount = normalized.get("amount") is not None
-        has_calculable_rate = normalized.get("unit_rate") is not None and (
-            normalized.get("units") is not None
-            or normalized.get("minimum_units") is not None
-        )
-        normalized["amount_status"] = (
-            AmountStatus.KNOWN.value
-            if has_amount or has_calculable_rate
-            else AmountStatus.UNKNOWN.value
-        )
+    for field_name in ("disclosed_upfront", "mandatory"):
+        if normalized.get(field_name) is None:
+            normalized.pop(field_name, None)
+    has_amount = normalized.get("amount") is not None
+    has_calculable_rate = normalized.get("unit_rate") is not None and (
+        normalized.get("units") is not None
+        or normalized.get("minimum_units") is not None
+    )
+    supplied_status = normalized.get("amount_status")
+    parsed_status = (
+        _amount_status(supplied_status)
+        if supplied_status is not None
+        else AmountStatus.UNKNOWN
+    )
+    if has_amount or has_calculable_rate:
+        normalized["amount_status"] = AmountStatus.KNOWN.value
+    elif parsed_status is AmountStatus.NOT_APPLICABLE:
+        normalized["amount_status"] = AmountStatus.NOT_APPLICABLE.value
     else:
-        normalized["amount_status"] = _amount_status(amount_status).value
+        normalized["amount_status"] = (
+            AmountStatus.UNKNOWN.value
+        )
     return normalized
 
 
@@ -394,6 +437,10 @@ def _amount_status(value: Any) -> AmountStatus:
         "n/a": AmountStatus.NOT_APPLICABLE,
         "na": AmountStatus.NOT_APPLICABLE,
         "not_applicable": AmountStatus.NOT_APPLICABLE,
+        "not_available": AmountStatus.UNKNOWN,
+        "not_provided": AmountStatus.UNKNOWN,
+        "not_specified": AmountStatus.UNKNOWN,
+        "not_stated": AmountStatus.UNKNOWN,
     }
     if normalized in aliases:
         return aliases[normalized]
@@ -406,6 +453,8 @@ def _amount_status(value: Any) -> AmountStatus:
 def _provider_decimal(value: Any, field_name: str) -> Decimal | None:
     if isinstance(value, str):
         stripped = value.strip()
+        if stripped.lower() in UNKNOWN_PROVIDER_VALUES:
+            return None
         if not PROVIDER_DECIMAL_PATTERN.fullmatch(stripped):
             raise DomainConflict(f"{field_name} is invalid")
         if stripped.startswith("$"):
