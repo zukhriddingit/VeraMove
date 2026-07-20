@@ -33,6 +33,7 @@ from services.api.app.orchestration.recording_capability import (
     RecordingCapabilitySigner,
 )
 
+REPAIR_MATERIALIZATION_VERSION = "2026-07-20.2"
 MIN_OPERATOR_SECRET_CHARACTERS = 32
 
 
@@ -259,7 +260,10 @@ class LiveVoiceOperatorService:
 
 
 def _repair_idempotency_key(event_type: str, conversation_id: str) -> str:
-    """Keep operator repair replay-stable even when provider details omit event time."""
+    """Keep each materializer generation replay-stable without pinning old failures."""
 
-    material = f"veramove-repair:{event_type}:{conversation_id}".encode()
+    material = (
+        f"veramove-repair:{REPAIR_MATERIALIZATION_VERSION}:"
+        f"{event_type}:{conversation_id}"
+    ).encode()
     return hashlib.sha256(material).hexdigest()
