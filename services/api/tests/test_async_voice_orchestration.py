@@ -15,6 +15,7 @@ from services.api.app.contracts import (
     CallOutcomeType,
     CallStatus,
     DataClassification,
+    DwellingType,
     FeeCategory,
     IntakeSource,
     JobState,
@@ -33,6 +34,7 @@ from services.api.app.orchestration.models import VoiceCallReference, VoiceCallR
 from services.api.app.orchestration.recording_capability import RecordingCapabilitySigner
 from services.api.app.orchestration.role_play import FixtureRolePlayVendorRoster
 from services.api.app.orchestration.service import VeraMoveService
+from services.api.app.orchestration.voice_materializer import _optional_dwelling
 from services.api.app.repositories.memory import InMemoryRepository
 
 NOW = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
@@ -386,6 +388,53 @@ def test_signed_intake_completion_creates_one_unconfirmed_voice_job(fixtures):
     persisted = repr(repository._jobs) + repr(repository._intake_sessions)
     assert "Synthetic caller transcript" not in persisted
     assert "+15550101001" not in persisted
+
+
+def test_signed_intake_normalizes_real_provider_inventory_and_dwelling(fixtures):
+    service, repository = _service(fixtures)
+    sessions = IntakeSessionService(
+        repository,
+        expected_agent_id=INTAKE_AGENT_ID,
+        agent_config_version=CONFIG_VERSION,
+        clock=lambda: NOW,
+    )
+    session_view = sessions.create_web_session()
+    conversation_id = "conv_synthetic_real_provider_shape"
+    sessions.attach_conversation(
+        session_view.intake_session_id,
+        conversation_id,
+        agent_id=INTAKE_AGENT_ID,
+    )
+    collected_data = _intake_collected_data()
+    collected_data["origin_dwelling_type"] = "two-bedroom apartment"
+    collected_data["inventory_json"] = json.dumps(
+        [{"item": "Synthetic sofa", "quantity": 1}]
+    )
+    body = _provider_body(
+        agent_id=INTAKE_AGENT_ID,
+        conversation_id=conversation_id,
+        dynamic_variables={
+            "job_id": str(session_view.job_id),
+            "intake_session_id": str(session_view.intake_session_id),
+            "agent_config_version": CONFIG_VERSION,
+        },
+        collected_data=collected_data,
+    )
+
+    acknowledgement = service.handle_elevenlabs_webhook(body, _sign(body))
+
+    assert acknowledgement.accepted is True
+    spec = service.get_job(session_view.job_id).job_spec
+    assert spec.origin.dwelling_type is DwellingType.APARTMENT
+    assert len(spec.inventory) == 1
+    assert spec.inventory[0].name == "Synthetic sofa"
+    assert spec.inventory[0].room == "Unspecified"
+
+
+@pytest.mark.parametrize("value", ["apartment house", "castle"])
+def test_intake_dwelling_normalization_rejects_ambiguous_or_unknown_values(value):
+    with pytest.raises(DomainConflict, match="dwelling type"):
+        _optional_dwelling(value)
 
 
 def test_intake_finalizer_failure_leaves_no_partial_job_and_can_retry(

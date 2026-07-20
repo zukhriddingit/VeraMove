@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -747,6 +748,13 @@ def _inventory(value: Any, session_id: UUID) -> list[InventoryItem]:
             if not isinstance(item, dict):
                 raise DomainConflict("inventory_json contains an invalid item")
             payload = dict(item)
+            legacy_name = payload.pop("item", None)
+            if "name" not in payload and isinstance(legacy_name, str):
+                payload["name"] = legacy_name
+            elif legacy_name is not None and legacy_name != payload.get("name"):
+                raise DomainConflict("inventory_json contains an invalid item")
+            if payload.get("room") is None:
+                payload["room"] = "Unspecified"
             payload["item_id"] = uuid5(
                 NAMESPACE_URL,
                 f"voice-intake:{session_id}:inventory:{index}",
@@ -821,6 +829,25 @@ def _optional_integer(value: Any, field_name: str) -> int | None:
 def _optional_dwelling(value: Any) -> DwellingType | None:
     if value is None:
         return None
+    if not isinstance(value, str) or not value.strip():
+        raise DomainConflict("Voice intake dwelling type is invalid")
+    normalized = " ".join(value.strip().lower().replace("-", " ").replace("_", " ").split())
+    if normalized == "other":
+        return DwellingType.OTHER
+    patterns = {
+        DwellingType.APARTMENT: (r"\bapartment\b", r"\bapt\b"),
+        DwellingType.CONDO: (r"\bcondo\b", r"\bcondominium\b"),
+        DwellingType.TOWNHOUSE: (r"\btownhouse\b", r"\btownhome\b"),
+        DwellingType.HOUSE: (r"\bhouse\b", r"\bsingle family\b"),
+        DwellingType.STORAGE_UNIT: (r"\bstorage unit\b",),
+    }
+    matches = {
+        dwelling
+        for dwelling, dwelling_patterns in patterns.items()
+        if any(re.search(pattern, normalized) for pattern in dwelling_patterns)
+    }
+    if len(matches) == 1:
+        return matches.pop()
     try:
         return DwellingType(value)
     except (TypeError, ValueError):

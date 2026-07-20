@@ -141,6 +141,59 @@ def test_signed_post_call_normalizes_map_and_list_collection_shapes(
     assert "tool_calls" not in serialized
 
 
+def test_signed_post_call_deduplicates_dual_collection_representations() -> None:
+    payload = post_call_payload()
+    data = payload["data"]
+    assert isinstance(data, dict)
+    analysis = data["analysis"]
+    assert isinstance(analysis, dict)
+    results = analysis["data_collection_results"]
+    assert isinstance(results, dict)
+    for index in range(20):
+        identifier = f"unknown_provider_field_{index}"
+        results[identifier] = {
+            "data_collection_id": identifier,
+            "value": f"discard-{index}",
+        }
+    analysis["data_collection_results_list"] = list(results.values())
+    body = json.dumps(payload).encode()
+
+    event = processor().process_provider_event(
+        body,
+        sign(body, WEBHOOK_SECRET, WEBHOOK_UNIX_TIME),
+    )
+
+    assert isinstance(event, VerifiedPostCallTranscription)
+    assert event.collected_data == {
+        "headline_total": 2300.5,
+        "outcome_type": "itemized_quote",
+        "recording_consent": True,
+    }
+
+
+def test_signed_post_call_rejects_more_than_40_unique_collection_identifiers() -> None:
+    payload = post_call_payload()
+    data = payload["data"]
+    assert isinstance(data, dict)
+    analysis = data["analysis"]
+    assert isinstance(analysis, dict)
+    results = analysis["data_collection_results"]
+    assert isinstance(results, dict)
+    for index in range(37):
+        identifier = f"unknown_provider_field_{index}"
+        results[identifier] = {
+            "data_collection_id": identifier,
+            "value": f"discard-{index}",
+        }
+    body = json.dumps(payload).encode()
+
+    with pytest.raises(WebhookPayloadError, match="too many items"):
+        processor().process_provider_event(
+            body,
+            sign(body, WEBHOOK_SECRET, WEBHOOK_UNIX_TIME),
+        )
+
+
 def test_duplicate_collection_identifier_with_conflicting_value_is_rejected() -> None:
     payload = post_call_payload(list_shape=True)
     data = payload["data"]

@@ -154,7 +154,7 @@ def _collection_entries(analysis: dict[str, Any]) -> list[tuple[str, Any]]:
             if not isinstance(identifier, str):
                 raise WebhookPayloadError("ElevenLabs Data Collection identifier is invalid")
             entries.append((identifier, raw_entry.get("value")))
-    if len(entries) > MAX_COLLECTION_ITEMS:
+    if len({identifier for identifier, _value in entries}) > MAX_COLLECTION_ITEMS:
         raise WebhookPayloadError("ElevenLabs Data Collection has too many items")
     return entries
 
