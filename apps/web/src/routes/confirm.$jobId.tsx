@@ -106,7 +106,36 @@ function ConfirmPage() {
   };
 
   const restoreDraft = (snapshot: JobView) => setDraft(snapshot);
-  const commitField = (fieldKey: string) => patchDraft({}, fieldKey);
+  const reviewPatch = (currentDraft: JobView): Partial<JobView> => ({
+    move: currentDraft.move,
+    access: currentDraft.access,
+    inventory: currentDraft.inventory,
+    services: currentDraft.services,
+    extras: currentDraft.extras,
+    notes: currentDraft.notes,
+    homeType: currentDraft.homeType,
+    bedrooms: currentDraft.bedrooms,
+    missingFields: currentDraft.missingFields,
+    editedFields: currentDraft.editedFields,
+  });
+
+  const commitField = async (fieldKey: string) => {
+    const nextMissing = new Set(draft.missingFields ?? []);
+    if (REQUIRED_REVIEW_FIELDS.has(fieldKey)) {
+      if (reviewFieldIsComplete(draft, fieldKey)) nextMissing.delete(fieldKey);
+      else nextMissing.add(fieldKey);
+    }
+    const reviewedDraft = {
+      ...draft,
+      missingFields: Array.from(nextMissing),
+    };
+    const saved = await update.mutateAsync({
+      jobId: reviewedDraft.id,
+      patch: reviewPatch(reviewedDraft),
+    });
+    setDraft(saved);
+    setAck(false);
+  };
 
   const hasMissing = effectiveMissing.length > 0;
   const canConfirm = !hasMissing && ack && !isLocked && !isFailed;
@@ -120,18 +149,7 @@ function ConfirmPage() {
       // adapter stores the same review shape locally.
       await update.mutateAsync({
         jobId: draft.id,
-        patch: {
-          move: draft.move,
-          access: draft.access,
-          inventory: draft.inventory,
-          services: draft.services,
-          extras: draft.extras,
-          notes: draft.notes,
-          homeType: draft.homeType,
-          bedrooms: draft.bedrooms,
-          missingFields: effectiveMissing,
-          editedFields: draft.editedFields,
-        },
+        patch: reviewPatch({ ...draft, missingFields: effectiveMissing }),
       });
       await confirm.mutateAsync(draft.id);
       navigate({ to: "/calls/$jobId", params: { jobId: draft.id } });

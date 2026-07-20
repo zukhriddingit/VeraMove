@@ -107,9 +107,11 @@ function FieldRow({
   locked?: boolean;
   onEditStart?: () => void;
   onCancel?: () => void;
-  onSave?: () => void;
+  onSave?: () => void | Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const meta = statusMeta(status);
   const canEdit = !locked && !!editor;
 
@@ -151,8 +153,10 @@ function FieldRow({
             <Button
               size="sm"
               variant="ghost"
+              disabled={saving}
               onClick={() => {
                 onCancel?.();
+                setSaveError(null);
                 setEditing(false);
               }}
             >
@@ -160,14 +164,32 @@ function FieldRow({
             </Button>
             <Button
               size="sm"
-              onClick={() => {
-                onSave?.();
-                setEditing(false);
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                setSaveError(null);
+                try {
+                  await onSave?.();
+                  setEditing(false);
+                } catch (error) {
+                  setSaveError(
+                    error instanceof Error
+                      ? error.message
+                      : "Could not save this change. Please try again.",
+                  );
+                } finally {
+                  setSaving(false);
+                }
               }}
             >
-              Save changes
+              {saving ? "Saving…" : "Save changes"}
             </Button>
           </div>
+          {saveError && (
+            <p role="alert" className="mt-2 text-right text-xs text-risk">
+              {saveError}
+            </p>
+          )}
         </div>
       ) : (
         <div className="text-sm text-foreground">
@@ -222,7 +244,7 @@ export interface JobSpecSummaryProps {
   locked?: boolean;
   onChange?: (patch: Partial<JobView>, fieldKey?: string) => void;
   onRestore?: (snapshot: JobView) => void;
-  onCommit?: (fieldKey: string) => void;
+  onCommit?: (fieldKey: string) => void | Promise<void>;
 }
 
 export function JobSpecSummary({
@@ -252,8 +274,8 @@ export function JobSpecSummary({
         if (editSnapshot) onRestore?.(editSnapshot);
         setEditSnapshot(null);
       },
-      onSave: () => {
-        onCommit?.(fieldKey);
+      onSave: async () => {
+        await onCommit?.(fieldKey);
         setEditSnapshot(null);
       },
     };
