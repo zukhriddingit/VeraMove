@@ -467,12 +467,12 @@ export function JobSpecSummary({
       {/* Origin access */}
       <Section icon={<Building2 className="h-4 w-4" />} title="Origin access">
         <FieldRow
-          label="Floor & elevator"
+          label="Floor, stairs & elevator"
           status={fieldStatus("access.origin")}
           locked={locked}
           {...lifecycle("access.origin")}
           editor={
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               <div>
                 <Label htmlFor="of">Origin floor</Label>
                 <Input
@@ -482,6 +482,17 @@ export function JobSpecSummary({
                   value={job.access.originFloor}
                   onChange={(e) =>
                     patchAccess({ originFloor: Number(e.target.value) }, "access.origin")}
+                />
+              </div>
+              <div>
+                <Label htmlFor="os">Origin stairs</Label>
+                <Input
+                  id="os"
+                  type="number"
+                  min={0}
+                  value={job.access.originStairs}
+                  onChange={(e) =>
+                    patchAccess({ originStairs: Number(e.target.value) }, "access.origin")}
                 />
               </div>
               <div className="flex items-end gap-2">
@@ -496,7 +507,7 @@ export function JobSpecSummary({
             </div>
           }
         >
-          Floor {job.access.originFloor} ·{" "}
+          Floor {job.access.originFloor} · {job.access.originStairs} stairs ·{" "}
           {job.access.originElevator ? "Elevator" : "Stairs only"}
           {!job.access.originElevator && job.access.originFloor > 1 && (
             <span className="text-muted-foreground"> · stair carry required</span>
@@ -533,12 +544,12 @@ export function JobSpecSummary({
       {/* Destination access */}
       <Section icon={<Building2 className="h-4 w-4" />} title="Destination access">
         <FieldRow
-          label="Floor & elevator"
+          label="Floor, stairs & elevator"
           status={fieldStatus("access.destination")}
           locked={locked}
           {...lifecycle("access.destination")}
           editor={
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               <div>
                 <Label htmlFor="df">Destination floor</Label>
                 <Input
@@ -548,6 +559,20 @@ export function JobSpecSummary({
                   value={job.access.destinationFloor}
                   onChange={(e) =>
                     patchAccess({ destinationFloor: Number(e.target.value) }, "access.destination")}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ds">Destination stairs</Label>
+                <Input
+                  id="ds"
+                  type="number"
+                  min={0}
+                  value={job.access.destinationStairs}
+                  onChange={(e) =>
+                    patchAccess(
+                      { destinationStairs: Number(e.target.value) },
+                      "access.destination",
+                    )}
                 />
               </div>
               <div className="flex items-end gap-2">
@@ -562,8 +587,37 @@ export function JobSpecSummary({
             </div>
           }
         >
-          Floor {job.access.destinationFloor} ·{" "}
+          Floor {job.access.destinationFloor} · {job.access.destinationStairs} stairs ·{" "}
           {job.access.destinationElevator ? "Elevator" : "Stairs only"}
+        </FieldRow>
+
+        <FieldRow
+          label="Parking / long carry"
+          status={fieldStatus("access.destinationLongCarryFt")}
+          locked={locked}
+          {...lifecycle("access.destinationLongCarryFt")}
+          editor={
+            <div>
+              <Label htmlFor="dlc">Destination long-carry distance (ft)</Label>
+              <Input
+                id="dlc"
+                type="number"
+                min={0}
+                value={job.access.destinationLongCarryFt}
+                onChange={(e) =>
+                  patchAccess(
+                    { destinationLongCarryFt: Number(e.target.value) },
+                    "access.destinationLongCarryFt",
+                  )}
+              />
+            </div>
+          }
+        >
+          {missing.has("access.destinationLongCarryFt")
+            ? null
+            : job.access.destinationLongCarryFt > 0
+              ? `~${job.access.destinationLongCarryFt} ft from parking to door`
+              : "None (truck at door)"}
         </FieldRow>
       </Section>
 

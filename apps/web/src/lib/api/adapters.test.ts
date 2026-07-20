@@ -99,7 +99,11 @@ describe("OpenAPI response adapters", () => {
       updated_at: "2026-07-19T01:00:00Z",
     } as JobRecord;
 
-    expect(toJobView(record).missingFields).toEqual(["access.origin"]);
+    expect(toJobView(record).missingFields).toEqual([
+      "access.origin",
+      "access.destination",
+      "access.destinationLongCarryFt",
+    ]);
   });
 
   it("merges editable review fields without discarding hidden canonical facts", () => {
@@ -173,10 +177,13 @@ describe("OpenAPI response adapters", () => {
       access: {
         ...view.access,
         originFloor: 3,
+        originStairs: 30,
         originElevator: true,
         destinationFloor: 5,
+        destinationStairs: 50,
         destinationElevator: false,
         longCarryFt: 120,
+        destinationLongCarryFt: 45,
       },
       inventory: [{ item: "Synthetic sofa", qty: 2, notes: "Blanket wrap" }],
       services: { packing: true, insuranceTier: "full-value" as const },
@@ -201,7 +208,7 @@ describe("OpenAPI response adapters", () => {
         address_summary: "New Origin, NC",
         dwelling_type: "condo",
         floors: 3,
-        stairs: 18,
+        stairs: 30,
         elevator_access: true,
         parking_distance_feet: 120,
         access_notes: "Call on synthetic arrival",
@@ -210,9 +217,9 @@ describe("OpenAPI response adapters", () => {
         address_summary: "New Destination, SC",
         dwelling_type: "condo",
         floors: 5,
-        stairs: 44,
+        stairs: 50,
         elevator_access: false,
-        parking_distance_feet: 25,
+        parking_distance_feet: 45,
         access_notes: "Synthetic loading dock",
       },
       inventory: [

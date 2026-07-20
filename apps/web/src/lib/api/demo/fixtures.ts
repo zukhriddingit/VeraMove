@@ -23,10 +23,13 @@ export const demoJobSpec: JobView = {
   },
   access: {
     originFloor: 2,
+    originStairs: 20,
     originElevator: false,
     destinationFloor: 4,
+    destinationStairs: 0,
     destinationElevator: true,
     longCarryFt: 80,
+    destinationLongCarryFt: 25,
   },
   inventory: [
     { item: "Sofa", qty: 1 },

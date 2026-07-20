@@ -375,11 +375,16 @@ function reviewFieldIsComplete(job: JobView, key: string): boolean {
     case "homeType":
       return Boolean(job.homeType.trim()) && job.bedrooms !== undefined && job.bedrooms >= 0;
     case "access.origin":
-      return Number.isFinite(job.access.originFloor) && job.access.originFloor >= 0;
+      return Number.isFinite(job.access.originFloor) && job.access.originFloor >= 0 &&
+        Number.isFinite(job.access.originStairs) && job.access.originStairs >= 0;
     case "access.destination":
-      return Number.isFinite(job.access.destinationFloor) && job.access.destinationFloor >= 0;
+      return Number.isFinite(job.access.destinationFloor) && job.access.destinationFloor >= 0 &&
+        Number.isFinite(job.access.destinationStairs) && job.access.destinationStairs >= 0;
     case "access.longCarryFt":
       return Number.isFinite(job.access.longCarryFt) && job.access.longCarryFt >= 0;
+    case "access.destinationLongCarryFt":
+      return Number.isFinite(job.access.destinationLongCarryFt) &&
+        job.access.destinationLongCarryFt >= 0;
     case "inventory":
       return job.inventory.length > 0 && job.inventory.every((item) =>
         Boolean(item.item.trim()) && Number.isFinite(item.qty) && item.qty >= 1);
@@ -404,6 +409,7 @@ const REQUIRED_REVIEW_FIELDS = new Set([
   "access.origin",
   "access.destination",
   "access.longCarryFt",
+  "access.destinationLongCarryFt",
   "inventory",
   "services.packing",
   "extras.disassembly",
@@ -418,6 +424,9 @@ function labelFor(key: string): string {
     "move.date": "Move date",
     "move.flexibilityDays": "Date flexibility",
     "access.longCarryFt": "Parking / long-carry distance",
+    "access.destinationLongCarryFt": "Destination parking / long-carry distance",
+    "access.origin": "Origin floor, stairs & elevator",
+    "access.destination": "Destination floor, stairs & elevator",
     "access.originFloor": "Origin floor",
     "access.destinationFloor": "Destination floor",
     "services.insuranceTier": "Insurance tier",

@@ -66,6 +66,8 @@ function missingRequiredFields(spec: JobSpecV1): string[] {
   if (
     spec.origin.floors === null ||
     spec.origin.floors === undefined ||
+    spec.origin.stairs === null ||
+    spec.origin.stairs === undefined ||
     spec.origin.elevator_access === null ||
     spec.origin.elevator_access === undefined
   ) {
@@ -74,6 +76,8 @@ function missingRequiredFields(spec: JobSpecV1): string[] {
   if (
     spec.destination.floors === null ||
     spec.destination.floors === undefined ||
+    spec.destination.stairs === null ||
+    spec.destination.stairs === undefined ||
     spec.destination.elevator_access === null ||
     spec.destination.elevator_access === undefined
   ) {
@@ -81,6 +85,12 @@ function missingRequiredFields(spec: JobSpecV1): string[] {
   }
   if (spec.origin.parking_distance_feet === null || spec.origin.parking_distance_feet === undefined) {
     missing.push("access.longCarryFt");
+  }
+  if (
+    spec.destination.parking_distance_feet === null ||
+    spec.destination.parking_distance_feet === undefined
+  ) {
+    missing.push("access.destinationLongCarryFt");
   }
   if (spec.services?.packing === null || spec.services?.packing === undefined) {
     missing.push("services.packing");
@@ -118,10 +128,13 @@ export function toJobView(record: JobRecord): JobView {
     },
     access: {
       originFloor: spec.origin.floors ?? 0,
+      originStairs: spec.origin.stairs ?? 0,
       originElevator: spec.origin.elevator_access ?? false,
       destinationFloor: spec.destination.floors ?? 0,
+      destinationStairs: spec.destination.stairs ?? 0,
       destinationElevator: spec.destination.elevator_access ?? false,
       longCarryFt: spec.origin.parking_distance_feet ?? 0,
+      destinationLongCarryFt: spec.destination.parking_distance_feet ?? 0,
     },
     inventory: (spec.inventory ?? []).map((item) => ({
       item: item.name,
@@ -188,6 +201,7 @@ export function mergeJobViewIntoSpec(current: JobSpecV1, draft: JobView): JobSpe
       address_summary: addressSummary(draft.move.originCity, draft.move.originState),
       dwelling_type: selectedDwelling,
       floors: draft.access.originFloor,
+      stairs: draft.access.originStairs,
       elevator_access: draft.access.originElevator,
       parking_distance_feet: draft.access.longCarryFt,
       access_notes: draft.notes === undefined ? current.origin.access_notes : draft.notes.trim() || null,
@@ -197,7 +211,9 @@ export function mergeJobViewIntoSpec(current: JobSpecV1, draft: JobView): JobSpe
       address_summary: addressSummary(draft.move.destinationCity, draft.move.destinationState),
       dwelling_type: selectedDwelling,
       floors: draft.access.destinationFloor,
+      stairs: draft.access.destinationStairs,
       elevator_access: draft.access.destinationElevator,
+      parking_distance_feet: draft.access.destinationLongCarryFt,
     },
     inventory,
     oversized_or_fragile_items: draft.extras?.oversizedOrFragile ?? [],

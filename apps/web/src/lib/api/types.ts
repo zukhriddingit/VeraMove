@@ -101,10 +101,13 @@ export interface MoveDetailsView {
 
 export interface AccessDetailsView {
   originFloor: number;
+  originStairs: number;
   originElevator: boolean;
   destinationFloor: number;
+  destinationStairs: number;
   destinationElevator: boolean;
   longCarryFt: number;
+  destinationLongCarryFt: number;
 }
 
 export interface InventoryItemView {

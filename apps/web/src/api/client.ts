@@ -125,6 +125,13 @@ function collectFieldErrors(items: unknown): FieldErrors | undefined {
 }
 
 function normalizeError(status: number, statusText: string, body: unknown) {
+  if (body && typeof body === "object" && "error" in body) {
+    const error = (body as { error?: unknown }).error;
+    if (error && typeof error === "object" && "message" in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return { detail: message };
+    }
+  }
   if (body && typeof body === "object" && "detail" in body) {
     const detail = (body as { detail?: unknown }).detail;
     if (typeof detail === "string" && detail.trim()) return { detail };
