@@ -432,7 +432,7 @@ def _fee_category(value: Any, *, allow_missing: bool = False) -> FeeCategory:
 
 def _amount_status(value: Any) -> AmountStatus:
     if not isinstance(value, str):
-        raise DomainConflict("fee amount_status is invalid")
+        return AmountStatus.UNKNOWN
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
     aliases = {
         "n/a": AmountStatus.NOT_APPLICABLE,
@@ -448,7 +448,7 @@ def _amount_status(value: Any) -> AmountStatus:
     try:
         return AmountStatus(normalized)
     except ValueError:
-        raise DomainConflict("fee amount_status is invalid") from None
+        return AmountStatus.UNKNOWN
 
 
 def _provider_decimal(

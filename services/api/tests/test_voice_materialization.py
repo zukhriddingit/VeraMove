@@ -364,7 +364,7 @@ def test_quote_reconciles_null_provider_fee_defaults(job_spec, fixtures):
                         "fee_category": "travel",
                         "description": None,
                         "amount": "not stated",
-                        "amount_status": "known",
+                        "amount_status": "not captured by provider",
                         "disclosed_upfront": None,
                         "mandatory": None,
                     }
