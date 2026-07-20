@@ -32,6 +32,26 @@ function addressParts(summary?: string | null): { city: string; state: string } 
   return { city: parts.slice(0, -1).join(", "), state: parts.at(-1) ?? "" };
 }
 
+function addressSummary(city: string, state: string): string | null {
+  const value = [city.trim(), state.trim()].filter(Boolean).join(", ");
+  return value || null;
+}
+
+type DwellingType = NonNullable<JobSpecV1["origin"]["dwelling_type"]>;
+const DWELLING_TYPES = new Set<DwellingType>([
+  "apartment",
+  "condo",
+  "townhouse",
+  "house",
+  "storage_unit",
+  "other",
+]);
+
+function dwellingType(value: string): DwellingType {
+  const normalized = value.trim().toLowerCase().replaceAll(" ", "_") as DwellingType;
+  return DWELLING_TYPES.has(normalized) ? normalized : "other";
+}
+
 function missingRequiredFields(spec: JobSpecV1): string[] {
   const missing: string[] = [];
   if (!spec.move_date) missing.push("move.date");
@@ -42,12 +62,10 @@ function missingRequiredFields(spec: JobSpecV1): string[] {
   if (!spec.insurance_preference) missing.push("services.insuranceTier");
   if (!spec.inventory?.length) missing.push("inventory");
   if (!spec.origin.address_summary || !spec.destination.address_summary) missing.push("move.route");
-  if (!spec.origin.dwelling_type || !spec.destination.dwelling_type) missing.push("homeType");
+  if (!spec.origin.dwelling_type && !spec.destination.dwelling_type) missing.push("homeType");
   if (
     spec.origin.floors === null ||
     spec.origin.floors === undefined ||
-    spec.origin.stairs === null ||
-    spec.origin.stairs === undefined ||
     spec.origin.elevator_access === null ||
     spec.origin.elevator_access === undefined
   ) {
@@ -56,12 +74,8 @@ function missingRequiredFields(spec: JobSpecV1): string[] {
   if (
     spec.destination.floors === null ||
     spec.destination.floors === undefined ||
-    spec.destination.stairs === null ||
-    spec.destination.stairs === undefined ||
     spec.destination.elevator_access === null ||
-    spec.destination.elevator_access === undefined ||
-    spec.destination.parking_distance_feet === null ||
-    spec.destination.parking_distance_feet === undefined
+    spec.destination.elevator_access === undefined
   ) {
     missing.push("access.destination");
   }
@@ -125,10 +139,76 @@ export function toJobView(record: JobRecord): JobView {
       storage: spec.services?.storage ?? false,
       oversizedOrFragile: spec.oversized_or_fragile_items ?? [],
     },
+    notes: spec.origin.access_notes ?? undefined,
     missingFields: missingRequiredFields(spec),
     extractionSource: source,
     createdAt: record.created_at,
     confirmedAt: spec.confirmed_at ?? undefined,
+  };
+}
+
+/**
+ * Apply only review-screen fields to the latest canonical spec. Provider-only
+ * facts stay intact so saving a visible edit cannot silently erase evidence.
+ */
+export function mergeJobViewIntoSpec(current: JobSpecV1, draft: JobView): JobSpecV1 {
+  const selectedDwelling = dwellingType(draft.homeType);
+  const inventory = draft.inventory.map((item, index) => {
+    const existing = current.inventory?.[index];
+    return {
+      ...(existing ?? {
+        item_id: globalThis.crypto.randomUUID(),
+        room: "Unspecified",
+        oversized: false,
+        fragile: false,
+      }),
+      name: item.item.trim(),
+      quantity: item.qty,
+      notes: item.notes?.trim() || null,
+    };
+  });
+  const wantsFullValue = draft.services.insuranceTier === "full-value";
+  const currentInsuranceIsFull = current.insurance_preference
+    ?.toLowerCase()
+    .includes("full") ?? false;
+  const insurancePreference = wantsFullValue === currentInsuranceIsFull
+    ? current.insurance_preference
+    : wantsFullValue
+      ? "Full-value protection"
+      : "Standard released-value coverage";
+  const storage = draft.extras?.storage ?? false;
+
+  return {
+    ...current,
+    move_date: draft.move.date || null,
+    date_flexible: draft.move.flexibilityDays > 0,
+    bedroom_count: draft.bedrooms ?? null,
+    origin: {
+      ...current.origin,
+      address_summary: addressSummary(draft.move.originCity, draft.move.originState),
+      dwelling_type: selectedDwelling,
+      floors: draft.access.originFloor,
+      elevator_access: draft.access.originElevator,
+      parking_distance_feet: draft.access.longCarryFt,
+      access_notes: draft.notes === undefined ? current.origin.access_notes : draft.notes.trim() || null,
+    },
+    destination: {
+      ...current.destination,
+      address_summary: addressSummary(draft.move.destinationCity, draft.move.destinationState),
+      dwelling_type: selectedDwelling,
+      floors: draft.access.destinationFloor,
+      elevator_access: draft.access.destinationElevator,
+    },
+    inventory,
+    oversized_or_fragile_items: draft.extras?.oversizedOrFragile ?? [],
+    services: {
+      ...current.services,
+      packing: draft.services.packing,
+      disassembly: draft.extras?.disassembly ?? false,
+      storage,
+      storage_days: storage ? current.services?.storage_days ?? 1 : null,
+    },
+    insurance_preference: insurancePreference,
   };
 }
 

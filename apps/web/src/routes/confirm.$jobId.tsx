@@ -8,7 +8,7 @@ import { useConfirmJob, useJob, useUpdateJob } from "@/lib/api/hooks";
 import { ApiError, useRuntimeMode } from "@/api/client";
 import type { JobView, JobViewState } from "@/lib/api/types";
 import { AlertTriangle, ArrowRight, Lock, PhoneCall, RefreshCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 export const Route = createFileRoute("/confirm/$jobId")({
   head: () => ({
@@ -64,17 +64,7 @@ function ConfirmPage() {
   const isFailed = draft?.status === "failed";
   const pastConfirm = draft ? PAST_CONFIRM_STATES.has(draft.status) : false;
 
-  // Recompute missing fields whenever the draft changes so the block updates live.
-  const effectiveMissing = useMemo(() => {
-    if (!draft) return [] as string[];
-    const missing = new Set(draft.missingFields ?? []);
-    if (draft.access.longCarryFt > 0) missing.delete("access.longCarryFt");
-    if (draft.move.flexibilityDays >= 0 && !Number.isNaN(draft.move.flexibilityDays))
-      missing.delete("move.flexibilityDays");
-    if (!draft.move.originCity || !draft.move.destinationCity) missing.add("move.route");
-    else missing.delete("move.route");
-    return Array.from(missing);
-  }, [draft]);
+  const effectiveMissing = draft?.missingFields ?? [];
 
   if (jobQ.isLoading || !draft) return <LoadingState label="Loading your move spec…" />;
   if (jobQ.isError) {
@@ -95,14 +85,28 @@ function ConfirmPage() {
     );
   }
 
-  const patchDraft = (patch: Partial<JobView>) => {
+  const patchDraft = (patch: Partial<JobView>, fieldKey?: string) => {
     setDraft((d) => {
       if (!d) return d;
+      const next = { ...d, ...patch };
       const edited = new Set(d.editedFields ?? []);
-      Object.keys(patch).forEach((k) => edited.add(k));
-      return { ...d, ...patch, editedFields: Array.from(edited) };
+      if (fieldKey) edited.add(fieldKey);
+      else Object.keys(patch).forEach((key) => edited.add(key));
+      const missing = new Set(next.missingFields ?? []);
+      if (fieldKey && REQUIRED_REVIEW_FIELDS.has(fieldKey)) {
+        if (reviewFieldIsComplete(next, fieldKey)) missing.delete(fieldKey);
+        else missing.add(fieldKey);
+      }
+      return {
+        ...next,
+        editedFields: Array.from(edited),
+        missingFields: Array.from(missing),
+      };
     });
   };
+
+  const restoreDraft = (snapshot: JobView) => setDraft(snapshot);
+  const commitField = (fieldKey: string) => patchDraft({}, fieldKey);
 
   const hasMissing = effectiveMissing.length > 0;
   const canConfirm = !hasMissing && ack && !isLocked && !isFailed;
@@ -111,27 +115,24 @@ function ConfirmPage() {
     if (!canConfirm) return;
     setConfirmError(null);
     try {
-      // Persist local edits FIRST — but only in demo mode. In live mode there
-      // is no PATCH endpoint (see endpoints.ts). Edits round-trip via the demo
-      // adapter's in-memory store; live-mode confirmation locks whatever the
-      // backend already knows about the spec.
-      if (runtimeMode === "demo") {
-        await update.mutateAsync({
-          jobId: draft.id,
-          patch: {
-            move: draft.move,
-            access: draft.access,
-            inventory: draft.inventory,
-            services: draft.services,
-            extras: draft.extras,
-            notes: draft.notes,
-            homeType: draft.homeType,
-            bedrooms: draft.bedrooms,
-            missingFields: effectiveMissing,
-            editedFields: draft.editedFields,
-          },
-        });
-      }
+      // Always persist the reviewed draft before locking it. The live adapter
+      // writes a generated JobSpecV1 through PUT /api/jobs/{job_id}; the demo
+      // adapter stores the same review shape locally.
+      await update.mutateAsync({
+        jobId: draft.id,
+        patch: {
+          move: draft.move,
+          access: draft.access,
+          inventory: draft.inventory,
+          services: draft.services,
+          extras: draft.extras,
+          notes: draft.notes,
+          homeType: draft.homeType,
+          bedrooms: draft.bedrooms,
+          missingFields: effectiveMissing,
+          editedFields: draft.editedFields,
+        },
+      });
       await confirm.mutateAsync(draft.id);
       navigate({ to: "/calls/$jobId", params: { jobId: draft.id } });
     } catch (e) {
@@ -277,6 +278,8 @@ function ConfirmPage() {
         job={draft}
         locked={isLocked}
         onChange={patchDraft}
+        onRestore={restoreDraft}
+        onCommit={commitField}
       />
 
       {!isLocked && !isFailed && (
@@ -342,6 +345,53 @@ function ConfirmPage() {
     </div>
   );
 }
+
+function reviewFieldIsComplete(job: JobView, key: string): boolean {
+  switch (key) {
+    case "move.route":
+      return Boolean(job.move.originCity.trim() && job.move.destinationCity.trim());
+    case "move.date":
+      return /^\d{4}-\d{2}-\d{2}$/.test(job.move.date);
+    case "move.flexibilityDays":
+      return Number.isFinite(job.move.flexibilityDays) && job.move.flexibilityDays >= 0;
+    case "homeType":
+      return Boolean(job.homeType.trim()) && job.bedrooms !== undefined && job.bedrooms >= 0;
+    case "access.origin":
+      return Number.isFinite(job.access.originFloor) && job.access.originFloor >= 0;
+    case "access.destination":
+      return Number.isFinite(job.access.destinationFloor) && job.access.destinationFloor >= 0;
+    case "access.longCarryFt":
+      return Number.isFinite(job.access.longCarryFt) && job.access.longCarryFt >= 0;
+    case "inventory":
+      return job.inventory.length > 0 && job.inventory.every((item) =>
+        Boolean(item.item.trim()) && Number.isFinite(item.qty) && item.qty >= 1);
+    case "services.packing":
+      return typeof job.services.packing === "boolean";
+    case "extras.disassembly":
+      return typeof job.extras?.disassembly === "boolean";
+    case "extras.storage":
+      return typeof job.extras?.storage === "boolean";
+    case "services.insuranceTier":
+      return job.services.insuranceTier === "standard" || job.services.insuranceTier === "full-value";
+    default:
+      return true;
+  }
+}
+
+const REQUIRED_REVIEW_FIELDS = new Set([
+  "move.route",
+  "move.date",
+  "move.flexibilityDays",
+  "homeType",
+  "access.origin",
+  "access.destination",
+  "access.longCarryFt",
+  "inventory",
+  "services.packing",
+  "extras.disassembly",
+  "extras.storage",
+  "services.insuranceTier",
+]);
 
 // Human-readable labels for missing-field keys used in the alert.
 function labelFor(key: string): string {

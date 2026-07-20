@@ -1,5 +1,12 @@
 import { apiClient } from "@/api/client";
-import { toCallView, toJobEventView, toJobView, toReportView, toVendorViews } from "./adapters";
+import {
+  mergeJobViewIntoSpec,
+  toCallView,
+  toJobEventView,
+  toJobView,
+  toReportView,
+  toVendorViews,
+} from "./adapters";
 import type { IntakeVariant, JobView, NegotiationView } from "./types";
 
 export const getHealth = apiClient.health;
@@ -17,12 +24,21 @@ export async function confirmJob(jobId: string) {
   return toJobView(await apiClient.confirmJob(jobId));
 }
 
-// The canonical API intentionally has no draft PATCH route. Demo mode can
-// persist local edits; live mode retains the imported review UI but confirms
-// the JobSpec already held by the backend.
 export async function updateJob(jobId: string, patch: Partial<JobView>): Promise<JobView> {
-  const current = await getJob(jobId);
-  return { ...current, ...patch };
+  const current = await apiClient.getJob(jobId);
+  const currentView = toJobView(current);
+  const draft: JobView = {
+    ...currentView,
+    ...patch,
+    move: { ...currentView.move, ...patch.move },
+    access: { ...currentView.access, ...patch.access },
+    services: { ...currentView.services, ...patch.services },
+    extras: patch.extras
+      ? { ...currentView.extras, ...patch.extras }
+      : currentView.extras,
+  };
+  const replacement = mergeJobViewIntoSpec(current.job_spec, draft);
+  return toJobView(await apiClient.replaceJobSpec(jobId, replacement));
 }
 
 export async function getCalls(jobId: string) {

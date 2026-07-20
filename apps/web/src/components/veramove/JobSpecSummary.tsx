@@ -95,6 +95,9 @@ function FieldRow({
   editor,
   children,
   locked,
+  onEditStart,
+  onCancel,
+  onSave,
 }: {
   label: string;
   status: FieldStatus;
@@ -102,6 +105,9 @@ function FieldRow({
   editor?: ReactNode; // when provided, an Edit button toggles it
   children: ReactNode;
   locked?: boolean;
+  onEditStart?: () => void;
+  onCancel?: () => void;
+  onSave?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const meta = statusMeta(status);
@@ -125,7 +131,10 @@ function FieldRow({
         {canEdit && !editing && (
           <button
             type="button"
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              onEditStart?.();
+              setEditing(true);
+            }}
             className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs text-primary hover:bg-primary/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             aria-label={`Edit ${label}`}
           >
@@ -139,10 +148,23 @@ function FieldRow({
         <div className="rounded-lg border border-border bg-surface-muted p-3">
           {editor}
           <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                onCancel?.();
+                setEditing(false);
+              }}
+            >
               Cancel
             </Button>
-            <Button size="sm" onClick={() => setEditing(false)}>
+            <Button
+              size="sm"
+              onClick={() => {
+                onSave?.();
+                setEditing(false);
+              }}
+            >
               Save changes
             </Button>
           </div>
@@ -198,10 +220,19 @@ function Section({
 export interface JobSpecSummaryProps {
   job: JobView;
   locked?: boolean;
-  onChange?: (patch: Partial<JobView>) => void;
+  onChange?: (patch: Partial<JobView>, fieldKey?: string) => void;
+  onRestore?: (snapshot: JobView) => void;
+  onCommit?: (fieldKey: string) => void;
 }
 
-export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummaryProps) {
+export function JobSpecSummary({
+  job,
+  locked = false,
+  onChange,
+  onRestore,
+  onCommit,
+}: JobSpecSummaryProps) {
+  const [editSnapshot, setEditSnapshot] = useState<JobView | null>(null);
   const missing = new Set(job.missingFields ?? []);
   const edited = new Set(job.editedFields ?? []);
   const warnings = job.fieldWarnings ?? {};
@@ -214,17 +245,31 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
     return "extracted";
   }
 
-  function patchMove(patch: Partial<MoveDetailsView>) {
-    onChange?.({ move: { ...job.move, ...patch } });
+  function lifecycle(fieldKey: string) {
+    return {
+      onEditStart: () => setEditSnapshot(structuredClone(job)),
+      onCancel: () => {
+        if (editSnapshot) onRestore?.(editSnapshot);
+        setEditSnapshot(null);
+      },
+      onSave: () => {
+        onCommit?.(fieldKey);
+        setEditSnapshot(null);
+      },
+    };
   }
-  function patchAccess(patch: Partial<AccessDetailsView>) {
-    onChange?.({ access: { ...job.access, ...patch } });
+
+  function patchMove(patch: Partial<MoveDetailsView>, fieldKey: string) {
+    onChange?.({ move: { ...job.move, ...patch } }, fieldKey);
   }
-  function patchServices(patch: Partial<ServiceDetailsView>) {
-    onChange?.({ services: { ...job.services, ...patch } });
+  function patchAccess(patch: Partial<AccessDetailsView>, fieldKey: string) {
+    onChange?.({ access: { ...job.access, ...patch } }, fieldKey);
+  }
+  function patchServices(patch: Partial<ServiceDetailsView>, fieldKey: string) {
+    onChange?.({ services: { ...job.services, ...patch } }, fieldKey);
   }
   function patchInventory(next: InventoryItemView[]) {
-    onChange?.({ inventory: next });
+    onChange?.({ inventory: next }, "inventory");
   }
 
   const src = job.extractionSource;
@@ -262,6 +307,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Route"
           status={fieldStatus("move.route")}
           locked={locked}
+          {...lifecycle("move.route")}
           editor={
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
@@ -269,7 +315,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 <Input
                   id="oc"
                   value={job.move.originCity}
-                  onChange={(e) => patchMove({ originCity: e.target.value })}
+                  onChange={(e) => patchMove({ originCity: e.target.value }, "move.route")}
                 />
               </div>
               <div>
@@ -277,7 +323,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 <Input
                   id="os"
                   value={job.move.originState}
-                  onChange={(e) => patchMove({ originState: e.target.value })}
+                  onChange={(e) => patchMove({ originState: e.target.value }, "move.route")}
                 />
               </div>
               <div>
@@ -285,7 +331,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 <Input
                   id="dc"
                   value={job.move.destinationCity}
-                  onChange={(e) => patchMove({ destinationCity: e.target.value })}
+                  onChange={(e) => patchMove({ destinationCity: e.target.value }, "move.route")}
                 />
               </div>
               <div>
@@ -293,7 +339,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 <Input
                   id="ds"
                   value={job.move.destinationState}
-                  onChange={(e) => patchMove({ destinationState: e.target.value })}
+                  onChange={(e) => patchMove({ destinationState: e.target.value }, "move.route")}
                 />
               </div>
             </div>
@@ -307,6 +353,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           status={fieldStatus("move.date")}
           warning={warnings["move.date"]}
           locked={locked}
+          {...lifecycle("move.date")}
           editor={
             <div>
               <Label htmlFor="md">Move date</Label>
@@ -314,7 +361,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 id="md"
                 type="date"
                 value={job.move.date}
-                onChange={(e) => patchMove({ date: e.target.value })}
+                onChange={(e) => patchMove({ date: e.target.value }, "move.date")}
               />
             </div>
           }
@@ -329,6 +376,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Date flexibility"
           status={fieldStatus("move.flexibilityDays")}
           locked={locked}
+          {...lifecycle("move.flexibilityDays")}
           editor={
             <div>
               <Label htmlFor="mf">Flexible by (days)</Label>
@@ -337,7 +385,8 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 type="number"
                 min={0}
                 value={job.move.flexibilityDays}
-                onChange={(e) => patchMove({ flexibilityDays: Number(e.target.value) })}
+                onChange={(e) =>
+                  patchMove({ flexibilityDays: Number(e.target.value) }, "move.flexibilityDays")}
               />
             </div>
           }
@@ -351,18 +400,26 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Home type"
           status={fieldStatus("homeType")}
           locked={locked}
+          {...lifecycle("homeType")}
           editor={
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
                 <Label htmlFor="ht">Dwelling type</Label>
                 <Select
                   value={job.homeType}
-                  onValueChange={(v) => onChange?.({ homeType: v })}
+                  onValueChange={(v) => onChange?.({ homeType: v }, "homeType")}
                 >
                   <SelectTrigger id="ht"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {["Apartment", "Condo", "House", "Townhouse", "Studio"].map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
+                    {[
+                      ["apartment", "Apartment"],
+                      ["condo", "Condo"],
+                      ["house", "House"],
+                      ["townhouse", "Townhouse"],
+                      ["storage_unit", "Storage unit"],
+                      ["other", "Other"],
+                    ].map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -374,7 +431,8 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                   type="number"
                   min={0}
                   value={job.bedrooms ?? 0}
-                  onChange={(e) => onChange?.({ bedrooms: Number(e.target.value) })}
+                  onChange={(e) =>
+                    onChange?.({ bedrooms: Number(e.target.value) }, "homeType")}
                 />
               </div>
             </div>
@@ -390,6 +448,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Floor & elevator"
           status={fieldStatus("access.origin")}
           locked={locked}
+          {...lifecycle("access.origin")}
           editor={
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
@@ -399,14 +458,16 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                   type="number"
                   min={0}
                   value={job.access.originFloor}
-                  onChange={(e) => patchAccess({ originFloor: Number(e.target.value) })}
+                  onChange={(e) =>
+                    patchAccess({ originFloor: Number(e.target.value) }, "access.origin")}
                 />
               </div>
               <div className="flex items-end gap-2">
                 <Checkbox
                   id="oe"
                   checked={job.access.originElevator}
-                  onCheckedChange={(v) => patchAccess({ originElevator: !!v })}
+                  onCheckedChange={(v) =>
+                    patchAccess({ originElevator: !!v }, "access.origin")}
                 />
                 <Label htmlFor="oe">Elevator available</Label>
               </div>
@@ -424,6 +485,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Parking / long carry"
           status={fieldStatus("access.longCarryFt")}
           locked={locked}
+          {...lifecycle("access.longCarryFt")}
           editor={
             <div>
               <Label htmlFor="lc">Long-carry distance (ft)</Label>
@@ -432,7 +494,8 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 type="number"
                 min={0}
                 value={job.access.longCarryFt}
-                onChange={(e) => patchAccess({ longCarryFt: Number(e.target.value) })}
+                onChange={(e) =>
+                  patchAccess({ longCarryFt: Number(e.target.value) }, "access.longCarryFt")}
               />
             </div>
           }
@@ -451,6 +514,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Floor & elevator"
           status={fieldStatus("access.destination")}
           locked={locked}
+          {...lifecycle("access.destination")}
           editor={
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
@@ -460,14 +524,16 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                   type="number"
                   min={0}
                   value={job.access.destinationFloor}
-                  onChange={(e) => patchAccess({ destinationFloor: Number(e.target.value) })}
+                  onChange={(e) =>
+                    patchAccess({ destinationFloor: Number(e.target.value) }, "access.destination")}
                 />
               </div>
               <div className="flex items-end gap-2">
                 <Checkbox
                   id="de"
                   checked={job.access.destinationElevator}
-                  onCheckedChange={(v) => patchAccess({ destinationElevator: !!v })}
+                  onCheckedChange={(v) =>
+                    patchAccess({ destinationElevator: !!v }, "access.destination")}
                 />
                 <Label htmlFor="de">Elevator available</Label>
               </div>
@@ -486,6 +552,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           status={fieldStatus("inventory")}
           warning={warnings["inventory"]}
           locked={locked}
+          {...lifecycle("inventory")}
           editor={
             <InventoryEditor
               items={job.inventory}
@@ -510,6 +577,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Oversized or fragile"
           status={fieldStatus("extras.oversizedOrFragile")}
           locked={locked}
+          {...lifecycle("extras.oversizedOrFragile")}
           editor={
             <div>
               <Label htmlFor="ov">Oversized or fragile items (comma separated)</Label>
@@ -526,7 +594,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                         .map((s) => s.trim())
                         .filter(Boolean),
                     },
-                  })
+                  }, "extras.oversizedOrFragile")
                 }
               />
             </div>
@@ -544,12 +612,14 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Packing service"
           status={fieldStatus("services.packing")}
           locked={locked}
+          {...lifecycle("services.packing")}
           editor={
             <div className="flex items-center gap-2">
               <Checkbox
                 id="pk"
                 checked={job.services.packing}
-                onCheckedChange={(v) => patchServices({ packing: !!v })}
+                onCheckedChange={(v) =>
+                  patchServices({ packing: !!v }, "services.packing")}
               />
               <Label htmlFor="pk">Include packing service</Label>
             </div>
@@ -562,6 +632,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Disassembly"
           status={fieldStatus("extras.disassembly")}
           locked={locked}
+          {...lifecycle("extras.disassembly")}
           editor={
             <div className="flex items-center gap-2">
               <Checkbox
@@ -574,7 +645,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                       storage: job.extras?.storage ?? false,
                       oversizedOrFragile: job.extras?.oversizedOrFragile ?? [],
                     },
-                  })
+                  }, "extras.disassembly")
                 }
               />
               <Label htmlFor="da">Items require disassembly</Label>
@@ -588,6 +659,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Storage"
           status={fieldStatus("extras.storage")}
           locked={locked}
+          {...lifecycle("extras.storage")}
           editor={
             <div className="flex items-center gap-2">
               <Checkbox
@@ -600,7 +672,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                       storage: !!v,
                       oversizedOrFragile: job.extras?.oversizedOrFragile ?? [],
                     },
-                  })
+                  }, "extras.storage")
                 }
               />
               <Label htmlFor="st">Overnight storage needed</Label>
@@ -617,13 +689,17 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Insurance tier"
           status={fieldStatus("services.insuranceTier")}
           locked={locked}
+          {...lifecycle("services.insuranceTier")}
           editor={
             <div>
               <Label htmlFor="ins">Coverage</Label>
               <Select
                 value={job.services.insuranceTier}
                 onValueChange={(v) =>
-                  patchServices({ insuranceTier: v as ServiceDetailsView["insuranceTier"] })
+                  patchServices(
+                    { insuranceTier: v as ServiceDetailsView["insuranceTier"] },
+                    "services.insuranceTier",
+                  )
                 }
               >
                 <SelectTrigger id="ins"><SelectValue /></SelectTrigger>
@@ -644,6 +720,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
           label="Notes & constraints"
           status={fieldStatus("notes")}
           locked={locked}
+          {...lifecycle("notes")}
           editor={
             <div>
               <Label htmlFor="nt">Anything else vendors should know</Label>
@@ -651,7 +728,7 @@ export function JobSpecSummary({ job, locked = false, onChange }: JobSpecSummary
                 id="nt"
                 rows={3}
                 value={job.notes ?? ""}
-                onChange={(e) => onChange?.({ notes: e.target.value })}
+                onChange={(e) => onChange?.({ notes: e.target.value }, "notes")}
               />
             </div>
           }

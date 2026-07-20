@@ -217,6 +217,11 @@ export const apiClient = {
       body: JSON.stringify({ document_text: documentText }),
     }),
   getJob: (jobId: string) => apiFetch<JobRecord>(`/api/jobs/${jobId}`),
+  replaceJobSpec: (jobId: string, jobSpec: JobSpecV1) =>
+    apiFetch<JobRecord>(`/api/jobs/${jobId}`, {
+      method: "PUT",
+      body: JSON.stringify(jobSpec),
+    }),
   confirmJob: (jobId: string) =>
     apiFetch<JobRecord>(`/api/jobs/${jobId}/confirm`, { method: "POST" }),
   startCalls: (jobId: string) =>
