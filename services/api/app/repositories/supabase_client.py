@@ -30,6 +30,7 @@ _ALLOWED_RPCS = frozenset(
         "veramove_fail_voice_webhook_receipt",
         "veramove_finalize_voice_intake_webhook",
         "veramove_finalize_voice_webhook",
+        "veramove_reserve_browser_voice_credential",
     }
 )
 _FORBIDDEN_VOICE_KEYS = frozenset(

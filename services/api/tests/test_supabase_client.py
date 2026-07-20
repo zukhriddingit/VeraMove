@@ -248,6 +248,33 @@ def test_postgrest_allows_typed_intake_transaction_rpc():
     assert sent == payload
 
 
+def test_postgrest_allows_atomic_browser_voice_credential_reservation_rpc():
+    transport = RecordingTransport(
+        SupabaseHttpResponse(
+            200,
+            {"id": "22222222-2222-4222-8222-222222222222"},
+        )
+    )
+    payload = {
+        "p_session_id": "22222222-2222-4222-8222-222222222222",
+        "p_issued_at": "2026-07-20T15:00:00Z",
+    }
+
+    result = make_client(transport).rpc(
+        "veramove_reserve_browser_voice_credential",
+        payload,
+    )
+
+    assert result == {"id": "22222222-2222-4222-8222-222222222222"}
+    method, url, _headers, params, sent = transport.requests[0]
+    assert method == "POST"
+    assert url.endswith(
+        "/rest/v1/rpc/veramove_reserve_browser_voice_credential"
+    )
+    assert params == {}
+    assert sent == payload
+
+
 @pytest.mark.parametrize(
     "unsafe_fragment",
     (
