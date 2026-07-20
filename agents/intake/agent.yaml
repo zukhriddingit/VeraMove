@@ -1,5 +1,5 @@
 version: 1
-agent_config_version: "2026-07-19.1"
+agent_config_version: "2026-07-20.1"
 agent:
   name: veramove-intake
   display_name: VeraMove Intake
@@ -11,7 +11,7 @@ agent:
   provider_tool_ids: []
   provider_tools_status: omitted_until_reviewed_ids_exist
   provider_version:
-    version_description: "VeraMove 2026-07-19.1"
+    version_description: "VeraMove 2026-07-20.1"
     capture_after_save: [version_id, branch_id]
     provider_ids_committed: false
   structured_output: JobSpecV1

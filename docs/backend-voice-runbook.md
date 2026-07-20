@@ -143,7 +143,7 @@ Do not improvise provider fields.
    reviewed prompts, generated Data Collection definitions, first messages, dynamic variables, and
    success evaluations. The outbound agent handles both `call_mode=quote` and
    `call_mode=negotiation`.
-2. Save both reviewed configurations with version description `VeraMove 2026-07-19.1`. Capture the
+2. Save both reviewed configurations with version description `VeraMove 2026-07-20.1`. Capture the
    provider's opaque `version_id` and `branch_id` in a secure release log, not in the repository.
    Attach no provider tools until reviewed ElevenLabs tool IDs exist.
 3. Enable **Audio Saving** on both agents and set the same 1–7 day nonzero retention. VeraMove

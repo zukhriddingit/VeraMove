@@ -111,7 +111,7 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
     tools = yaml.safe_load((ROOT / "agents/tools.yaml").read_text(encoding="utf-8"))
 
     assert intake_config["agent_config_version"] == negotiator_config["agent_config_version"]
-    assert intake_config["agent_config_version"] == "2026-07-19.1"
+    assert intake_config["agent_config_version"] == "2026-07-20.1"
     assert intake_config["agent"]["display_name"] == "VeraMove Intake"
     assert negotiator_config["agent"]["display_name"] == "VeraMove Outbound Negotiator"
     assert intake_config["agent"]["data_collection_file"] == "data-collection.json"
@@ -125,7 +125,7 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
         assert agent["provider_tool_ids"] == []
         assert agent["provider_tools_status"] == "omitted_until_reviewed_ids_exist"
         assert agent["provider_version"] == {
-            "version_description": "VeraMove 2026-07-19.1",
+            "version_description": "VeraMove 2026-07-20.1",
             "capture_after_save": ["version_id", "branch_id"],
             "provider_ids_committed": False,
         }
@@ -215,8 +215,8 @@ def test_voice_data_collection_assets_match_the_approved_contract():
     intake_fields = intake["fields"]
     outbound_fields = outbound["fields"]
 
-    assert intake["agent_config_version"] == "2026-07-19.1"
-    assert outbound["agent_config_version"] == "2026-07-19.1"
+    assert intake["agent_config_version"] == "2026-07-20.1"
+    assert outbound["agent_config_version"] == "2026-07-20.1"
     assert len(intake_fields) == 24
     assert len(outbound_fields) == 14
     assert len(intake_fields) < 25
@@ -263,6 +263,14 @@ def test_voice_data_collection_assets_match_the_approved_contract():
         "addressed_fee_categories_json",
         "concessions_json",
     ]
+    intake_by_identifier = {field["identifier"]: field for field in intake_fields}
+    for identifier in ("origin_dwelling_type", "destination_dwelling_type"):
+        description = intake_by_identifier[identifier]["description"].lower()
+        for value in ("apartment", "condo", "townhouse", "house", "storage_unit", "other"):
+            assert value in description
+    inventory_description = intake_by_identifier["inventory_json"]["description"]
+    for property_name in ("name", "quantity", "room", "Unspecified"):
+        assert property_name in inventory_description
     assert {field["type"] for field in intake_fields + outbound_fields} <= {
         "string",
         "boolean",
@@ -312,7 +320,7 @@ def test_elevenlabs_dashboard_checklist_is_complete_and_secret_free():
     for phrase in (
         "veramove intake",
         "veramove outbound negotiator",
-        "2026-07-19.1",
+        "2026-07-20.1",
         "dynamic variables",
         "data collection",
         "success evaluation",

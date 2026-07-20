@@ -1,5 +1,5 @@
 {
-  "agent_config_version": "2026-07-19.1",
+  "agent_config_version": "2026-07-20.1",
   "fields": [
     {
       "description": "Whether the role-play vendor consented to recording.",

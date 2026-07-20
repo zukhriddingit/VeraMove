@@ -12,7 +12,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = ROOT / "configs" / "moving.yaml"
 DEFAULT_OUTPUT_ROOT = ROOT / "agents"
-AGENT_CONFIG_VERSION = "2026-07-19.1"
+AGENT_CONFIG_VERSION = "2026-07-20.1"
 ELEVENLABS_DATA_COLLECTION_TYPES = frozenset({"boolean", "integer", "number", "string"})
 
 GENERATED_ASSET_PATHS = (
@@ -35,7 +35,12 @@ INTAKE_FIELDS = (
         "string",
         "Fictional role-play origin locality/address summary exactly as stated.",
     ),
-    ("origin_dwelling_type", "string", "Origin dwelling type exactly as stated."),
+    (
+        "origin_dwelling_type",
+        "string",
+        "Exact canonical origin dwelling value: apartment, condo, townhouse, house, "
+        "storage_unit, or other. Leave unset when unknown; never return free text.",
+    ),
     ("origin_floors", "integer", "Number of origin floors involved in the move."),
     ("origin_stairs", "integer", "Number of origin stair flights involved."),
     (
@@ -56,7 +61,8 @@ INTAKE_FIELDS = (
     (
         "destination_dwelling_type",
         "string",
-        "Destination dwelling type exactly as stated.",
+        "Exact canonical destination dwelling value: apartment, condo, townhouse, house, "
+        "storage_unit, or other. Leave unset when unknown; never return free text.",
     ),
     (
         "destination_floors",
@@ -78,7 +84,8 @@ INTAKE_FIELDS = (
     (
         "inventory_json",
         "string",
-        "JSON list of inventory items and quantities stated by the caller.",
+        "JSON list of objects using exactly name, quantity, and room for every caller-stated "
+        "item. Use room=Unspecified when the caller does not provide a room.",
     ),
     (
         "special_items_json",

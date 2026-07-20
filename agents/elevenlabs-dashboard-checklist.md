@@ -1,6 +1,6 @@
 # ElevenLabs two-agent dashboard checklist
 
-Use this checklist to manually synchronize repository configuration marker `2026-07-19.1` with
+Use this checklist to manually synchronize repository configuration marker `2026-07-20.1` with
 ElevenLabs. The YAML files are reviewed source manifests, not provider payloads. Do not commit API
 keys, webhook secrets, workspace secret IDs, agent IDs, branch/version IDs, phone-number IDs,
 destination numbers, or participant data.
@@ -18,10 +18,10 @@ destination numbers, or participant data.
 
 ## Provider version and tools rule
 
-- [ ] Save each reviewed agent with version description `VeraMove 2026-07-19.1`.
+- [ ] Save each reviewed agent with version description `VeraMove 2026-07-20.1`.
 - [ ] After saving, record the opaque `version_id` and `branch_id` only in the secure release log;
       never paste them into repository files or chat.
-- [ ] Treat `2026-07-19.1` as VeraMove's review marker, not an ElevenLabs `version_id`.
+- [ ] Treat `2026-07-20.1` as VeraMove's review marker, not an ElevenLabs `version_id`.
 - [ ] Attach no ElevenLabs tools. `agents/tools.yaml` documents VeraMove backend boundaries only;
       leave provider `tool_ids` empty until reviewed, real provider tool IDs exist.
 

@@ -1,5 +1,5 @@
 {
-  "agent_config_version": "2026-07-19.1",
+  "agent_config_version": "2026-07-20.1",
   "fields": [
     {
       "description": "Whether the caller explicitly consented to recording.",
@@ -27,7 +27,7 @@
       "type": "string"
     },
     {
-      "description": "Origin dwelling type exactly as stated.",
+      "description": "Exact canonical origin dwelling value: apartment, condo, townhouse, house, storage_unit, or other. Leave unset when unknown; never return free text.",
       "identifier": "origin_dwelling_type",
       "type": "string"
     },
@@ -57,7 +57,7 @@
       "type": "string"
     },
     {
-      "description": "Destination dwelling type exactly as stated.",
+      "description": "Exact canonical destination dwelling value: apartment, condo, townhouse, house, storage_unit, or other. Leave unset when unknown; never return free text.",
       "identifier": "destination_dwelling_type",
       "type": "string"
     },
@@ -87,7 +87,7 @@
       "type": "integer"
     },
     {
-      "description": "JSON list of inventory items and quantities stated by the caller.",
+      "description": "JSON list of objects using exactly name, quantity, and room for every caller-stated item. Use room=Unspecified when the caller does not provide a room.",
       "identifier": "inventory_json",
       "type": "string"
     },
