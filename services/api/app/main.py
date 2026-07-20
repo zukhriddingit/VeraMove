@@ -1,5 +1,6 @@
 """FastAPI entry point for VeraMove."""
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -22,6 +23,8 @@ from services.api.app.core.errors import (
     WebhookAuthenticationError,
     WebhookPayloadError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -60,6 +63,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code = 409
         else:
             status_code = 400
+        logger.warning(
+            "domain_error code=%s status_code=%s detail=%s",
+            exc.code,
+            status_code,
+            str(exc),
+        )
         body = ErrorResponse(error=ErrorDetail(code=exc.code, message=str(exc)))
         return JSONResponse(status_code=status_code, content=body.model_dump(mode="json"))
 

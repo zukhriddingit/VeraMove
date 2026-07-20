@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import logging
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -565,6 +566,28 @@ def test_invalid_webhook_signature_is_401(client):
     )
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "webhook_authentication_error"
+
+
+def test_webhook_payload_error_is_logged_without_request_body(client, caplog):
+    body = b'{"synthetic_private_value":'
+    headers = {
+        "content-type": "application/json",
+        "elevenlabs-signature": sign_webhook(body),
+    }
+
+    with caplog.at_level(logging.WARNING, logger="services.api.app.main"):
+        response = client.post("/api/webhooks/elevenlabs", content=body, headers=headers)
+
+    assert response.status_code == 400
+    assert response.json()["error"] == {
+        "code": "webhook_payload_error",
+        "message": "ElevenLabs webhook body must be valid JSON",
+    }
+    assert caplog.messages == [
+        "domain_error code=webhook_payload_error status_code=400 "
+        "detail=ElevenLabs webhook body must be valid JSON"
+    ]
+    assert "synthetic_private_value" not in caplog.text
 
 
 def test_vendor_discovery_returns_three_synthetic_vendors(client):
