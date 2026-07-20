@@ -323,6 +323,7 @@ def _normalize_fee_item(value: Any) -> dict[str, Any]:
             normalized[field_name] = _provider_decimal(
                 normalized[field_name],
                 field_name,
+                strict=field_name == "amount",
             )
     for field_name in ("disclosed_upfront", "mandatory"):
         if normalized.get(field_name) is None:
@@ -450,13 +451,20 @@ def _amount_status(value: Any) -> AmountStatus:
         raise DomainConflict("fee amount_status is invalid") from None
 
 
-def _provider_decimal(value: Any, field_name: str) -> Decimal | None:
+def _provider_decimal(
+    value: Any,
+    field_name: str,
+    *,
+    strict: bool,
+) -> Decimal | None:
     if isinstance(value, str):
         stripped = value.strip()
         if stripped.lower() in UNKNOWN_PROVIDER_VALUES:
             return None
         if not PROVIDER_DECIMAL_PATTERN.fullmatch(stripped):
-            raise DomainConflict(f"{field_name} is invalid")
+            if strict:
+                raise DomainConflict(f"{field_name} is invalid")
+            return None
         if stripped.startswith("$"):
             stripped = stripped[1:]
         value = stripped.replace(",", "")

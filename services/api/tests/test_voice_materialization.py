@@ -387,6 +387,38 @@ def test_quote_reconciles_null_provider_fee_defaults(job_spec, fixtures):
     assert fee.mandatory is False
 
 
+def test_quote_drops_non_numeric_optional_rate_units(job_spec, fixtures):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(
+        attempt,
+        collected_data={
+            "fee_items_json": json.dumps(
+                [
+                    {
+                        "category": "hourly_minimum",
+                        "description": "Synthetic hourly minimum.",
+                        "amount": None,
+                        "unit_rate": "$120 per hour",
+                        "units": "three crew hours",
+                        "minimum_units": "not stated",
+                    }
+                ]
+            ),
+            "addressed_fee_categories_json": json.dumps(["hourly_minimum"]),
+        },
+    )
+
+    result = materialize(event, attempt)
+
+    quote = result.outcome.quote
+    assert quote is not None
+    fee = quote.fee_line_items[0]
+    assert fee.amount_status is AmountStatus.UNKNOWN
+    assert fee.unit_rate is None
+    assert fee.units is None
+    assert fee.minimum_units is None
+
+
 def test_quote_still_rejects_unsafe_provider_fee_amount(job_spec, fixtures):
     attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
     event = make_event(
