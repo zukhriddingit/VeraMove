@@ -120,7 +120,7 @@ def live_settings() -> Settings:
             recording_signing_secret="r" * 32,
             operator_secret="o" * 32,
             public_api_base_url="https://veramove.example.com",
-            agent_config_version="2026-07-19.1",
+            agent_config_version="2026-07-20.1",
             live_calls_enabled=True,
         ),
         supabase=SupabaseConfig(
@@ -318,7 +318,7 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
             "id": intake_version_id,
             "agent_id": intake_id,
             "branch_id": intake_branch_id,
-            "version_description": "VeraMove 2026-07-19.1",
+            "version_description": "VeraMove 2026-07-20.1",
         },
         (
             f"{base_url}/v1/convai/agents/{outbound_id}/versions/{outbound_version_id}"
@@ -326,7 +326,7 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
             "id": outbound_version_id,
             "agent_id": outbound_id,
             "branch_id": outbound_branch_id,
-            "version_description": "VeraMove 2026-07-19.1",
+            "version_description": "VeraMove 2026-07-20.1",
         },
         f"{base_url}/v1/convai/settings": {
             "conversation_initiation_client_data_webhook": {
