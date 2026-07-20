@@ -33,7 +33,7 @@ from services.api.app.orchestration.recording_capability import (
     RecordingCapabilitySigner,
 )
 
-REPAIR_MATERIALIZATION_VERSION = "2026-07-20.4"
+REPAIR_MATERIALIZATION_VERSION = "2026-07-20.5"
 MIN_OPERATOR_SECRET_CHARACTERS = 32
 
 

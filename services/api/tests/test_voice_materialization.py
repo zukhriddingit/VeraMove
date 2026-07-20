@@ -419,6 +419,24 @@ def test_quote_drops_non_numeric_optional_rate_units(job_spec, fixtures):
     assert fee.minimum_units is None
 
 
+def test_quote_normalizes_provider_binding_and_availability_phrases(job_spec, fixtures):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(
+        attempt,
+        collected_data={
+            "binding_type": "non-binding estimate",
+            "availability_status": "available on requested date",
+        },
+    )
+
+    result = materialize(event, attempt)
+
+    quote = result.outcome.quote
+    assert quote is not None
+    assert quote.binding_type.value == "non_binding"
+    assert quote.availability_status.value == "available"
+
+
 def test_quote_still_rejects_unsafe_provider_fee_amount(job_spec, fixtures):
     attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
     event = make_event(

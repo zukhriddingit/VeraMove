@@ -168,12 +168,8 @@ def _materialize_quote(
         "original_total",
         "headline_total",
     )
-    binding = _enum_value(BindingType, data.get("binding_type"), "binding_type")
-    availability_status = _enum_value(
-        AvailabilityStatus,
-        data.get("availability_status"),
-        "availability_status",
-    )
+    binding = _binding_type(data.get("binding_type"))
+    availability_status = _availability_status(data.get("availability_status"))
     availability = _bounded_text(
         data.get("availability") or "Not established",
         "availability",
@@ -511,11 +507,34 @@ def _first_decimal(data: dict[str, Any], *field_names: str) -> Decimal | None:
     return None
 
 
-def _enum_value(enum_type: type, value: Any, field_name: str):
+def _binding_type(value: Any) -> BindingType:
+    if not isinstance(value, str):
+        return BindingType.UNKNOWN
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
     try:
-        return enum_type(value)
-    except (TypeError, ValueError):
-        raise DomainConflict(f"{field_name} is invalid") from None
+        return BindingType(normalized)
+    except ValueError:
+        words = set(normalized.split("_"))
+        if "binding" in words and ({"non", "not"} & words):
+            return BindingType.NON_BINDING
+        if "binding" in words:
+            return BindingType.BINDING
+        return BindingType.UNKNOWN
+
+
+def _availability_status(value: Any) -> AvailabilityStatus:
+    if not isinstance(value, str):
+        return AvailabilityStatus.UNKNOWN
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    try:
+        return AvailabilityStatus(normalized)
+    except ValueError:
+        words = set(normalized.split("_"))
+        if "unavailable" in words or ({"not", "available"} <= words):
+            return AvailabilityStatus.UNAVAILABLE
+        if "available" in words:
+            return AvailabilityStatus.AVAILABLE
+        return AvailabilityStatus.UNKNOWN
 
 
 def _fee_amount(item: FeeLineItem) -> Decimal | None:
