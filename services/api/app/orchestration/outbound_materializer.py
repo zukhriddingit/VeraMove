@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -36,6 +37,23 @@ from services.api.app.orchestration.providers import QuoteVerificationGateway
 
 MAX_JSON_ITEMS = 40
 MAX_CONCESSIONS = 20
+MAX_PROVIDER_CATEGORY_LENGTH = 100
+PROVIDER_DECIMAL_PATTERN = re.compile(
+    r"^\$?(?:\d+(?:\.\d+)?|\d{1,3}(?:,\d{3})+(?:\.\d+)?)$"
+)
+FEE_ITEM_FIELDS = frozenset(
+    {
+        "category",
+        "description",
+        "amount",
+        "amount_status",
+        "unit_rate",
+        "units",
+        "minimum_units",
+        "disclosed_upfront",
+        "mandatory",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,19 +262,55 @@ def _fee_items(value: Any) -> list[FeeLineItem]:
     if not raw or len(raw) > MAX_JSON_ITEMS:
         raise DomainConflict("fee_items_json must contain 1 to 40 items")
     try:
-        return [FeeLineItem.model_validate(item) for item in raw]
-    except ValidationError as exc:
+        return [FeeLineItem.model_validate(_normalize_fee_item(item)) for item in raw]
+    except (DomainConflict, ValidationError) as exc:
         raise DomainConflict("fee_items_json contains an invalid fee") from exc
+
+
+def _normalize_fee_item(value: Any) -> dict[str, Any]:
+    """Adapt bounded provider JSON without weakening the canonical fee contract."""
+
+    if not isinstance(value, dict):
+        raise DomainConflict("fee_items_json contains an invalid fee")
+    normalized = {key: value[key] for key in FEE_ITEM_FIELDS if key in value}
+    if "category" not in normalized and "fee_category" in value:
+        normalized["category"] = value["fee_category"]
+    if "description" not in normalized and "name" in value:
+        normalized["description"] = value["name"]
+    if "amount" not in normalized and "fee_amount" in value:
+        normalized["amount"] = value["fee_amount"]
+    normalized["category"] = _fee_category(
+        normalized.get("category"),
+        allow_missing=True,
+    ).value
+    for field_name in ("amount", "unit_rate", "units", "minimum_units"):
+        if field_name in normalized:
+            normalized[field_name] = _provider_decimal(
+                normalized[field_name],
+                field_name,
+            )
+    amount_status = normalized.get("amount_status")
+    if amount_status is None:
+        has_amount = normalized.get("amount") is not None
+        has_calculable_rate = normalized.get("unit_rate") is not None and (
+            normalized.get("units") is not None
+            or normalized.get("minimum_units") is not None
+        )
+        normalized["amount_status"] = (
+            AmountStatus.KNOWN.value
+            if has_amount or has_calculable_rate
+            else AmountStatus.UNKNOWN.value
+        )
+    else:
+        normalized["amount_status"] = _amount_status(amount_status).value
+    return normalized
 
 
 def _fee_categories(value: Any) -> list[FeeCategory]:
     raw = _json_list(value, "addressed_fee_categories_json")
     if len(raw) > MAX_JSON_ITEMS:
         raise DomainConflict("addressed_fee_categories_json has too many items")
-    try:
-        return list(dict.fromkeys(FeeCategory(item) for item in raw))
-    except (TypeError, ValueError):
-        raise DomainConflict("addressed_fee_categories_json is invalid") from None
+    return list(dict.fromkeys(_fee_category(item) for item in raw))
 
 
 def _string_list(value: Any, field_name: str) -> list[str]:
@@ -293,32 +347,71 @@ def _validate_outcome_data_exclusive(
     outcome_type: CallOutcomeType,
     data: dict[str, Any],
 ) -> None:
-    quote_fields = {
-        "headline_total",
-        "deposit",
-        "original_total",
-        "negotiated_total",
-        "binding_type",
-        "availability_status",
-        "availability",
-        "fee_items_json",
-        "addressed_fee_categories_json",
-        "concessions_json",
-    }
-    allowed_details = {
-        CallOutcomeType.ITEMIZED_QUOTE: quote_fields,
-        CallOutcomeType.CALLBACK_COMMITMENT: {"callback_at"},
-        CallOutcomeType.DOCUMENTED_DECLINE: {"outcome_reason"},
-        CallOutcomeType.FAILED: {"outcome_reason"},
+    conflicting_fields = {
+        CallOutcomeType.ITEMIZED_QUOTE: {"callback_at", "outcome_reason"},
+        CallOutcomeType.CALLBACK_COMMITMENT: {"outcome_reason"},
+        CallOutcomeType.DOCUMENTED_DECLINE: {"callback_at"},
+        CallOutcomeType.FAILED: {"callback_at"},
     }[outcome_type]
-    populated_details = {
-        key for key in quote_fields | {"callback_at", "outcome_reason"} if data.get(key) is not None
+    populated_conflicts = {
+        field_name
+        for field_name in conflicting_fields
+        if _provider_value_is_populated(data.get(field_name))
     }
-    unexpected = populated_details - allowed_details
-    if unexpected:
+    if populated_conflicts:
         raise DomainConflict(
-            "Voice outcome contains mixed details: " + ", ".join(sorted(unexpected))
+            "Voice outcome contains mixed details: "
+            + ", ".join(sorted(populated_conflicts))
         )
+
+
+def _provider_value_is_populated(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None
+
+
+def _fee_category(value: Any, *, allow_missing: bool = False) -> FeeCategory:
+    if value is None and allow_missing:
+        return FeeCategory.OTHER
+    if not isinstance(value, str):
+        raise DomainConflict("fee category is invalid")
+    stripped = value.strip()
+    if not stripped or len(stripped) > MAX_PROVIDER_CATEGORY_LENGTH:
+        raise DomainConflict("fee category is invalid")
+    normalized = stripped.lower().replace("-", "_").replace(" ", "_")
+    try:
+        return FeeCategory(normalized)
+    except ValueError:
+        return FeeCategory.OTHER
+
+
+def _amount_status(value: Any) -> AmountStatus:
+    if not isinstance(value, str):
+        raise DomainConflict("fee amount_status is invalid")
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "n/a": AmountStatus.NOT_APPLICABLE,
+        "na": AmountStatus.NOT_APPLICABLE,
+        "not_applicable": AmountStatus.NOT_APPLICABLE,
+    }
+    if normalized in aliases:
+        return aliases[normalized]
+    try:
+        return AmountStatus(normalized)
+    except ValueError:
+        raise DomainConflict("fee amount_status is invalid") from None
+
+
+def _provider_decimal(value: Any, field_name: str) -> Decimal | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not PROVIDER_DECIMAL_PATTERN.fullmatch(stripped):
+            raise DomainConflict(f"{field_name} is invalid")
+        if stripped.startswith("$"):
+            stripped = stripped[1:]
+        value = stripped.replace(",", "")
+    return _optional_decimal(value, field_name)
 
 
 def _aware_datetime(value: Any, field_name: str) -> datetime:

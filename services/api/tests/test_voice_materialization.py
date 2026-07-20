@@ -11,6 +11,7 @@ import pytest
 from pydantic import HttpUrl
 
 from services.api.app.contracts import (
+    AmountStatus,
     CallOutcomeType,
     CallStatus,
     FeeCategory,
@@ -258,6 +259,120 @@ def test_non_quote_never_exposes_saved_audio_without_recording_consent(job_spec,
 
     assert result.outcome.type is CallOutcomeType.DOCUMENTED_DECLINE
     assert result.recording_url is None
+
+
+@pytest.mark.parametrize(
+    ("outcome_type", "outcome_reason"),
+    [
+        ("failed", "The synthetic participant did not answer."),
+        ("documented_decline", "The synthetic participant declined the role-play."),
+    ],
+)
+def test_non_quote_ignores_provider_quote_defaults(
+    outcome_type,
+    outcome_reason,
+    job_spec,
+    fixtures,
+):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(attempt).model_copy(
+        update={
+            "has_audio": False,
+            "collected_data": {
+                "recording_consent": False,
+                "outcome_type": outcome_type,
+                "outcome_reason": outcome_reason,
+                "availability": "Unknown",
+                "availability_status": "unknown",
+                "addressed_fee_categories_json": "[]",
+            },
+            "transcript_turns": (),
+        },
+        deep=True,
+    )
+
+    result = materialize(event, attempt)
+
+    assert result.outcome.type is CallOutcomeType(outcome_type)
+    assert result.outcome.reason == outcome_reason
+    assert result.outcome.quote is None
+
+
+def test_callback_ignores_provider_quote_defaults(job_spec, fixtures):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(attempt).model_copy(
+        update={
+            "collected_data": {
+                "recording_consent": True,
+                "outcome_type": "callback_commitment",
+                "callback_at": "2026-07-20T16:00:00Z",
+                "availability": "Unknown",
+                "availability_status": "unknown",
+                "addressed_fee_categories_json": "[]",
+            },
+            "transcript_turns": (),
+        },
+        deep=True,
+    )
+
+    result = materialize(event, attempt)
+
+    assert result.outcome.type is CallOutcomeType.CALLBACK_COMMITMENT
+    assert result.outcome.callback_at == datetime(2026, 7, 20, 16, 0, tzinfo=UTC)
+    assert result.outcome.quote is None
+
+
+def test_quote_normalizes_unknown_provider_fee(job_spec, fixtures):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(
+        attempt,
+        collected_data={
+            "fee_items_json": json.dumps(
+                [
+                    {
+                        "category": "service fee",
+                        "description": "Synthetic service fee; amount not stated.",
+                        "amount": None,
+                        "mandatory": True,
+                        "provider_note": "Ignored provider-only metadata.",
+                    }
+                ]
+            ),
+            "addressed_fee_categories_json": json.dumps(["service fee"]),
+        },
+    )
+
+    result = materialize(event, attempt)
+
+    quote = result.outcome.quote
+    assert quote is not None
+    fee = quote.fee_line_items[0]
+    assert fee.category is FeeCategory.OTHER
+    assert fee.amount is None
+    assert fee.amount_status is AmountStatus.UNKNOWN
+    assert quote.verified_data["addressed_fee_categories"] == ["other"]
+
+
+def test_quote_still_rejects_unsafe_provider_fee_amount(job_spec, fixtures):
+    attempt = make_attempt(job_spec, fixtures.load_live_role_play_vendors()[0])
+    event = make_event(
+        attempt,
+        collected_data={
+            "fee_items_json": json.dumps(
+                [
+                    {
+                        "category": "base_service",
+                        "description": "Synthetic base service fee.",
+                        "amount": "not-money",
+                        "mandatory": True,
+                    }
+                ]
+            )
+        },
+    )
+
+    with pytest.raises(DomainConflict, match="invalid fee"):
+        materialize(event, attempt)
 
 
 def test_rejects_mixed_outcome_details(job_spec, fixtures):
