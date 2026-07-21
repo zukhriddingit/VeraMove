@@ -2,8 +2,9 @@
 
 This is the operator runbook for VeraMove's two live ElevenLabs roles: **VeraMove Intake** and the
 single **VeraMove Outbound Negotiator**. Mock mode remains the normal development and CI path. Live
-voice is a supervised role-play demonstration using fictional facts and three consenting
-destinations; it is never permission to call a customer or a real moving company.
+voice supports a supervised role-play path and a separately gated official-business path. Neither
+path grants permission by itself: every destination owner must explicitly authorize the AI call and
+recording, and no real business is called during deployment verification.
 
 ## Deterministic mock smoke test
 
@@ -114,14 +115,17 @@ never in source, a populated `.env`, chat, screenshots, shell history, or logs.
    3. `supabase/migrations/202607190003_live_voice_materialization.sql`
    4. `supabase/migrations/202607190004_atomic_voice_intake.sql`
    5. `supabase/migrations/202607190005_browser_voice_intake.sql`
+   6. `supabase/migrations/202607210006_vendor_research.sql`
+   7. `supabase/migrations/202607210007_resumable_intake_vendor_calls.sql`
 
    Set `SUPABASE_URL`, backend-only `SUPABASE_SECRET_KEY`, and `SUPABASE_ENABLED=true` in Render.
    A live three-call run is disabled without durable Supabase. Create an obviously synthetic record,
    redeploy once, and prove it survives. Never run repository-reset test fixtures against this
    project.
 2. Optionally enable Tavily with `TAVILY_ENABLED=true`. It may return vendor discovery provenance,
-   but it never chooses the three role-play destinations and never supplies quote evidence or phone
-   contacts.
+   official-site contact candidates, and published pricing/fee leads. Those leads remain unverified
+   and never count as quote evidence. A human still selects exactly three vendors and records each
+   recipient's separate permission.
 3. Optionally enable OpenAI with `OPENAI_ENABLED=true`. It may extract a document `JobSpecV1` and
    narrate an already-grounded recommendation. It may not overwrite voice evidence, select an
    unsupported winner, or confirm a job.
@@ -130,6 +134,11 @@ never in source, a populated `.env`, chat, screenshots, shell history, or logs.
    `ELEVENLABS_PHONE_NUMBER_ID`, signing secrets, `AGENT_CONFIG_VERSION`, and exactly three unique
    E.164 values in `LIVE_TEST_TO_NUMBERS`. Twilio credentials stay in the provider dashboard and are
    not sent by VeraMove.
+
+For official-business calling, also create a new random `VENDOR_CONTACT_HASH_SECRET` of at least 32
+bytes and keep `REAL_VENDOR_CALLS_ENABLED=false`. Do not reuse another signing secret. The backend
+uses this value to bind reviewed contacts and store do-not-call suppressions without exposing raw
+numbers. `VENDOR_CONSENT_MAX_AGE_DAYS` defaults to 30.
 
 Leave `APP_MODE=mock` and `LIVE_CALLS_ENABLED=false` until every dashboard and preflight item below
 passes.
@@ -143,7 +152,7 @@ Do not improvise provider fields.
    reviewed prompts, generated Data Collection definitions, first messages, dynamic variables, and
    success evaluations. The outbound agent handles both `call_mode=quote` and
    `call_mode=negotiation`.
-2. Save both reviewed configurations with version description `VeraMove 2026-07-20.1`. Capture the
+2. Save both reviewed configurations with version description `VeraMove 2026-07-21.2`. Capture the
    provider's opaque `version_id` and `branch_id` in a secure release log, not in the repository.
    Attach no provider tools until reviewed ElevenLabs tool IDs exist.
 3. Enable **Audio Saving** on both agents and set the same 1–7 day nonzero retention. VeraMove
@@ -186,9 +195,13 @@ guard. Output contains only booleans, counts, and one-way redacted identifiers. 
 webhook-list API does not expose `retry_enabled`, the dashboard checklist remains the required retry
 verification. A false category blocks the smoke and full run.
 
-Confirm all three destination owners are consenting teammates, available now, and prepared to play
+Confirm all three consenting destination owners are teammates, available now, and prepared to play
 the three fictional vendors. Do not paste or print their numbers. Re-run preflight after any agent,
 secret, deployment, or dashboard change.
+
+For official-business readiness, keep `REAL_VENDOR_CALLS_ENABLED=false` during this check. Verify
+the new Outbound prompt variables and `recipient_opt_out` data-collection field against
+`agents/elevenlabs-dashboard-checklist.md`. Do not dial any public business as a configuration test.
 
 ## Manual-only one-call provider smoke
 
@@ -230,6 +243,44 @@ Only after the one-call smoke succeeds:
    recording proxy URLs. Demonstrate safe OpenAI usage counts, Tavily provenance, and persistence
    only if those optional integrations are enabled.
 
+## Interrupted intake recovery
+
+If a caller ends the browser interview before the final readback, wait for the signed terminal
+provider event. The session must become **incomplete**, not remain indefinitely in processing. The
+browser then offers three explicit choices:
+
+1. **Continue speaking** creates a new provider conversation with the existing structured facts and
+   asks only for missing fields.
+2. **Finish manually** creates an editable, unconfirmed draft and opens the confirmation screen.
+3. **Start over** reserves a separate blank session and does not mutate the interrupted one.
+
+No option reuses a provider conversation ID, persists a transcript, or locks a JobSpec. If the
+provider has not delivered a terminal event yet, the UI may show delayed processing and a manual
+check action; it must not invent a partial draft.
+
+## Official-business three-call release gate
+
+The frontend displays official-site contacts but accepts no arbitrary phone input. Before the
+canonical calls route can dispatch, an operator must select one server-issued contact for each of
+the three shortlisted vendors and record all of the following without preselected checkboxes:
+
+- recipient timezone and current opt-in time;
+- how direct permission was obtained and a non-secret consent-record reference;
+- affirmative consent to an AI-generated call;
+- affirmative consent to recording and ElevenLabs processing;
+- one final acknowledgement that exactly three calls will start with the locked JobSpec.
+
+The backend re-resolves every contact, validates the same JobSpec version/hash, checks consent age,
+local calling window, and hash-only suppression, persists all three attempts before the first
+provider request, and fails closed if any member of the batch is invalid. Website claims influence
+the targeted question plan but remain unverified until the recipient confirms them on the recorded
+call. A stop request ends the call and creates a suppression record.
+
+Only after migration, deployment, agent synchronization, check-only preflight, and a human review of
+all three current authorizations may an operator set `REAL_VENDOR_CALLS_ENABLED=true`. Enabling the
+flag does not dial; the separate frontend Start action does. Keep it `false` for normal development,
+CI, deployment verification, and any demo that lacks real recipient consent.
+
 ## Webhook retry, recording, and repair
 
 - Provider webhook retries are expected and safe. Do not redial after a provider reference exists;
@@ -243,10 +294,11 @@ Only after the one-call smoke succeeds:
 
 ## Rollback and secret cleanup
 
-If any mandatory check fails, stop before dialing. In Render, set `LIVE_CALLS_ENABLED=false` first,
-then restore `APP_MODE=mock` and redeploy. Optional OpenAI/Tavily/Supabase switches can be disabled
-independently. Mock mode remains credential-free and must never silently fall through to a live
-adapter.
+If any mandatory check fails, stop before dialing. In Render, set
+`REAL_VENDOR_CALLS_ENABLED=false` first, then `LIVE_CALLS_ENABLED=false`; restore `APP_MODE=mock` and
+redeploy if voice must be disabled completely. Optional OpenAI/Tavily/Supabase switches can be
+disabled independently. Mock mode remains credential-free and must never silently fall through to
+a live adapter.
 
 Unset any shell-only values after the supervised session:
 
@@ -255,6 +307,7 @@ unset APP_MODE LIVE_CALLS_ENABLED ELEVENLABS_API_KEY ELEVENLABS_INTAKE_AGENT_ID
 unset ELEVENLABS_OUTBOUND_AGENT_ID ELEVENLABS_PHONE_NUMBER_ID ELEVENLABS_WEBHOOK_SECRET
 unset ELEVENLABS_PRECALL_SECRET LIVE_TEST_TO_NUMBERS PUBLIC_API_BASE_URL
 unset RECORDING_SIGNING_SECRET VOICE_OPERATOR_SECRET AGENT_CONFIG_VERSION
+unset REAL_VENDOR_CALLS_ENABLED VENDOR_CONTACT_HASH_SECRET VENDOR_CONSENT_MAX_AGE_DAYS
 unset SUPABASE_ENABLED SUPABASE_URL SUPABASE_SECRET_KEY
 ```
 

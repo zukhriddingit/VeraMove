@@ -11,6 +11,12 @@ services:
         value: mock
       - key: LIVE_CALLS_ENABLED
         value: "false"
+      - key: REAL_VENDOR_CALLS_ENABLED
+        value: "false"
+      - key: VENDOR_CONTACT_HASH_SECRET
+        sync: false
+      - key: VENDOR_CONSENT_MAX_AGE_DAYS
+        value: "30"
       - key: ELEVENLABS_API_KEY
         sync: false
       - key: ELEVENLABS_INTAKE_AGENT_ID

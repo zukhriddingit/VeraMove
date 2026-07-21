@@ -10,8 +10,9 @@ destination numbers, or participant data.
 - [ ] Keep `LIVE_CALLS_ENABLED=false` until the redacted preflight passes.
 - [ ] Confirm credits and a daily call limit of at least three. Concurrency one is sufficient for
       sequential dispatch; concurrency three allows parallel dispatch.
-- [ ] Confirm exactly three unique, currently consenting teammate destination numbers are stored
-      only in Render's `LIVE_TEST_TO_NUMBERS` secret value.
+- [ ] For the role-play fallback, confirm exactly three unique, currently consenting teammate
+      destinations are stored only in Render's `LIVE_TEST_TO_NUMBERS` secret value. Official-site
+      recipients instead use the application authorization flow and never this environment value.
 - [ ] Use only fictional move and vendor facts.
 - [ ] Audio webhook: disabled. VeraMove streams retained audio on demand and does not accept pushed
       base64 audio.
@@ -189,5 +190,6 @@ fee evidence, and concessions against `agents/negotiator/data-collection.json`.
 - [ ] Run `.venv/bin/python scripts/live_voice_preflight.py --check-only` after every agent,
       webhook, secret, phone assignment, or deployment change.
 - [ ] Confirm the preflight reports only booleans, counts, and one-way hashes.
-- [ ] Complete one supervised synthetic Intake call, then one separately authorized outbound smoke,
-      before enabling the exactly-three-call role-play run.
+- [ ] Complete one supervised synthetic Intake call, then one separately authorized outbound smoke.
+      Before either an exactly-three role-play run or official-business run, review the three
+      current recipient permissions and keep the unrelated path disabled.
