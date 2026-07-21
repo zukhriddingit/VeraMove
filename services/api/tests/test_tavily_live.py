@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 import pytest
 
+from services.api.app.contracts import DataClassification
 from services.api.app.core.errors import ProviderRequestError
 from services.api.app.integrations.tavily.cached import CachedTavilyVendorDiscovery
 from services.api.app.integrations.tavily.live import (
@@ -162,6 +163,36 @@ def test_live_gateway_normalizes_provider_titles_to_contract_safe_slugs(
 
     assert vendor.slug == expected_slug
     assert len(vendor.slug) <= 80
+
+
+def test_production_gateway_keeps_unique_https_candidates_and_marks_them_real():
+    transport = RecordingTransport(
+        {
+            "results": [
+                {"title": "Mover A", "url": "https://a.example/pricing#rates"},
+                {"title": "Mover A duplicate", "url": "https://a.example/about"},
+                {"title": "Unsafe mover", "url": "http://unsafe.example"},
+                {"title": "Mover B", "url": "https://b.example/"},
+            ]
+        }
+    )
+    gateway = CachedTavilyVendorDiscovery(
+        TavilyHttpClient(
+            api_key="synthetic-tavily-key",
+            api_base_url="https://api.tavily.example",
+            transport=transport,
+        ),
+        role_play=False,
+    )
+
+    vendors = gateway.discover("Example City", None)
+
+    assert [vendor.name for vendor in vendors] == ["Mover A", "Mover B"]
+    assert all(
+        vendor.data_classification is DataClassification.REAL_REDACTED
+        for vendor in vendors
+    )
+    assert all(str(vendor.provenance[0].location).startswith("https://") for vendor in vendors)
 
 
 @pytest.mark.parametrize("status_code", [401, 429, 503])

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit, urlunsplit
 from uuid import NAMESPACE_URL, uuid5
 
 from services.api.app.contracts import (
@@ -55,11 +55,22 @@ class CachedTavilyVendorDiscovery:
                 f"within {query.radius_miles} miles"
             )
             results = self._client.search(query=phrase, max_results=self._max_results)
-            self._cache[key] = [
-                self._normalize(item, query)
-                for item in results
-                if item.get("title") and item.get("url")
-            ]
+            normalized: list[Vendor] = []
+            seen_hosts: set[str] = set()
+            for item in results:
+                title = item.get("title")
+                raw_url = item.get("url")
+                if not title or not raw_url:
+                    continue
+                url = self._safe_https_url(str(raw_url))
+                if url is None:
+                    continue
+                host = urlparse(url).netloc.casefold().removeprefix("www.")
+                if host in seen_hosts:
+                    continue
+                seen_hosts.add(host)
+                normalized.append(self._normalize(str(title), url, query))
+            self._cache[key] = normalized
         return [vendor.model_copy(deep=True) for vendor in self._cache[key]]
 
     def discover(self, origin: str | None, destination: str | None) -> list[Vendor]:
@@ -72,9 +83,15 @@ class CachedTavilyVendorDiscovery:
     def cache_size(self) -> int:
         return len(self._cache)
 
-    def _normalize(self, result: dict, query: VendorSearchQuery) -> Vendor:
-        url = str(result["url"])
-        name = str(result["title"]).strip()
+    @staticmethod
+    def _safe_https_url(raw_url: str) -> str | None:
+        parsed = urlsplit(raw_url.strip())
+        if parsed.scheme.casefold() != "https" or not parsed.netloc:
+            return None
+        return urlunsplit(("https", parsed.netloc, parsed.path or "/", parsed.query, ""))
+
+    def _normalize(self, name: str, url: str, query: VendorSearchQuery) -> Vendor:
+        name = name.strip()
         host = urlparse(url).netloc.casefold().removeprefix("www.")
         slug = _contract_safe_slug(name, url)
         classification = (

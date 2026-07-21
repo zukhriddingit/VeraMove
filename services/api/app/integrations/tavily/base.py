@@ -1,6 +1,9 @@
-"""Protocols for search-backed vendor discovery."""
+"""Protocols and bounded values for search-backed vendor research."""
 
+from dataclasses import dataclass
 from typing import Any, Literal, Protocol
+
+from pydantic import HttpUrl
 
 from services.api.app.contracts import Vendor, VendorSearchQuery
 
@@ -15,6 +18,22 @@ class VendorDiscoveryGateway(Protocol):
 
 class TavilySearchClient(Protocol):
     def search(self, *, query: str, max_results: int) -> list[dict[str, Any]]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedWebPage:
+    """One already-bounded webpage returned by the provider boundary."""
+
+    url: HttpUrl
+    content: str
+    truncated: bool
+
+
+class TavilyExtractClient(Protocol):
+    def extract(
+        self,
+        urls: tuple[HttpUrl, HttpUrl, HttpUrl],
+    ) -> dict[str, ExtractedWebPage | None]: ...
 
 
 class TavilyJsonTransport(Protocol):
