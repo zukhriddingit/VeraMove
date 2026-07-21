@@ -97,6 +97,10 @@ class IntakeDynamicVariables(BaseModel):
     job_id: UUID
     intake_session_id: UUID
     agent_config_version: str = Field(min_length=1, max_length=80)
+    intake_data_mode: IntakeDataMode
+    resume_mode: Literal["fresh", "structured_partial"] = "fresh"
+    partial_job_spec_json: str = Field(default="{}", min_length=2, max_length=50_000)
+    missing_fields_json: str = Field(default="[]", min_length=2, max_length=8_000)
 
 
 class AttachIntakeConversationRequest(BaseModel):

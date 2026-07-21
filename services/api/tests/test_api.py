@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from services.api.app.api.dependencies import (
     get_browser_voice_token_issuer,
     get_live_voice_operator_service,
+    get_repository,
     get_service,
 )
 from services.api.app.contracts import (
@@ -24,7 +25,12 @@ from services.api.app.contracts import (
 from services.api.app.core.config import LiveVoiceConfig, Settings, SupabaseConfig
 from services.api.app.core.errors import ProviderRequestError
 from services.api.app.main import create_app
-from services.api.app.orchestration.intake_sessions import IntakeSessionService
+from services.api.app.orchestration.intake_sessions import (
+    IntakeDataMode,
+    IntakeSession,
+    IntakeSessionService,
+    IntakeSessionStatus,
+)
 from services.api.app.orchestration.live_voice_operator import RecordingProxyPayload
 
 WEBHOOK_SECRET = "synthetic-webhook-secret"
@@ -279,17 +285,89 @@ def test_web_intake_session_is_created_without_an_incomplete_job(client):
 
     assert created.status_code == 201
     payload = created.json()
-    assert payload == {
-        "intake_session_id": payload["intake_session_id"],
-        "job_id": payload["job_id"],
-        "status": "pending",
-        "conversation_id": None,
-        "job_spec": None,
-    }
+    assert payload["data_mode"] == "supervised_role_play"
+    assert payload["status"] == "pending"
+    assert payload["conversation_id"] is None
+    assert payload["job_spec"] is None
+    assert payload["partial_job_spec"] is None
+    assert payload["missing_fields"] == []
+    assert payload["recovery_available"] is False
     fetched = client.get(f"/api/intake/sessions/{payload['intake_session_id']}")
     assert fetched.status_code == 200
     assert fetched.json() == payload
     assert client.get(f"/api/jobs/{payload['job_id']}").status_code == 404
+
+
+def test_intake_session_accepts_explicit_mode_and_exposes_recovery_actions(
+    client,
+    job_spec,
+):
+    created = client.post(
+        "/api/intake/sessions",
+        json={"data_mode": "real_redacted"},
+    )
+    assert created.status_code == 201
+    assert created.json()["data_mode"] == "real_redacted"
+
+    repository = get_repository()
+    session_id = uuid4()
+    job_id = uuid4()
+    partial = job_spec.model_copy(
+        update={
+            "job_id": job_id,
+            "intake_source": IntakeSource.VOICE,
+            "move_date": None,
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+            "data_classification": DataClassification.ROLE_PLAY,
+        },
+        deep=True,
+    )
+    source = IntakeSession(
+        intake_session_id=session_id,
+        job_id=job_id,
+        expected_agent_id="synthetic-mock-intake-agent",
+        agent_config_version="mock-v1",
+        data_mode=IntakeDataMode.SUPERVISED_ROLE_PLAY,
+        status=IntakeSessionStatus.INCOMPLETE,
+        conversation_id="conv_synthetic_api_recovery",
+        partial_job_spec=partial,
+        missing_fields=partial.missing_required_fields(),
+        terminal_reason="user_ended_before_summary",
+        created_at=datetime(2026, 7, 18, 15, 59, tzinfo=UTC),
+        updated_at=datetime(2026, 7, 18, 16, 0, tzinfo=UTC),
+    )
+    repository.create_intake_session(source)
+
+    resumed = client.post(f"/api/intake/sessions/{session_id}/resume")
+    assert resumed.status_code == 200
+    resumed_again = client.post(f"/api/intake/sessions/{session_id}/resume")
+    assert resumed_again.json()["intake_session_id"] == resumed.json()[
+        "intake_session_id"
+    ]
+    assert resumed.json()["partial_job_spec"]["move_date"] is None
+
+    manual_source_id = uuid4()
+    manual_job_id = uuid4()
+    manual_partial = partial.model_copy(update={"job_id": manual_job_id}, deep=True)
+    repository.create_intake_session(
+        source.model_copy(
+            update={
+                "intake_session_id": manual_source_id,
+                "job_id": manual_job_id,
+                "conversation_id": "conv_synthetic_api_manual",
+                "partial_job_spec": manual_partial,
+            },
+            deep=True,
+        )
+    )
+    manual = client.post(
+        f"/api/intake/sessions/{manual_source_id}/finish-manually"
+    )
+    assert manual.status_code == 200
+    assert manual.json()["job_spec"]["job_id"] == str(manual_job_id)
+    assert manual.json()["job_spec"]["confirmed"] is False
 
 
 def test_unknown_intake_session_and_conversation_are_not_found(client):
@@ -351,6 +429,10 @@ def test_browser_voice_token_and_conversation_routes_are_correlated_and_no_store
             "job_id": session["job_id"],
             "intake_session_id": session["intake_session_id"],
             "agent_config_version": "2026-07-19.browser-v1",
+            "intake_data_mode": "supervised_role_play",
+            "resume_mode": "fresh",
+            "partial_job_spec_json": "{}",
+            "missing_fields_json": "[]",
         },
     }
     assert "synthetic-elevenlabs-key" not in issued.text
@@ -506,8 +588,16 @@ def test_pre_call_is_idempotent_redacted_and_returns_exact_dynamic_variables(job
             "job_id",
             "intake_session_id",
             "agent_config_version",
+            "intake_data_mode",
+            "resume_mode",
+            "partial_job_spec_json",
+            "missing_fields_json",
         }
         assert variables["agent_config_version"] == "2026-07-19.1"
+        assert variables["intake_data_mode"] == "supervised_role_play"
+        assert variables["resume_mode"] == "fresh"
+        assert variables["partial_job_spec_json"] == "{}"
+        assert variables["missing_fields_json"] == "[]"
         assert "prompt" not in first.json()
         assert other.status_code == 200
         other_variables = other.json()["dynamic_variables"]

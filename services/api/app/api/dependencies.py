@@ -64,6 +64,7 @@ from services.api.app.integrations.tavily.mock import (
 )
 from services.api.app.observability.usage import UsageRecorder
 from services.api.app.orchestration.fixtures import DemoFixtures
+from services.api.app.orchestration.intake_recovery import IntakeRecoveryService
 from services.api.app.orchestration.intake_sessions import IntakeSessionService
 from services.api.app.orchestration.live_intelligence import LiveIntelligenceProvider
 from services.api.app.orchestration.live_voice_operator import (
@@ -178,6 +179,28 @@ def get_intake_session_service(request: Request) -> IntakeSessionService:
         repository=request.app.state.repository,
         expected_agent_id=config.intake_agent_id or "synthetic-mock-intake-agent",
         agent_config_version=config.agent_config_version or "mock-v1",
+        clock=mock_now if settings.app_mode == "mock" else utc_now,
+    )
+
+
+def get_intake_recovery_service(request: Request) -> IntakeRecoveryService:
+    """Compose structured recovery without requiring provider credentials in mock mode."""
+
+    settings: Settings = request.app.state.settings
+    conversations = None
+    if settings.app_mode == "live":
+        config = settings.require_browser_voice_config()
+        assert config.api_key is not None
+        conversations = ElevenLabsConversationClient(
+            api_key=config.api_key,
+            api_base_url=config.api_base_url,
+            transport=HttpxConversationTransport(),
+        )
+    return IntakeRecoveryService(
+        sessions=get_intake_session_service(request),
+        repository=request.app.state.repository,
+        conversations=conversations,
+        materializer=request.app.state.service._voice_materializer,
         clock=mock_now if settings.app_mode == "mock" else utc_now,
     )
 

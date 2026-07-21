@@ -178,16 +178,17 @@ class VoiceMaterializer:
             if existing is None:
                 raise DomainConflict("Completed intake session has no canonical JobRecord")
             return WebhookAck(accepted=False, duplicate=True)
-        if session.status is IntakeSessionStatus.FAILED:
-            raise DomainConflict("Failed intake session cannot be completed")
+        if session.status in {
+            IntakeSessionStatus.INCOMPLETE,
+            IntakeSessionStatus.FAILED,
+        }:
+            return WebhookAck(accepted=False, duplicate=True)
 
         lease_token, duplicate = self._claim(event.idempotency_key, event.event_type)
         if duplicate is not None:
             return duplicate
         assert lease_token is not None
         try:
-            if session.status is IntakeSessionStatus.INCOMPLETE:
-                raise DomainConflict("Incomplete intake session is already terminal")
             if existing is not None:
                 raise DomainConflict("Intake session already owns a canonical JobSpec")
             if event.collected_data.get("recording_consent") is not True:

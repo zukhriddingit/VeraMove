@@ -379,6 +379,16 @@ class IntakeSessionService:
             raise ResourceNotFound(f"Intake session {session_id} was not found")
         return self._view(session)
 
+    def require_session(self, session_id: UUID | str) -> IntakeSession:
+        """Return one validated internal session without exposing repository internals."""
+
+        return self._require_session(UUID(str(session_id)))
+
+    def view_session(self, session: IntakeSession) -> IntakeSessionView:
+        """Project an already-loaded internal session through the safe API view."""
+
+        return self._view(session)
+
     def get_by_conversation(self, conversation_id: str) -> IntakeSessionView:
         normalized = _bounded_text(
             conversation_id,
