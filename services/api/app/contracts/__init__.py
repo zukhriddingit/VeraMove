@@ -43,6 +43,10 @@ from services.api.app.contracts.models import (
     VerifiedCompetingQuote,
     WebhookAck,
 )
+from services.api.app.contracts.vendor_calls import (
+    CallContext,
+    VendorContactCandidateV1,
+)
 from services.api.app.contracts.vendor_research import (
     JobVendorResearchV1,
     VendorResearchDossierV1,
@@ -62,6 +66,7 @@ __all__ = [
     "CallOutcomeType",
     "CallRecord",
     "CallStatus",
+    "CallContext",
     "DataClassification",
     "DocumentParseResult",
     "DwellingType",
@@ -92,6 +97,7 @@ __all__ = [
     "TranscriptEvidence",
     "TranscriptQuoteFacts",
     "Vendor",
+    "VendorContactCandidateV1",
     "VendorDiscoveryResponse",
     "VendorResearchDossierV1",
     "VendorSearchQuery",

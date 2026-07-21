@@ -298,6 +298,34 @@ def test_analysis_persists_claims_questions_and_never_mutates_job_evidence(resea
     assert stored_job.recommendation is None
 
 
+def test_analysis_persists_reconstructable_official_contact_candidates(research_stack):
+    service, repository, job, vendors, _, extract, _ = research_stack
+    for index, vendor in enumerate(vendors):
+        url = vendor.provenance[0].location
+        extract.pages[url] = ExtractedWebPage(
+            url=HttpUrl(url),
+            content=f"Moving services start at $149/hour. Call (617) 555-010{index}.",
+            truncated=False,
+        )
+    service.discover(job.job_spec.job_id)
+    service.set_shortlist(
+        job.job_spec.job_id,
+        [vendor.vendor_id for vendor in vendors],
+    )
+
+    analyzed = service.analyze(job.job_spec.job_id)
+    stored = repository.get_vendor_research(job.job_spec.job_id, "1.0")
+
+    assert stored is not None
+    assert [
+        dossier.contact_candidates[0].normalized_number
+        for dossier in analyzed.dossiers
+    ] == ["+16175550100", "+16175550101", "+16175550102"]
+    assert stored == analyzed
+    safe_payload = analyzed.model_dump(mode="json")
+    assert "normalized_number" not in repr(safe_payload)
+
+
 def test_analysis_keeps_partial_success_and_retries_only_non_complete_dossiers(
     research_stack,
 ):

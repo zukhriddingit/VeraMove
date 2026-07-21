@@ -29,6 +29,9 @@ from services.api.app.integrations.tavily.base import (
     TavilyExtractClient,
     VendorDiscoveryGateway,
 )
+from services.api.app.orchestration.vendor_contacts import (
+    extract_official_us_contacts,
+)
 from services.api.app.orchestration.vendor_research_questions import (
     build_verification_plan,
 )
@@ -204,13 +207,32 @@ class VendorResearchService:
                     researched_at,
                     "Vendor website content was unavailable. Retry research later.",
                 )
-            elif self._claim_extractor is None:
-                replacement = self._failed_dossier(
-                    dossier.vendor,
-                    researched_at,
-                    "Website claim analysis is not configured. Retry research later.",
-                )
             else:
+                contacts = (
+                    extract_official_us_contacts(dossier.vendor, page)
+                    if current.source == "tavily"
+                    else []
+                )
+                if self._claim_extractor is None:
+                    replacement = self._failed_or_partial_dossier(
+                        dossier.vendor,
+                        researched_at,
+                        "Website claim analysis is not configured. Retry research later.",
+                        contacts,
+                    )
+                    dossier_by_id[vendor_id] = replacement
+                    current = current.model_copy(
+                        update={
+                            "dossiers": [
+                                dossier_by_id[vendor_id]
+                                for vendor_id in current.selected_vendor_ids
+                            ],
+                            "updated_at": researched_at,
+                        },
+                        deep=True,
+                    )
+                    current = self._research.save_vendor_research(current)
+                    continue
                 try:
                     claims = self._claim_extractor.extract(
                         dossier.vendor,
@@ -218,10 +240,11 @@ class VendorResearchService:
                         researched_at,
                     )
                 except ProviderRequestError:
-                    replacement = self._failed_dossier(
+                    replacement = self._failed_or_partial_dossier(
                         dossier.vendor,
                         researched_at,
                         "Website claim analysis was unavailable. Retry research later.",
+                        contacts,
                     )
                 else:
                     questions, missing = build_verification_plan(
@@ -229,7 +252,7 @@ class VendorResearchService:
                         claims,
                         self._required_fee_categories,
                     )
-                    if page.truncated and not claims:
+                    if page.truncated and not claims and not contacts:
                         replacement = self._failed_dossier(
                             dossier.vendor,
                             researched_at,
@@ -240,6 +263,7 @@ class VendorResearchService:
                             vendor=dossier.vendor,
                             status="partial" if page.truncated else "complete",
                             claims=claims,
+                            contact_candidates=contacts,
                             missing_fee_categories=missing,
                             verification_questions=questions,
                             researched_at=researched_at,
@@ -363,6 +387,27 @@ class VendorResearchService:
         return VendorResearchDossierV1(
             vendor=vendor,
             status="failed",
+            researched_at=researched_at,
+            safe_failure_reason=reason,
+        )
+
+    @staticmethod
+    def _failed_or_partial_dossier(
+        vendor: Vendor,
+        researched_at: datetime,
+        reason: str,
+        contacts: list,
+    ) -> VendorResearchDossierV1:
+        if not contacts:
+            return VendorResearchService._failed_dossier(
+                vendor,
+                researched_at,
+                reason,
+            )
+        return VendorResearchDossierV1(
+            vendor=vendor,
+            status="partial",
+            contact_candidates=contacts,
             researched_at=researched_at,
             safe_failure_reason=reason,
         )
