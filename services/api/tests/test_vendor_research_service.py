@@ -199,6 +199,18 @@ def test_discovery_uses_locked_city_state_and_persists_real_candidates(research_
     assert repository.get_vendor_research(job.job_spec.job_id, "1.0") == result
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("Newton, Massachusetts", ("Newton", "MA")),
+        ("Boston, ma", ("Boston", "MA")),
+        ("Washington, District of Columbia", ("Washington", "DC")),
+    ],
+)
+def test_city_state_normalizes_full_names_and_case(value, expected):
+    assert VendorResearchService._city_state(value) == expected
+
+
 def test_discovery_requires_confirmed_safe_city_state(fixtures, job_spec):
     repository = InMemoryRepository()
     draft = JobRecord(
