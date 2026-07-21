@@ -69,7 +69,7 @@ docs/submission/             Project Summary, video scripts, claim ledger, submi
 ## Prerequisites
 
 - Python 3.11 or newer
-- Node.js 20.19 or newer with npm
+- Node.js 22.13 or newer with npm
 - Git
 
 No API credentials, Supabase project, telephony account, or local database is required.
