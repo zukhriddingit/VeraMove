@@ -119,15 +119,20 @@ def test_document_parser_preserves_missing_fields_and_uses_configurable_model(
     assert client.calls[0]["response_schema"] is DocumentParseResult
 
 
-def test_document_parser_revalidates_strict_structured_output(job_spec):
+def test_document_parser_revalidates_strict_structured_output(job_spec, caplog):
     payload = _document_result(job_spec).model_dump(mode="json")
-    payload["unexpected"] = True
+    payload["unexpected"] = "must-not-log-provider-output"
     with pytest.raises(ValidationError):
         OpenAIDocumentParser(FakeDocumentClient(payload)).parse_document(
             b"synthetic",
             "image/png",
             "synthetic-room.png",
         )
+
+    assert "openai_document_validation_failed" in caplog.text
+    assert "unexpected" in caplog.text
+    assert "extra_forbidden" in caplog.text
+    assert "must-not-log-provider-output" not in caplog.text
 
 
 def test_document_merge_fills_only_missing_voice_facts(job_spec):
