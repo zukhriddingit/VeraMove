@@ -43,6 +43,16 @@ from services.api.app.contracts.models import (
     VerifiedCompetingQuote,
     WebhookAck,
 )
+from services.api.app.contracts.vendor_research import (
+    JobVendorResearchV1,
+    VendorResearchDossierV1,
+    VendorShortlistRequest,
+    VendorVerificationQuestionV1,
+    WebsiteClaimExtractionResult,
+    WebsiteClaimKind,
+    WebsiteResearchClaimDraft,
+    WebsiteResearchClaimV1,
+)
 
 __all__ = [
     "AmountStatus",
@@ -69,6 +79,7 @@ __all__ = [
     "JobRecord",
     "JobSpecV1",
     "JobState",
+    "JobVendorResearchV1",
     "MovingServices",
     "OriginDestinationAccess",
     "ProvenanceReference",
@@ -82,8 +93,15 @@ __all__ = [
     "TranscriptQuoteFacts",
     "Vendor",
     "VendorDiscoveryResponse",
+    "VendorResearchDossierV1",
     "VendorSearchQuery",
+    "VendorShortlistRequest",
+    "VendorVerificationQuestionV1",
     "VerifiedCompetingQuote",
     "VerificationStatus",
     "WebhookAck",
+    "WebsiteClaimExtractionResult",
+    "WebsiteClaimKind",
+    "WebsiteResearchClaimDraft",
+    "WebsiteResearchClaimV1",
 ]
