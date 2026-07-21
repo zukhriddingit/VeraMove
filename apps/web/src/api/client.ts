@@ -26,15 +26,25 @@ export const API_BASE_URL = (
   env?.VITE_API_BASE_URL || "https://veramove-api-demo-zukhriddingit.onrender.com"
 ).replace(/\/$/, "");
 
-const STORAGE_KEY = "veramove.runtimeMode";
+const SESSION_STORAGE_KEY = "veramove.runtimeMode.session";
+const LEGACY_STORAGE_KEY = "veramove.runtimeMode";
 
-function readStoredMode(): RuntimeMode | null {
+function readSessionMode(): RuntimeMode | null {
   if (typeof window === "undefined") return null;
   try {
-    const value = window.localStorage.getItem(STORAGE_KEY);
+    const value = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
     return value === "demo" || value === "live" ? value : null;
   } catch {
     return null;
+  }
+}
+
+function removeLegacyStoredMode(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable; the Live production default stays active.
   }
 }
 
@@ -55,6 +65,12 @@ export function getRuntimeMode(): RuntimeMode {
   return currentMode;
 }
 
+export function hydrateRuntimeMode(): void {
+  removeLegacyStoredMode();
+  const storedMode = readSessionMode();
+  if (storedMode) publishMode(storedMode);
+}
+
 export function useRuntimeMode(): RuntimeMode {
   const mode = useSyncExternalStore(
     (callback) => {
@@ -66,8 +82,7 @@ export function useRuntimeMode(): RuntimeMode {
   );
 
   useEffect(() => {
-    const storedMode = readStoredMode();
-    if (storedMode) publishMode(storedMode);
+    hydrateRuntimeMode();
   }, []);
 
   return mode;
@@ -76,7 +91,8 @@ export function useRuntimeMode(): RuntimeMode {
 export function setRuntimeMode(next: RuntimeMode, options?: { redirectTo?: string }): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, next);
+    window.sessionStorage.setItem(SESSION_STORAGE_KEY, next);
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch {
     // Storage can be unavailable in privacy modes; navigation still works.
   }
