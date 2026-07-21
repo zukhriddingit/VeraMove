@@ -135,7 +135,7 @@ class IntakeSession(BaseModel):
             if self.partial_job_spec is None:
                 raise ValueError("incomplete intake sessions require partial_job_spec")
             expected_missing = tuple(self.partial_job_spec.missing_required_fields())
-            if self.missing_fields != expected_missing:
+            if tuple(self.missing_fields) != expected_missing:
                 raise ValueError("missing_fields must match partial_job_spec")
             if self.terminal_reason is None:
                 raise ValueError("incomplete intake sessions require terminal_reason")
@@ -504,8 +504,15 @@ class IntakeSessionService:
             assert record is not None
             job_spec = record.job_spec
         else:
-            if record is not None:
+            manual_record_expected = (
+                session.status is IntakeSessionStatus.INCOMPLETE
+                and session.recovery_action is IntakeRecoveryAction.MANUAL
+                and session.recovery_target_id == session.job_id
+            )
+            if record is not None and not manual_record_expected:
                 raise DomainConflict("Incomplete intake session cannot own a JobRecord")
+            if manual_record_expected:
+                self._validate_manual_job(session, record)
             job_spec = None
         return IntakeSessionView(
             intake_session_id=session.intake_session_id,
@@ -547,6 +554,22 @@ class IntakeSessionService:
             or record.job_spec.locked_version is not None
         ):
             raise DomainConflict("Completed intake session requires an unconfirmed voice JobSpec")
+
+    @staticmethod
+    def _validate_manual_job(
+        session: IntakeSession,
+        record: JobRecord | None,
+    ) -> None:
+        if (
+            record is None
+            or session.partial_job_spec is None
+            or record.job_spec != session.partial_job_spec
+            or record.state is not JobState.INTAKE_COMPLETE
+            or record.calls
+            or record.quotes
+            or record.recommendation is not None
+        ):
+            raise DomainConflict("Manual intake recovery requires its editable partial JobSpec")
 
 
 def _bounded_text(value: str, field_name: str, *, max_length: int) -> str:

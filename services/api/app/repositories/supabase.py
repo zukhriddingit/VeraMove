@@ -12,6 +12,7 @@ from services.api.app.contracts import (
     CallRecord,
     DataClassification,
     JobRecord,
+    JobState,
     JobVendorResearchV1,
     QuoteV1,
     RecommendationV1,
@@ -26,7 +27,9 @@ from services.api.app.core.errors import (
     ResourceNotFound,
 )
 from services.api.app.orchestration.intake_sessions import (
+    IntakeRecoveryAction,
     IntakeSession,
+    IntakeSessionStatus,
     validate_intake_session_update,
 )
 from services.api.app.orchestration.models import CallAttempt, JobEvent
@@ -400,6 +403,7 @@ class SupabaseRepository:
             {
                 "p_idempotency_key": request.idempotency_key,
                 "p_lease_token": str(request.lease_token),
+                "p_schema_version": "2026-07-21.2",
                 "p_kind": candidate.kind,
                 "p_session": session_row,
                 "p_job": job_row,
@@ -596,6 +600,80 @@ class SupabaseRepository:
             raise ProviderRequestError("Supabase returned an invalid intake reservation")
         return self._intake_session_from_row(payload)
 
+    def claim_intake_resume(
+        self,
+        session_id: UUID,
+        child: IntakeSession,
+        now: datetime,
+    ) -> IntakeSession:
+        source = self.get_intake_session(session_id)
+        if source is None:
+            raise ResourceNotFound(f"Intake session {session_id} was not found")
+        if source.recovery_action is IntakeRecoveryAction.RESUME:
+            assert source.recovery_target_id is not None
+            existing = self.get_intake_session(source.recovery_target_id)
+            if existing is None:
+                raise DomainConflict("Intake resume target is missing")
+            return existing
+        if source.recovery_action is not None:
+            raise DomainConflict("Incomplete intake already has a recovery action")
+        _validate_resume_candidate(source, child, now)
+        payload = self._client.rpc(
+            "veramove_claim_intake_resume",
+            {
+                "p_session_id": str(session_id),
+                "p_child": self._intake_session_row(child),
+                "p_now": now.isoformat(),
+            },
+        )
+        if not isinstance(payload, dict):
+            raise ProviderRequestError("Supabase returned an invalid intake resume")
+        try:
+            saved = self._intake_session_from_row(payload)
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError("Supabase returned an invalid intake resume") from exc
+        if saved != child:
+            raise ProviderRequestError("Supabase intake resume did not match the request")
+        return saved
+
+    def finish_intake_manually(
+        self,
+        session_id: UUID,
+        job: JobRecord,
+        now: datetime,
+    ) -> JobRecord:
+        source = self.get_intake_session(session_id)
+        if source is None:
+            raise ResourceNotFound(f"Intake session {session_id} was not found")
+        if source.recovery_action is IntakeRecoveryAction.MANUAL:
+            assert source.recovery_target_id is not None
+            existing = self.get(source.recovery_target_id)
+            if existing is None:
+                raise DomainConflict("Manual intake recovery job is missing")
+            return existing
+        if source.recovery_action is not None:
+            raise DomainConflict("Incomplete intake already has a recovery action")
+        _validate_manual_candidate(source, job, now)
+        payload = self._client.rpc(
+            "veramove_finish_intake_manually",
+            {
+                "p_session_id": str(session_id),
+                "p_job": self._job_row(job),
+                "p_now": now.isoformat(),
+            },
+        )
+        if not isinstance(payload, dict):
+            raise ProviderRequestError("Supabase returned an invalid manual intake job")
+        try:
+            saved = JobRecord.model_validate(deepcopy(payload["payload"]))
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError(
+                "Supabase returned an invalid manual intake job"
+            ) from exc
+        if saved != job:
+            raise ProviderRequestError("Supabase manual intake job did not match the request")
+        return saved
+
     def reset(self) -> None:
         raise RuntimeError("SupabaseRepository reset is disabled")
 
@@ -711,7 +789,35 @@ class SupabaseRepository:
             "conversation_id": session.conversation_id,
             "expected_agent_id": session.expected_agent_id,
             "agent_config_version": session.agent_config_version,
+            "data_mode": session.data_mode.value,
             "status": session.status.value,
+            "partial_job_spec": (
+                session.partial_job_spec.model_dump(mode="json")
+                if session.partial_job_spec is not None
+                else None
+            ),
+            "base_job_spec": (
+                session.base_job_spec.model_dump(mode="json")
+                if session.base_job_spec is not None
+                else None
+            ),
+            "missing_fields": list(session.missing_fields),
+            "terminal_reason": session.terminal_reason,
+            "recovery_action": (
+                session.recovery_action.value
+                if session.recovery_action is not None
+                else None
+            ),
+            "recovery_target_id": (
+                str(session.recovery_target_id)
+                if session.recovery_target_id is not None
+                else None
+            ),
+            "resumed_from_session_id": (
+                str(session.resumed_from_session_id)
+                if session.resumed_from_session_id is not None
+                else None
+            ),
             "failure_code": session.failure_code,
             "created_at": session.created_at.isoformat(),
             "updated_at": session.updated_at.isoformat(),
@@ -847,7 +953,15 @@ class SupabaseRepository:
                 "conversation_id": row.get("conversation_id"),
                 "expected_agent_id": row["expected_agent_id"],
                 "agent_config_version": row["agent_config_version"],
+                "data_mode": row.get("data_mode", "supervised_role_play"),
                 "status": row["status"],
+                "partial_job_spec": row.get("partial_job_spec"),
+                "base_job_spec": row.get("base_job_spec"),
+                "missing_fields": row.get("missing_fields") or [],
+                "terminal_reason": row.get("terminal_reason"),
+                "recovery_action": row.get("recovery_action"),
+                "recovery_target_id": row.get("recovery_target_id"),
+                "resumed_from_session_id": row.get("resumed_from_session_id"),
                 "failure_code": row.get("failure_code"),
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
@@ -857,6 +971,49 @@ class SupabaseRepository:
                 ),
             }
         )
+
+def _validate_resume_candidate(
+    source: IntakeSession,
+    child: IntakeSession,
+    now: datetime,
+) -> None:
+    if source.status is not IntakeSessionStatus.INCOMPLETE or source.partial_job_spec is None:
+        raise DomainConflict("Only incomplete intake sessions can resume")
+    expected_base = source.partial_job_spec.model_copy(
+        update={"job_id": child.job_id},
+        deep=True,
+    )
+    if (
+        child.status is not IntakeSessionStatus.PENDING
+        or child.resumed_from_session_id != source.intake_session_id
+        or child.base_job_spec != expected_base
+        or child.data_mode is not source.data_mode
+        or child.expected_agent_id != source.expected_agent_id
+        or child.agent_config_version != source.agent_config_version
+        or child.provider_call_key_hash is not None
+        or child.created_at != now
+        or child.updated_at != now
+    ):
+        raise DomainConflict("Intake resume child does not match its source")
+
+
+def _validate_manual_candidate(
+    source: IntakeSession,
+    job: JobRecord,
+    now: datetime,
+) -> None:
+    if source.status is not IntakeSessionStatus.INCOMPLETE or source.partial_job_spec is None:
+        raise DomainConflict("Only incomplete intake sessions can finish manually")
+    if (
+        job.job_spec != source.partial_job_spec
+        or job.state is not JobState.INTAKE_COMPLETE
+        or job.created_at != now
+        or job.updated_at != now
+        or job.calls
+        or job.quotes
+        or job.recommendation is not None
+    ):
+        raise DomainConflict("Manual intake job does not match the partial spec")
 
 
 __all__ = ["SupabaseRepository"]

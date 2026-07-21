@@ -11,6 +11,7 @@ from uuid import UUID
 from services.api.app.contracts import (
     CallRecord,
     JobRecord,
+    JobState,
     JobVendorResearchV1,
     QuoteV1,
     VerificationStatus,
@@ -21,6 +22,7 @@ from services.api.app.core.errors import (
     ResourceNotFound,
 )
 from services.api.app.orchestration.intake_sessions import (
+    IntakeRecoveryAction,
     IntakeSession,
     IntakeSessionStatus,
     validate_intake_session_update,
@@ -410,7 +412,7 @@ class InMemoryRepository:
                 self._job_revisions.setdefault(candidate.session.job_id, 0)
                 self._events[candidate.session.job_id] = event_payloads
             elif candidate.session.job_id in self._jobs:
-                raise DomainConflict("Failed intake session cannot own a canonical job")
+                raise DomainConflict("Non-completed intake session cannot own a canonical job")
 
             self._intake_sessions[candidate.session.intake_session_id] = session_payload
             self._voice_webhook_receipts[request.idempotency_key] = processed_receipt
@@ -595,6 +597,98 @@ class InMemoryRepository:
             )
         return self._copy_intake_session(candidate)
 
+    def claim_intake_resume(
+        self,
+        session_id: UUID,
+        child: IntakeSession,
+        now: datetime,
+    ) -> IntakeSession:
+        candidate_child = self._copy_intake_session(child)
+        with self._lock:
+            source_payload = self._intake_sessions.get(session_id)
+            if source_payload is None:
+                raise ResourceNotFound(f"Intake session {session_id} was not found")
+            source = IntakeSession.model_validate(deepcopy(source_payload))
+            if source.recovery_action is IntakeRecoveryAction.RESUME:
+                assert source.recovery_target_id is not None
+                stored = self._intake_sessions.get(source.recovery_target_id)
+                if stored is None:
+                    raise DomainConflict("Intake resume target is missing")
+                return IntakeSession.model_validate(deepcopy(stored))
+            if source.recovery_action is not None:
+                raise DomainConflict("Incomplete intake already has a recovery action")
+            self._validate_resume_child(source, candidate_child, now)
+            if candidate_child.intake_session_id in self._intake_sessions:
+                raise DuplicateResource(
+                    f"Intake session {candidate_child.intake_session_id} already exists"
+                )
+            if any(
+                payload["job_id"] == str(candidate_child.job_id)
+                for payload in self._intake_sessions.values()
+            ):
+                raise DuplicateResource(
+                    f"An intake session already exists for job {candidate_child.job_id}"
+                )
+            claimed = source.model_copy(
+                update={
+                    "recovery_action": IntakeRecoveryAction.RESUME,
+                    "recovery_target_id": candidate_child.intake_session_id,
+                    "updated_at": now,
+                },
+                deep=True,
+            )
+            validate_intake_session_update(source, claimed)
+            self._intake_sessions[candidate_child.intake_session_id] = deepcopy(
+                candidate_child.model_dump(mode="json")
+            )
+            self._intake_sessions[session_id] = deepcopy(
+                claimed.model_dump(mode="json")
+            )
+        return self._copy_intake_session(candidate_child)
+
+    def finish_intake_manually(
+        self,
+        session_id: UUID,
+        job: JobRecord,
+        now: datetime,
+    ) -> JobRecord:
+        candidate_job = self._copy(job)
+        with self._lock:
+            source_payload = self._intake_sessions.get(session_id)
+            if source_payload is None:
+                raise ResourceNotFound(f"Intake session {session_id} was not found")
+            source = IntakeSession.model_validate(deepcopy(source_payload))
+            if source.recovery_action is IntakeRecoveryAction.MANUAL:
+                assert source.recovery_target_id is not None
+                stored = self._jobs.get(source.recovery_target_id)
+                if stored is None:
+                    raise DomainConflict("Manual intake recovery job is missing")
+                return JobRecord.model_validate(deepcopy(stored))
+            if source.recovery_action is not None:
+                raise DomainConflict("Incomplete intake already has a recovery action")
+            self._validate_manual_job(source, candidate_job, now)
+            if candidate_job.job_spec.job_id in self._jobs:
+                raise DuplicateResource(
+                    f"Job {candidate_job.job_spec.job_id} already exists"
+                )
+            claimed = source.model_copy(
+                update={
+                    "recovery_action": IntakeRecoveryAction.MANUAL,
+                    "recovery_target_id": candidate_job.job_spec.job_id,
+                    "updated_at": now,
+                },
+                deep=True,
+            )
+            validate_intake_session_update(source, claimed)
+            self._jobs[candidate_job.job_spec.job_id] = deepcopy(
+                candidate_job.model_dump(mode="json")
+            )
+            self._job_revisions[candidate_job.job_spec.job_id] = 0
+            self._intake_sessions[session_id] = deepcopy(
+                claimed.model_dump(mode="json")
+            )
+        return self._copy(candidate_job)
+
     def reset(self) -> None:
         with self._lock:
             self._jobs.clear()
@@ -611,6 +705,54 @@ class InMemoryRepository:
         if payload is None:
             raise ResourceNotFound(f"Job {job_id} was not found")
         return payload
+
+    @staticmethod
+    def _validate_resume_child(
+        source: IntakeSession,
+        child: IntakeSession,
+        now: datetime,
+    ) -> None:
+        if source.status is not IntakeSessionStatus.INCOMPLETE:
+            raise DomainConflict("Only incomplete intake sessions can resume")
+        if source.partial_job_spec is None:
+            raise DomainConflict("Incomplete intake has no structured partial spec")
+        expected_base = source.partial_job_spec.model_copy(
+            update={"job_id": child.job_id},
+            deep=True,
+        )
+        if (
+            child.status is not IntakeSessionStatus.PENDING
+            or child.resumed_from_session_id != source.intake_session_id
+            or child.base_job_spec != expected_base
+            or child.data_mode is not source.data_mode
+            or child.expected_agent_id != source.expected_agent_id
+            or child.agent_config_version != source.agent_config_version
+            or child.provider_call_key_hash is not None
+            or child.created_at != now
+            or child.updated_at != now
+        ):
+            raise DomainConflict("Intake resume child does not match its source")
+
+    @staticmethod
+    def _validate_manual_job(
+        source: IntakeSession,
+        job: JobRecord,
+        now: datetime,
+    ) -> None:
+        if source.status is not IntakeSessionStatus.INCOMPLETE:
+            raise DomainConflict("Only incomplete intake sessions can finish manually")
+        if source.partial_job_spec is None:
+            raise DomainConflict("Incomplete intake has no structured partial spec")
+        if (
+            job.job_spec != source.partial_job_spec
+            or job.state is not JobState.INTAKE_COMPLETE
+            or job.created_at != now
+            or job.updated_at != now
+            or job.calls
+            or job.quotes
+            or job.recommendation is not None
+        ):
+            raise DomainConflict("Manual intake job does not match the partial spec")
 
     def _require_active_receipt(
         self,

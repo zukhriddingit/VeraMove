@@ -23,6 +23,7 @@ from services.api.app.integrations.elevenlabs.mock import MockVoiceProvider
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.orchestration.intake_sessions import (
+    IntakeRecoveryAction,
     IntakeSession,
     IntakeSessionStatus,
 )
@@ -37,6 +38,7 @@ from services.api.app.orchestration.providers import IntelligenceProvider, Voice
 from services.api.app.repositories.base import (
     VoiceIntakeCompletion,
     VoiceIntakeFailure,
+    VoiceIntakeIncomplete,
     VoiceWebhookLease,
     VoiceWebhookMaterialization,
 )
@@ -341,6 +343,34 @@ def _intake_failure(session, *, now, event_type="call_initiation_failure"):
     )
 
 
+def _intake_incomplete(session, job_spec, *, now):
+    partial = job_spec.model_copy(
+        update={
+            "intake_source": IntakeSource.VOICE,
+            "move_date": None,
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+            "data_classification": DataClassification.ROLE_PLAY,
+        },
+        deep=True,
+    )
+    incomplete_session = session.model_copy(
+        update={
+            "status": IntakeSessionStatus.INCOMPLETE,
+            "partial_job_spec": partial,
+            "missing_fields": tuple(partial.missing_required_fields()),
+            "terminal_reason": "user_ended_before_summary",
+            "updated_at": now,
+        },
+        deep=True,
+    )
+    return VoiceIntakeIncomplete(
+        session=incomplete_session,
+        event_type="post_call_transcription",
+    )
+
+
 def test_voice_intake_materialization_models_reject_identity_mismatch(job_spec):
     now = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
     session = _intake_session(job_spec, now=now)
@@ -402,6 +432,92 @@ def test_voice_intake_completion_is_atomic_and_duplicate_safe(job_spec):
         now,
     )
     assert duplicate.model_dump() == {"processed": True, "duplicate": True}
+
+
+def test_voice_intake_incomplete_is_atomic_and_creates_no_job(job_spec):
+    repository = InMemoryRepository()
+    now = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
+    session = _intake_session(job_spec, now=now)
+    repository.create_intake_session(session)
+    materialization = _intake_incomplete(session, job_spec, now=now)
+    token = uuid4()
+    lease = VoiceWebhookLease(
+        idempotency_key="synthetic-intake-incomplete-event",
+        event_type=materialization.event_type,
+        lease_token=token,
+        lease_expires_at=now + timedelta(minutes=5),
+        now=now,
+    )
+    repository.claim_voice_webhook_receipt(lease)
+
+    result = repository.finalize_voice_intake_webhook(
+        lease.idempotency_key,
+        token,
+        materialization,
+        now,
+    )
+
+    assert result.duplicate is False
+    assert repository.get(session.job_id) is None
+    assert repository.get_intake_session(session.intake_session_id) == (
+        materialization.session
+    )
+
+
+def test_resume_and_manual_finish_are_idempotent_and_mutually_exclusive(job_spec):
+    repository = InMemoryRepository()
+    now = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
+    session = _intake_session(job_spec, now=now)
+    repository.create_intake_session(session)
+    incomplete = _intake_incomplete(session, job_spec, now=now)
+    token = uuid4()
+    lease = VoiceWebhookLease(
+        idempotency_key="synthetic-intake-recovery-event",
+        event_type=incomplete.event_type,
+        lease_token=token,
+        lease_expires_at=now + timedelta(minutes=5),
+        now=now,
+    )
+    repository.claim_voice_webhook_receipt(lease)
+    repository.finalize_voice_intake_webhook(
+        lease.idempotency_key,
+        token,
+        incomplete,
+        now,
+    )
+    child_id = uuid4()
+    child_job_id = uuid4()
+    child_base = incomplete.session.partial_job_spec.model_copy(
+        update={"job_id": child_job_id},
+        deep=True,
+    )
+    child = IntakeSession(
+        intake_session_id=child_id,
+        job_id=child_job_id,
+        expected_agent_id=session.expected_agent_id,
+        agent_config_version=session.agent_config_version,
+        data_mode=session.data_mode,
+        base_job_spec=child_base,
+        resumed_from_session_id=session.intake_session_id,
+        created_at=now,
+        updated_at=now,
+    )
+
+    assert repository.claim_intake_resume(session.intake_session_id, child, now) == child
+    assert repository.claim_intake_resume(session.intake_session_id, child, now) == child
+    source = repository.get_intake_session(session.intake_session_id)
+    assert source is not None
+    assert source.recovery_action is IntakeRecoveryAction.RESUME
+    assert source.recovery_target_id == child.intake_session_id
+
+    manual_job = JobRecord(
+        job_spec=incomplete.session.partial_job_spec,
+        state=JobState.INTAKE_COMPLETE,
+        created_at=now,
+        updated_at=now,
+    )
+    with pytest.raises(DomainConflict, match="recovery action"):
+        repository.finish_intake_manually(session.intake_session_id, manual_job, now)
 
 
 def test_voice_intake_failure_rejects_wrong_token_without_partial_write(job_spec):
