@@ -1,5 +1,5 @@
 version: 1
-agent_config_version: "2026-07-20.1"
+agent_config_version: "2026-07-21.2"
 agent:
   name: veramove-negotiator
   display_name: VeraMove Outbound Negotiator
@@ -12,13 +12,13 @@ agent:
   provider_tool_ids: []
   provider_tools_status: omitted_until_reviewed_ids_exist
   provider_version:
-    version_description: "VeraMove 2026-07-20.1"
+    version_description: "VeraMove 2026-07-21.2"
     capture_after_save: [version_id, branch_id]
     provider_ids_committed: false
   structured_output: CallOutcome
   first_message: >-
-    Hello, I'm VeraMove's AI assistant calling about a synthetic moving-services role-play. This
-    call may be recorded and processed by ElevenLabs. Do you consent to continue?
+    Hello, I'm VeraMove's AI assistant calling about a moving-services quote. This is an AI call
+    and may be recorded and processed by ElevenLabs. Do you consent to continue?
   dynamic_variables:
     - name: job_id
       type: string
@@ -50,6 +50,23 @@ agent:
       allowed_values: [quote, negotiation]
       source: verified_outbound_request
     - name: agent_config_version
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: call_context
+      type: string
+      required: true
+      allowed_values: [supervised_role_play, official_business]
+      source: verified_outbound_request
+    - name: vendor_call_plan_json
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: website_claims_json
+      type: string
+      required: true
+      source: verified_outbound_request
+    - name: verification_questions_json
       type: string
       required: true
       source: verified_outbound_request

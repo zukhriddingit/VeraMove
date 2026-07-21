@@ -17,6 +17,10 @@ from scripts.generate_agent_assets import (
     main as generate_agent_assets_main,
 )
 from scripts.live_voice_preflight import (
+    INTAKE_DATA_COLLECTION_FIELDS,
+    INTAKE_PROMPT_VARIABLES,
+    OUTBOUND_DATA_COLLECTION_FIELDS,
+    OUTBOUND_PROMPT_VARIABLES,
     HttpElevenLabsPreflightClient,
     ProviderReadiness,
     run_preflight,
@@ -82,7 +86,8 @@ def test_agent_asset_generator_prints_provider_shape_without_writing(
     payload = json.loads(capsys.readouterr().out)
     assert payload["outcome_type"]["type"] == "string"
     assert set(payload["headline_total"]) == {"type", "description"}
-    assert len(payload) == 14
+    assert payload["recipient_opt_out"]["type"] == "boolean"
+    assert len(payload) == 15
     assert not output_root.exists()
 
 
@@ -120,7 +125,7 @@ def live_settings() -> Settings:
             recording_signing_secret="r" * 32,
             operator_secret="o" * 32,
             public_api_base_url="https://veramove.example.com",
-            agent_config_version="2026-07-20.1",
+            agent_config_version="2026-07-21.2",
             live_calls_enabled=True,
         ),
         supabase=SupabaseConfig(
@@ -139,6 +144,7 @@ def ready_provider_result() -> ProviderReadiness:
         provider_version_ids_present=True,
         provider_version_descriptions_match=True,
         prompt_dynamic_variables_match=True,
+        data_collection_fields_match=True,
         provider_tools_omitted=True,
         intake_pre_call_enabled=True,
         workspace_pre_call_configured=True,
@@ -263,9 +269,7 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
             "conversation_config": {
                 "agent": {
                     "prompt": {
-                        "prompt": prompt_with(
-                            ("job_id", "intake_session_id", "agent_config_version")
-                        )
+                        "prompt": prompt_with(INTAKE_PROMPT_VARIABLES)
                     }
                 }
             },
@@ -274,6 +278,10 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
                 "call_limits": {"agent_concurrency_limit": 1, "daily_limit": 9},
                 "overrides": {
                     "enable_conversation_initiation_client_data_from_webhook": True
+                },
+                "data_collection": {
+                    name: {"type": "string"}
+                    for name in INTAKE_DATA_COLLECTION_FIELDS
                 },
             },
         },
@@ -285,22 +293,7 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
             "conversation_config": {
                 "agent": {
                     "prompt": {
-                        "prompt": prompt_with(
-                            (
-                                "job_id",
-                                "call_id",
-                                "vendor_id",
-                                "vendor_name",
-                                "job_spec_version",
-                                "job_spec_json",
-                                "call_mode",
-                                "agent_config_version",
-                                "verified_competitor_quote_id",
-                                "verified_competitor_total",
-                                "verified_competitor_evidence_json",
-                                "negotiation_objective",
-                            )
-                        )
+                        "prompt": prompt_with(OUTBOUND_PROMPT_VARIABLES)
                     }
                 }
             },
@@ -310,6 +303,10 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
                 "overrides": {
                     "enable_conversation_initiation_client_data_from_webhook": False
                 },
+                "data_collection": {
+                    name: {"type": "string"}
+                    for name in OUTBOUND_DATA_COLLECTION_FIELDS
+                },
             },
         },
         (
@@ -318,7 +315,7 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
             "id": intake_version_id,
             "agent_id": intake_id,
             "branch_id": intake_branch_id,
-            "version_description": "VeraMove 2026-07-20.1",
+            "version_description": "VeraMove 2026-07-21.2",
         },
         (
             f"{base_url}/v1/convai/agents/{outbound_id}/versions/{outbound_version_id}"
@@ -326,7 +323,7 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
             "id": outbound_version_id,
             "agent_id": outbound_id,
             "branch_id": outbound_branch_id,
-            "version_description": "VeraMove 2026-07-20.1",
+            "version_description": "VeraMove 2026-07-21.2",
         },
         f"{base_url}/v1/convai/settings": {
             "conversation_initiation_client_data_webhook": {
@@ -390,6 +387,7 @@ def test_http_provider_preflight_reads_documented_provider_configuration(monkeyp
         provider_version_ids_present=True,
         provider_version_descriptions_match=True,
         prompt_dynamic_variables_match=True,
+        data_collection_fields_match=True,
         provider_tools_omitted=True,
         intake_pre_call_enabled=True,
         workspace_pre_call_configured=True,
@@ -461,8 +459,15 @@ class FakeSmokeProvider:
     def __init__(self) -> None:
         self.calls = []
 
-    def initiate_quote_call(self, job_spec, vendor, call_id, destination_slot=0):
-        self.calls.append((job_spec, vendor, call_id, destination_slot))
+    def initiate_quote_call(
+        self,
+        job_spec,
+        vendor,
+        call_id,
+        destination=None,
+        call_plan=None,
+    ):
+        self.calls.append((job_spec, vendor, call_id, destination, call_plan))
         return VoiceCallResult(
             reference=VoiceCallReference(
                 conversation_id="provider-conversation-secret",
@@ -529,13 +534,14 @@ def test_live_voice_smoke_refuses_failed_preflight_and_uses_only_slot_zero():
         "provider_reference_received": True,
     }
     assert len(provider.calls) == 1
-    job_spec, vendor, call_id, destination_slot = provider.calls[0]
+    job_spec, vendor, call_id, destination, call_plan = provider.calls[0]
     assert job_spec.confirmed is True
     assert job_spec.locked_version == job_spec.version
     assert job_spec.data_classification == "role_play"
     assert vendor.data_classification == "role_play"
     assert call_id == UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
-    assert destination_slot == 0
+    assert destination.destination_slot == 0
+    assert call_plan is None
     assert "provider-conversation-secret" not in json.dumps(result)
     assert "provider-call-secret" not in json.dumps(result)
 

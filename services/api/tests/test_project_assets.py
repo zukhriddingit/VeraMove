@@ -123,7 +123,7 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
     tools = yaml.safe_load((ROOT / "agents/tools.yaml").read_text(encoding="utf-8"))
 
     assert intake_config["agent_config_version"] == negotiator_config["agent_config_version"]
-    assert intake_config["agent_config_version"] == "2026-07-20.1"
+    assert intake_config["agent_config_version"] == "2026-07-21.2"
     assert intake_config["agent"]["display_name"] == "VeraMove Intake"
     assert negotiator_config["agent"]["display_name"] == "VeraMove Outbound Negotiator"
     assert intake_config["agent"]["data_collection_file"] == "data-collection.json"
@@ -137,7 +137,7 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
         assert agent["provider_tool_ids"] == []
         assert agent["provider_tools_status"] == "omitted_until_reviewed_ids_exist"
         assert agent["provider_version"] == {
-            "version_description": "VeraMove 2026-07-20.1",
+            "version_description": "VeraMove 2026-07-21.2",
             "capture_after_save": ["version_id", "branch_id"],
             "provider_ids_committed": False,
         }
@@ -145,7 +145,15 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
     intake_variables = {
         variable["name"] for variable in intake_config["agent"]["dynamic_variables"]
     }
-    assert intake_variables == {"job_id", "intake_session_id", "agent_config_version"}
+    assert intake_variables == {
+        "job_id",
+        "intake_session_id",
+        "agent_config_version",
+        "intake_data_mode",
+        "resume_mode",
+        "partial_job_spec_json",
+        "missing_fields_json",
+    }
     outbound_variables = {
         variable["name"] for variable in negotiator_config["agent"]["dynamic_variables"]
     }
@@ -158,6 +166,10 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
         "job_spec_json",
         "call_mode",
         "agent_config_version",
+        "call_context",
+        "vendor_call_plan_json",
+        "website_claims_json",
+        "verification_questions_json",
         "verified_competitor_quote_id",
         "verified_competitor_total",
         "verified_competitor_evidence_json",
@@ -193,6 +205,11 @@ def test_voice_agent_assets_are_professional_and_machine_readable():
     assert "get_verified_competing_quote" in negotiator_prompt
     assert "verified different-vendor" in negotiator_prompt.lower()
     assert "synthetic role-play" in negotiator_prompt.lower()
+    assert "official_business" in negotiator_prompt
+    assert "recipient_opt_out=true" in negotiator_prompt
+    assert "unverified context" in negotiator_prompt.lower()
+    assert "resume_mode=structured_partial" in intake_prompt
+    assert "finish manually" in intake_prompt.lower()
     assert all(
         outcome in negotiator_prompt
         for outcome in (
@@ -227,10 +244,10 @@ def test_voice_data_collection_assets_match_the_approved_contract():
     intake_fields = intake["fields"]
     outbound_fields = outbound["fields"]
 
-    assert intake["agent_config_version"] == "2026-07-20.1"
-    assert outbound["agent_config_version"] == "2026-07-20.1"
+    assert intake["agent_config_version"] == "2026-07-21.2"
+    assert outbound["agent_config_version"] == "2026-07-21.2"
     assert len(intake_fields) == 24
-    assert len(outbound_fields) == 14
+    assert len(outbound_fields) == 15
     assert len(intake_fields) < 25
     assert len(outbound_fields) < 25
     assert [field["identifier"] for field in intake_fields] == [
@@ -261,6 +278,7 @@ def test_voice_data_collection_assets_match_the_approved_contract():
     ]
     assert [field["identifier"] for field in outbound_fields] == [
         "recording_consent",
+        "recipient_opt_out",
         "outcome_type",
         "callback_at",
         "outcome_reason",
@@ -332,7 +350,7 @@ def test_elevenlabs_dashboard_checklist_is_complete_and_secret_free():
     for phrase in (
         "veramove intake",
         "veramove outbound negotiator",
-        "2026-07-20.1",
+        "2026-07-21.2",
         "dynamic variables",
         "data collection",
         "success evaluation",
