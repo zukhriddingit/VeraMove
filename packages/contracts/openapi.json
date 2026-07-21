@@ -1022,6 +1022,79 @@
         "title": "JobState",
         "type": "string"
       },
+      "JobVendorResearchV1": {
+        "additionalProperties": false,
+        "description": "Durable discovery, shortlist, and dossier state for one locked JobSpec.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/Vendor"
+            },
+            "maxItems": 10,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dossiers": {
+            "items": {
+              "$ref": "#/components/schemas/VendorResearchDossierV1"
+            },
+            "maxItems": 3,
+            "title": "Dossiers",
+            "type": "array"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "job_spec_version": {
+            "const": "1.0",
+            "title": "Job Spec Version",
+            "type": "string"
+          },
+          "query": {
+            "$ref": "#/components/schemas/VendorSearchQuery"
+          },
+          "selected_vendor_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Selected Vendor Ids",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "tavily",
+              "synthetic_mock"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "job_spec_version",
+          "query",
+          "candidates",
+          "source",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobVendorResearchV1",
+        "type": "object"
+      },
       "MovingServices": {
         "additionalProperties": false,
         "properties": {
@@ -1791,7 +1864,8 @@
           "capability": {
             "enum": [
               "document_extraction",
-              "recommendation_narration"
+              "recommendation_narration",
+              "vendor_website_research"
             ],
             "title": "Capability",
             "type": "string"
@@ -1978,6 +2052,190 @@
         "title": "VendorDiscoveryResponse",
         "type": "object"
       },
+      "VendorResearchDossierV1": {
+        "additionalProperties": false,
+        "description": "Persisted website research for one selected real or synthetic vendor.",
+        "properties": {
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/WebsiteResearchClaimV1"
+            },
+            "maxItems": 20,
+            "title": "Claims",
+            "type": "array"
+          },
+          "missing_fee_categories": {
+            "items": {
+              "$ref": "#/components/schemas/FeeCategory"
+            },
+            "maxItems": 15,
+            "title": "Missing Fee Categories",
+            "type": "array"
+          },
+          "researched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Researched At"
+          },
+          "safe_failure_reason": {
+            "anyOf": [
+              {
+                "maxLength": 240,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Safe Failure Reason"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "complete",
+              "partial",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "vendor": {
+            "$ref": "#/components/schemas/Vendor"
+          },
+          "verification_questions": {
+            "items": {
+              "$ref": "#/components/schemas/VendorVerificationQuestionV1"
+            },
+            "maxItems": 40,
+            "title": "Verification Questions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "vendor",
+          "status"
+        ],
+        "title": "VendorResearchDossierV1",
+        "type": "object"
+      },
+      "VendorSearchQuery": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "City",
+            "type": "string"
+          },
+          "radius_miles": {
+            "default": 25,
+            "maximum": 250.0,
+            "minimum": 1.0,
+            "title": "Radius Miles",
+            "type": "integer"
+          },
+          "service_type": {
+            "default": "moving",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Service Type",
+            "type": "string"
+          },
+          "state": {
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "city",
+          "state"
+        ],
+        "title": "VendorSearchQuery",
+        "type": "object"
+      },
+      "VendorShortlistRequest": {
+        "additionalProperties": false,
+        "description": "Browser request containing IDs only, never Vendor objects or URLs.",
+        "properties": {
+          "vendor_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Vendor Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "vendor_ids"
+        ],
+        "title": "VendorShortlistRequest",
+        "type": "object"
+      },
+      "VendorVerificationQuestionV1": {
+        "additionalProperties": false,
+        "description": "One deterministic future-call question derived from claims or omissions.",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeeCategory"
+              },
+              {
+                "$ref": "#/components/schemas/WebsiteClaimKind"
+              }
+            ],
+            "title": "Category"
+          },
+          "claim_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Claim Ids",
+            "type": "array"
+          },
+          "question": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "question_id": {
+            "format": "uuid",
+            "title": "Question Id",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "published_claim",
+              "missing_information",
+              "ambiguous_claim"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "question",
+          "reason"
+        ],
+        "title": "VendorVerificationQuestionV1",
+        "type": "object"
+      },
       "VerificationStatus": {
         "enum": [
           "provisional",
@@ -2005,6 +2263,132 @@
           "duplicate"
         ],
         "title": "WebhookAck",
+        "type": "object"
+      },
+      "WebsiteClaimKind": {
+        "description": "Allowed website statements; fee values intentionally mirror FeeCategory.",
+        "enum": [
+          "base_service",
+          "hourly_minimum",
+          "travel",
+          "fuel",
+          "stairs",
+          "elevator",
+          "long_carry",
+          "packing",
+          "materials",
+          "disassembly",
+          "storage",
+          "insurance",
+          "tax",
+          "deposit",
+          "other",
+          "hourly_rate",
+          "minimum_hours",
+          "mover_count",
+          "service",
+          "availability",
+          "binding"
+        ],
+        "title": "WebsiteClaimKind",
+        "type": "string"
+      },
+      "WebsiteResearchClaimV1": {
+        "additionalProperties": false,
+        "description": "One bounded webpage-supported statement that is never call evidence.",
+        "properties": {
+          "advertised_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advertised Amount"
+          },
+          "claim_id": {
+            "format": "uuid",
+            "title": "Claim Id",
+            "type": "string"
+          },
+          "classification": {
+            "const": "unverified_website_claim",
+            "default": "unverified_website_claim",
+            "title": "Classification",
+            "type": "string"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/WebsiteClaimKind"
+          },
+          "qualifiers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Qualifiers",
+            "type": "array"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "source_excerpt": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Source Excerpt",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "kind",
+          "summary",
+          "source_excerpt",
+          "source_url",
+          "retrieved_at"
+        ],
+        "title": "WebsiteResearchClaimV1",
         "type": "object"
       }
     }
@@ -2750,6 +3134,249 @@
         "summary": "Get Report",
         "tags": [
           "reports"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/vendor-research": {
+      "get": {
+        "operationId": "get_vendor_research_api_jobs__job_id__vendor_research_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Vendor Research",
+        "tags": [
+          "vendors"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/vendor-research/analyze": {
+      "post": {
+        "operationId": "analyze_vendor_websites_api_jobs__job_id__vendor_research_analyze_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Analyze Vendor Websites",
+        "tags": [
+          "vendors"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/vendor-research/discover": {
+      "post": {
+        "operationId": "discover_job_vendors_api_jobs__job_id__vendor_research_discover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "refresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Refresh",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Job Vendors",
+        "tags": [
+          "vendors"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/vendor-research/shortlist": {
+      "delete": {
+        "operationId": "clear_vendor_shortlist_api_jobs__job_id__vendor_research_shortlist_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Vendor Shortlist",
+        "tags": [
+          "vendors"
+        ]
+      },
+      "put": {
+        "operationId": "save_vendor_shortlist_api_jobs__job_id__vendor_research_shortlist_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorShortlistRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Vendor Shortlist",
+        "tags": [
+          "vendors"
         ]
       }
     },

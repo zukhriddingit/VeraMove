@@ -12,6 +12,7 @@ import { useRuntimeMode } from "@/api/client";
 import { VendorCallCard } from "@/components/veramove/VendorCallCard";
 import { QuoteComparison } from "@/components/veramove/QuoteComparison";
 import { CallsRequirementsChecklist } from "@/components/veramove/CallsRequirementsChecklist";
+import { VendorResearchPanel } from "@/components/veramove/VendorResearchPanel";
 import { ErrorState, LoadingState } from "@/components/veramove/States";
 import { StatusPill } from "@/components/veramove/StatusPill";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -157,6 +158,10 @@ function CallsPage() {
 
       {stateBanner}
 
+      {!isDemoMode && status && !["draft", "intake_complete", "failed"].includes(status) && (
+        <VendorResearchPanel jobId={jobId} />
+      )}
+
       {startError && (
         <ErrorState
           title="Couldn't start calls"
@@ -216,7 +221,7 @@ function CallsPage() {
 
       <ActivityLog events={eventsQ.data ?? []} />
 
-      <TavilyDiscoverySection enabledByDefault={false} />
+      {isDemoMode && <TavilyDiscoverySection enabledByDefault={false} />}
 
       {/* Mobile-persistent stage summary */}
       {status && (

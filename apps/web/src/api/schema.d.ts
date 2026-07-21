@@ -277,6 +277,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/vendor-research": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Vendor Research */
+        get: operations["get_vendor_research_api_jobs__job_id__vendor_research_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/vendor-research/analyze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Analyze Vendor Websites */
+        post: operations["analyze_vendor_websites_api_jobs__job_id__vendor_research_analyze_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/vendor-research/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover Job Vendors */
+        post: operations["discover_job_vendors_api_jobs__job_id__vendor_research_discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/vendor-research/shortlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Save Vendor Shortlist */
+        put: operations["save_vendor_shortlist_api_jobs__job_id__vendor_research_shortlist_put"];
+        post?: never;
+        /** Clear Vendor Shortlist */
+        delete: operations["clear_vendor_shortlist_api_jobs__job_id__vendor_research_shortlist_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/vendors/discover": {
         parameters: {
             query?: never;
@@ -764,6 +833,44 @@ export interface components {
          * @enum {string}
          */
         JobState: "draft" | "intake_complete" | "confirmed" | "calling" | "quotes_ready" | "negotiating" | "completed" | "failed";
+        /**
+         * JobVendorResearchV1
+         * @description Durable discovery, shortlist, and dossier state for one locked JobSpec.
+         */
+        JobVendorResearchV1: {
+            /** Candidates */
+            candidates: components["schemas"]["Vendor"][];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dossiers */
+            dossiers?: components["schemas"]["VendorResearchDossierV1"][];
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Job Spec Version
+             * @constant
+             */
+            job_spec_version: "1.0";
+            query: components["schemas"]["VendorSearchQuery"];
+            /** Selected Vendor Ids */
+            selected_vendor_ids?: string[];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "tavily" | "synthetic_mock";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** MovingServices */
         MovingServices: {
             /** Disassembly */
@@ -1052,7 +1159,7 @@ export interface components {
              * Capability
              * @enum {string}
              */
-            capability: "document_extraction" | "recommendation_narration";
+            capability: "document_extraction" | "recommendation_narration" | "vendor_website_research";
             /** Failed Requests */
             failed_requests: number;
             /** Input Tokens */
@@ -1116,6 +1223,75 @@ export interface components {
             vendors: components["schemas"]["Vendor"][];
         };
         /**
+         * VendorResearchDossierV1
+         * @description Persisted website research for one selected real or synthetic vendor.
+         */
+        VendorResearchDossierV1: {
+            /** Claims */
+            claims?: components["schemas"]["WebsiteResearchClaimV1"][];
+            /** Missing Fee Categories */
+            missing_fee_categories?: components["schemas"]["FeeCategory"][];
+            /** Researched At */
+            researched_at?: string | null;
+            /** Safe Failure Reason */
+            safe_failure_reason?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "complete" | "partial" | "failed";
+            vendor: components["schemas"]["Vendor"];
+            /** Verification Questions */
+            verification_questions?: components["schemas"]["VendorVerificationQuestionV1"][];
+        };
+        /** VendorSearchQuery */
+        VendorSearchQuery: {
+            /** City */
+            city: string;
+            /**
+             * Radius Miles
+             * @default 25
+             */
+            radius_miles: number;
+            /**
+             * Service Type
+             * @default moving
+             */
+            service_type: string;
+            /** State */
+            state: string;
+        };
+        /**
+         * VendorShortlistRequest
+         * @description Browser request containing IDs only, never Vendor objects or URLs.
+         */
+        VendorShortlistRequest: {
+            /** Vendor Ids */
+            vendor_ids: string[];
+        };
+        /**
+         * VendorVerificationQuestionV1
+         * @description One deterministic future-call question derived from claims or omissions.
+         */
+        VendorVerificationQuestionV1: {
+            /** Category */
+            category: components["schemas"]["FeeCategory"] | components["schemas"]["WebsiteClaimKind"];
+            /** Claim Ids */
+            claim_ids?: string[];
+            /** Question */
+            question: string;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id?: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "published_claim" | "missing_information" | "ambiguous_claim";
+        };
+        /**
          * VerificationStatus
          * @enum {string}
          */
@@ -1126,6 +1302,52 @@ export interface components {
             accepted: boolean;
             /** Duplicate */
             duplicate: boolean;
+        };
+        /**
+         * WebsiteClaimKind
+         * @description Allowed website statements; fee values intentionally mirror FeeCategory.
+         * @enum {string}
+         */
+        WebsiteClaimKind: "base_service" | "hourly_minimum" | "travel" | "fuel" | "stairs" | "elevator" | "long_carry" | "packing" | "materials" | "disassembly" | "storage" | "insurance" | "tax" | "deposit" | "other" | "hourly_rate" | "minimum_hours" | "mover_count" | "service" | "availability" | "binding";
+        /**
+         * WebsiteResearchClaimV1
+         * @description One bounded webpage-supported statement that is never call evidence.
+         */
+        WebsiteResearchClaimV1: {
+            /** Advertised Amount */
+            advertised_amount?: string | null;
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id?: string;
+            /**
+             * Classification
+             * @default unverified_website_claim
+             * @constant
+             */
+            classification: "unverified_website_claim";
+            /** Currency */
+            currency?: string | null;
+            kind: components["schemas"]["WebsiteClaimKind"];
+            /** Qualifiers */
+            qualifiers?: string[];
+            /**
+             * Retrieved At
+             * Format: date-time
+             */
+            retrieved_at: string;
+            /** Source Excerpt */
+            source_excerpt: string;
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /** Summary */
+            summary: string;
+            /** Unit */
+            unit?: string | null;
         };
     };
     responses: never;
@@ -1647,6 +1869,169 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecommendationV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_vendor_research_api_jobs__job_id__vendor_research_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    analyze_vendor_websites_api_jobs__job_id__vendor_research_analyze_post: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_job_vendors_api_jobs__job_id__vendor_research_discover_post: {
+        parameters: {
+            query?: {
+                refresh?: boolean;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_vendor_shortlist_api_jobs__job_id__vendor_research_shortlist_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorShortlistRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_vendor_shortlist_api_jobs__job_id__vendor_research_shortlist_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchV1"];
                 };
             };
             /** @description Validation Error */

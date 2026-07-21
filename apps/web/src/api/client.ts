@@ -15,6 +15,8 @@ export type IntakeSessionResponse = Schemas["IntakeSessionResponse"];
 export type BrowserVoiceTokenResponse = Schemas["BrowserVoiceTokenResponse"];
 export type AttachIntakeConversationRequest = Schemas["AttachIntakeConversationRequest"];
 export type IntegrationStatusSnapshot = Schemas["IntegrationStatusSnapshot"];
+export type JobVendorResearchV1 = Schemas["JobVendorResearchV1"];
+export type VendorShortlistRequest = Schemas["VendorShortlistRequest"];
 export type RuntimeMode = "demo" | "live";
 export type FieldErrors = Record<string, string>;
 export type ApiErrorKind = "http" | "network" | "aborted" | "malformed";
@@ -254,6 +256,27 @@ export const apiClient = {
   getReport: (jobId: string) => apiFetch<RecommendationV1>(`/api/jobs/${jobId}/report`),
   getEvents: (jobId: string) => apiFetch<JobEventsResponse>(`/api/jobs/${jobId}/events`),
   discoverVendors: () => apiFetch<VendorDiscoveryResponse>("/api/vendors/discover"),
+  getVendorResearch: (jobId: string) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research`),
+  discoverJobVendors: (jobId: string, refresh = false) =>
+    apiFetch<JobVendorResearchV1>(
+      `/api/jobs/${jobId}/vendor-research/discover${refresh ? "?refresh=true" : ""}`,
+      { method: "POST" },
+    ),
+  saveVendorShortlist: (jobId: string, request: VendorShortlistRequest) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/shortlist`, {
+      method: "PUT",
+      body: JSON.stringify(request),
+    }),
+  clearVendorShortlist: (jobId: string) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/shortlist`, {
+      method: "DELETE",
+    }),
+  analyzeVendorWebsites: (jobId: string, refresh = false) =>
+    apiFetch<JobVendorResearchV1>(
+      `/api/jobs/${jobId}/vendor-research/analyze${refresh ? "?refresh=true" : ""}`,
+      { method: "POST" },
+    ),
 };
 
 export type { components as OpenAPIComponents, paths as OpenAPIPaths } from "./schema";

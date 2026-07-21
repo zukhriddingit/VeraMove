@@ -33,9 +33,7 @@ export async function updateJob(jobId: string, patch: Partial<JobView>): Promise
     move: { ...currentView.move, ...patch.move },
     access: { ...currentView.access, ...patch.access },
     services: { ...currentView.services, ...patch.services },
-    extras: patch.extras
-      ? { ...currentView.extras, ...patch.extras }
-      : currentView.extras,
+    extras: patch.extras ? { ...currentView.extras, ...patch.extras } : currentView.extras,
   };
   const replacement = mergeJobViewIntoSpec(current.job_spec, draft);
   return toJobView(await apiClient.replaceJobSpec(jobId, replacement));
@@ -67,6 +65,12 @@ export async function getEvents(jobId: string) {
 export async function getVendorsDiscovery() {
   return toVendorViews(await apiClient.discoverVendors());
 }
+
+export const getVendorResearch = apiClient.getVendorResearch;
+export const discoverJobVendors = apiClient.discoverJobVendors;
+export const saveVendorShortlist = apiClient.saveVendorShortlist;
+export const clearVendorShortlist = apiClient.clearVendorShortlist;
+export const analyzeVendorWebsites = apiClient.analyzeVendorWebsites;
 
 export async function negotiateJob(jobId: string): Promise<NegotiationView> {
   const record = await apiClient.negotiate(jobId);

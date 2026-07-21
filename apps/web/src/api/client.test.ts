@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiFetch } from "./client";
+import { API_BASE_URL, apiClient, apiFetch } from "./client";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -70,6 +70,39 @@ describe("API error normalization", () => {
   });
 });
 
+describe("job vendor research client", () => {
+  it("uses job-scoped endpoints and sends shortlist IDs only", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      async () =>
+        new Response(JSON.stringify({}), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiClient.discoverJobVendors("job-1");
+    await apiClient.saveVendorShortlist("job-1", {
+      vendor_ids: ["vendor-1", "vendor-2", "vendor-3"],
+    });
+    await apiClient.analyzeVendorWebsites("job-1");
+
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `${API_BASE_URL}/api/jobs/job-1/vendor-research/discover`,
+    );
+    expect(fetchMock.mock.calls[0][1]).toEqual(expect.objectContaining({ method: "POST" }));
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      `${API_BASE_URL}/api/jobs/job-1/vendor-research/shortlist`,
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      vendor_ids: ["vendor-1", "vendor-2", "vendor-3"],
+    });
+    expect(fetchMock.mock.calls[2][0]).toBe(
+      `${API_BASE_URL}/api/jobs/job-1/vendor-research/analyze`,
+    );
+  });
+});
+
 describe("runtime mode persistence", () => {
   it("ignores and removes a legacy persistent Demo choice", async () => {
     const { client, localStorage } = await loadRuntimeClient({
@@ -97,10 +130,7 @@ describe("runtime mode persistence", () => {
 
     client.setRuntimeMode("demo", { redirectTo: "/confirm/demo-job-1" });
 
-    expect(sessionStorage.setItem).toHaveBeenCalledWith(
-      "veramove.runtimeMode.session",
-      "demo",
-    );
+    expect(sessionStorage.setItem).toHaveBeenCalledWith("veramove.runtimeMode.session", "demo");
     expect(assign).toHaveBeenCalledWith("/confirm/demo-job-1");
   });
 
@@ -112,10 +142,7 @@ describe("runtime mode persistence", () => {
 
     client.setRuntimeMode("live");
 
-    expect(sessionStorage.setItem).toHaveBeenCalledWith(
-      "veramove.runtimeMode.session",
-      "live",
-    );
+    expect(sessionStorage.setItem).toHaveBeenCalledWith("veramove.runtimeMode.session", "live");
     expect(reload).toHaveBeenCalledOnce();
   });
 });

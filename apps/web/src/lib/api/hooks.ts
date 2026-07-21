@@ -8,6 +8,7 @@ export const qk = {
   report: (id: string) => ["report", id] as const,
   events: (id: string) => ["events", id] as const,
   vendorsDiscovery: () => ["vendorsDiscovery"] as const,
+  vendorResearch: (id: string) => ["vendorResearch", id] as const,
 };
 
 export function useJob(jobId: string, { poll = false }: { poll?: boolean } = {}) {
@@ -50,6 +51,53 @@ export function useVendorsDiscovery(enabled = false) {
     staleTime: 5 * 60_000,
     retry: false,
   });
+}
+
+export function useVendorResearch(jobId: string, enabled = true) {
+  return useQuery({
+    queryKey: qk.vendorResearch(jobId),
+    queryFn: () => api.getVendorResearch(jobId),
+    enabled: enabled && !!jobId,
+    retry: false,
+  });
+}
+
+function useVendorResearchMutation<TVariables>(
+  mutationFn: (variables: TVariables) => ReturnType<typeof api.getVendorResearch>,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: (data, variables) => {
+      const jobId =
+        typeof variables === "string" ? variables : (variables as { jobId: string }).jobId;
+      qc.setQueryData(qk.vendorResearch(jobId), data);
+    },
+  });
+}
+
+export function useDiscoverJobVendors() {
+  return useVendorResearchMutation(
+    ({ jobId, refresh = false }: { jobId: string; refresh?: boolean }) =>
+      api.discoverJobVendors(jobId, refresh),
+  );
+}
+
+export function useSaveVendorShortlist() {
+  return useVendorResearchMutation(({ jobId, vendorIds }: { jobId: string; vendorIds: string[] }) =>
+    api.saveVendorShortlist(jobId, { vendor_ids: vendorIds }),
+  );
+}
+
+export function useClearVendorShortlist() {
+  return useVendorResearchMutation((jobId: string) => api.clearVendorShortlist(jobId));
+}
+
+export function useAnalyzeVendorWebsites() {
+  return useVendorResearchMutation(
+    ({ jobId, refresh = false }: { jobId: string; refresh?: boolean }) =>
+      api.analyzeVendorWebsites(jobId, refresh),
+  );
 }
 
 export function useCalls(jobId: string, { poll = false }: { poll?: boolean } = {}) {
