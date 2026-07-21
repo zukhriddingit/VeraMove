@@ -28,6 +28,27 @@ or recommendations not present in the supplied structured data. Return only a
 concise customer-facing summary.
 """
 
+# Pydantic keeps these constraints in the canonical application contracts, but
+# OpenAI Structured Outputs does not accept every JSON Schema validation
+# keyword.  The model-facing schema therefore omits unsupported constraints and
+# the response is validated against the original Pydantic model immediately
+# after parsing.  This keeps the domain contract strict without making the
+# provider request invalid.
+_UNSUPPORTED_STRUCTURED_OUTPUT_KEYWORDS = frozenset(
+    {
+        "minLength",
+        "maxLength",
+        "pattern",
+        "format",
+        "minimum",
+        "maximum",
+        "multipleOf",
+        "patternProperties",
+        "minItems",
+        "maxItems",
+    }
+)
+
 
 def _strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
     """Return an OpenAI-strict copy without mutating Pydantic's schema."""
@@ -43,6 +64,8 @@ def _strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
             return
 
         node.pop("default", None)
+        for keyword in _UNSUPPORTED_STRUCTURED_OUTPUT_KEYWORDS:
+            node.pop(keyword, None)
         properties = node.get("properties")
         if node.get("type") == "object" and isinstance(properties, dict):
             node["required"] = list(properties)

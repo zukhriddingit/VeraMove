@@ -108,6 +108,19 @@ def test_openai_document_request_uses_strict_responses_schema(fixtures):
     job_spec_schema = schema["$defs"]["JobSpecV1"]
     assert set(job_spec_schema["required"]) == set(job_spec_schema["properties"])
     assert not contains_key(schema, "default")
+    for unsupported in (
+        "minLength",
+        "maxLength",
+        "pattern",
+        "format",
+        "minimum",
+        "maximum",
+        "multipleOf",
+        "patternProperties",
+        "minItems",
+        "maxItems",
+    ):
+        assert not contains_key(schema, unsupported)
     assert payload["input"][1]["content"] == [
         {
             "type": "input_text",
