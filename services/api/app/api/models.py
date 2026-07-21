@@ -6,7 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.api.app.contracts import ElevenLabsWebhookEvent, JobSpecV1
-from services.api.app.orchestration.intake_sessions import IntakeSessionStatus
+from services.api.app.orchestration.intake_sessions import (
+    IntakeDataMode,
+    IntakeRecoveryAction,
+    IntakeSessionStatus,
+)
 from services.api.app.orchestration.models import JobEvent
 
 
@@ -36,6 +40,14 @@ class JobEventsResponse(BaseModel):
     events: list[JobEvent]
 
 
+class CreateIntakeSessionRequest(BaseModel):
+    """Select the privacy boundary before creating a browser voice session."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    data_mode: IntakeDataMode = IntakeDataMode.SUPERVISED_ROLE_PLAY
+
+
 class IntakeSessionResponse(BaseModel):
     """Expose safe intake correlation and the result only after completion."""
 
@@ -43,9 +55,17 @@ class IntakeSessionResponse(BaseModel):
 
     intake_session_id: UUID
     job_id: UUID
+    data_mode: IntakeDataMode
     status: IntakeSessionStatus
     conversation_id: str | None = None
     job_spec: JobSpecV1 | None = None
+    partial_job_spec: JobSpecV1 | None = None
+    missing_fields: tuple[str, ...] = ()
+    terminal_reason: str | None = None
+    recovery_action: IntakeRecoveryAction | None = None
+    recovery_target_id: UUID | None = None
+    resumed_from_session_id: UUID | None = None
+    recovery_available: bool = False
 
 
 class ElevenLabsConversationInitiationRequest(BaseModel):

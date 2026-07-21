@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
+from services.api.app.api.models import CreateIntakeSessionRequest
 from services.api.app.contracts import (
     AmountStatus,
     CallOutcome,
@@ -19,6 +20,7 @@ from services.api.app.contracts import (
     MovingServices,
     QuoteV1,
 )
+from services.api.app.orchestration.intake_sessions import IntakeDataMode
 
 
 def test_job_spec_accepts_nullable_future_vera_ids(job_spec_payload):
@@ -67,6 +69,18 @@ def test_confirmation_requires_current_version_lock(job_spec_payload):
 def test_storage_days_match_request():
     with pytest.raises(ValidationError, match="storage_days is required"):
         MovingServices(storage=True)
+
+
+def test_create_intake_session_defaults_to_supervised_role_play():
+    request = CreateIntakeSessionRequest()
+
+    assert request.data_mode is IntakeDataMode.SUPERVISED_ROLE_PLAY
+
+
+def test_create_intake_session_accepts_real_redacted_mode():
+    request = CreateIntakeSessionRequest(data_mode="real_redacted")
+
+    assert request.data_mode is IntakeDataMode.REAL_REDACTED
 
 
 def test_call_outcome_enum_is_closed():
