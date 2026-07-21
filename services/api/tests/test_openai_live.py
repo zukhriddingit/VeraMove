@@ -223,7 +223,13 @@ def test_http_transport_maps_timeout_to_safe_error(monkeypatch):
 
 def test_document_parser_supports_plain_text_and_enforces_postconditions(fixtures):
     result = document_result(fixtures)
+    result["job_spec"]["job_id"] = "model-authored-job-id"
+    for index, item in enumerate(result["job_spec"]["inventory"]):
+        item["item_id"] = f"model-authored-item-{index}"
     model_supplied_job_id = result["job_spec"]["job_id"]
+    model_supplied_item_ids = {
+        item["item_id"] for item in result["job_spec"]["inventory"]
+    }
     parser = OpenAIDocumentParser(
         OpenAIResponsesClient(
             api_key="synthetic",
@@ -243,6 +249,9 @@ def test_document_parser_supports_plain_text_and_enforces_postconditions(fixture
     assert parsed.job_spec.confirmed_at is None
     assert parsed.job_spec.locked_version is None
     assert str(parsed.job_spec.job_id) != model_supplied_job_id
+    assert not model_supplied_item_ids.intersection(
+        str(item.item_id) for item in parsed.job_spec.inventory
+    )
 
     second = parser.parse_document(
         b"SYNTHETIC two-bedroom move",
