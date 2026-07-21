@@ -7,12 +7,13 @@ from typing import Protocol
 
 import yaml
 from fastapi import Request
+from pydantic import HttpUrl
 
 from services.api.app.api.integration_status import (
     IntegrationStatusReporter,
     IntegrationStatusSnapshot,
 )
-from services.api.app.contracts import FeeCategory
+from services.api.app.contracts import FeeCategory, Vendor, VendorSearchQuery
 from services.api.app.core.config import Settings
 from services.api.app.core.errors import ProviderConfigurationError
 from services.api.app.integrations.elevenlabs.base import JsonHttpTransport
@@ -40,15 +41,27 @@ from services.api.app.integrations.openai.document import OpenAIDocumentParser
 from services.api.app.integrations.openai.live import (
     OpenAIResponsesClient,
     OpenAIResponsesNarrativeClient,
+    OpenAIResponsesStructuredTextClient,
 )
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.openai.recommendation import (
     OpenAIRecommendationNarrator,
 )
-from services.api.app.integrations.tavily.base import TavilyJsonTransport
+from services.api.app.integrations.openai.vendor_research import (
+    MockWebsiteClaimExtractor,
+    OpenAIWebsiteClaimExtractor,
+)
+from services.api.app.integrations.tavily.base import (
+    ExtractedWebPage,
+    TavilyJsonTransport,
+)
 from services.api.app.integrations.tavily.cached import CachedTavilyVendorDiscovery
+from services.api.app.integrations.tavily.extract import TavilyHttpExtractClient
 from services.api.app.integrations.tavily.live import TavilyHttpClient
-from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
+from services.api.app.integrations.tavily.mock import (
+    MockTavilyExtractClient,
+    MockVendorDiscoveryGateway,
+)
 from services.api.app.observability.usage import UsageRecorder
 from services.api.app.orchestration.fixtures import DemoFixtures
 from services.api.app.orchestration.intake_sessions import IntakeSessionService
@@ -62,11 +75,13 @@ from services.api.app.orchestration.recording_capability import (
 )
 from services.api.app.orchestration.role_play import FixtureRolePlayVendorRoster
 from services.api.app.orchestration.service import VeraMoveService, utc_now
+from services.api.app.orchestration.vendor_research import VendorResearchService
 from services.api.app.repositories.base import (
     CallRepository,
     IntakeSessionRepository,
     JobRepository,
     QuoteRepository,
+    VendorResearchRepository,
 )
 from services.api.app.repositories.memory import InMemoryRepository
 from services.api.app.repositories.supabase import SupabaseRepository
@@ -79,11 +94,41 @@ _repository = InMemoryRepository()
 _MOVING_CONFIG_PATH = Path(__file__).resolve().parents[4] / "configs" / "moving.yaml"
 
 
+class _UnavailableVendorDiscovery:
+    source = "tavily"
+
+    @staticmethod
+    def _raise() -> None:
+        raise ProviderConfigurationError(
+            "Real vendor research requires TAVILY_ENABLED=true"
+        )
+
+    def discover(self, origin: str | None, destination: str | None) -> list[Vendor]:
+        del origin, destination
+        self._raise()
+
+    def source_call_list(self, query: VendorSearchQuery) -> list[Vendor]:
+        del query
+        self._raise()
+
+
+class _UnavailableTavilyExtract:
+    def extract(
+        self,
+        urls: tuple[HttpUrl, ...],
+    ) -> dict[str, ExtractedWebPage | None]:
+        del urls
+        raise ProviderConfigurationError(
+            "Vendor website research requires TAVILY_ENABLED=true"
+        )
+
+
 class ApplicationRepository(
     JobRepository,
     CallRepository,
     QuoteRepository,
     IntakeSessionRepository,
+    VendorResearchRepository,
     Protocol,
 ):
     """One repository implementation used across the aggregate transaction boundary."""
@@ -103,6 +148,12 @@ def get_service(request: Request) -> VeraMoveService:
     """Return the service composed from the same application settings snapshot."""
 
     return request.app.state.service
+
+
+def get_vendor_research_service(request: Request) -> VendorResearchService:
+    """Return the job-scoped discovery and website-research service."""
+
+    return request.app.state.vendor_research_service
 
 
 def get_integration_status(request: Request) -> IntegrationStatusSnapshot:
@@ -328,4 +379,69 @@ def build_service(
         settings,
         app_usage_recorder,
     )
+    service._usage_recorder = app_usage_recorder
     return service
+
+
+def build_vendor_research_service(
+    settings: Settings,
+    repository: ApplicationRepository,
+    openai_transport: OpenAIJsonTransport | None = None,
+    tavily_transport: TavilyJsonTransport | None = None,
+    usage_recorder: UsageRecorder | None = None,
+) -> VendorResearchService:
+    """Compose job-scoped research without making provider requests at startup."""
+
+    fixtures = DemoFixtures()
+    clock = mock_now if settings.app_mode == "mock" else utc_now
+    if settings.app_mode == "mock":
+        discovery = MockVendorDiscoveryGateway(fixtures)
+        extract = MockTavilyExtractClient()
+        claim_extractor = MockWebsiteClaimExtractor()
+    elif settings.app_mode == "live":
+        if settings.tavily.enabled:
+            tavily_config = settings.require_tavily_config()
+            assert tavily_config.api_key is not None
+            discovery = CachedTavilyVendorDiscovery(
+                TavilyHttpClient(
+                    api_key=tavily_config.api_key,
+                    api_base_url=tavily_config.api_base_url,
+                    transport=tavily_transport,
+                ),
+                role_play=False,
+            )
+            extract = TavilyHttpExtractClient(
+                api_key=tavily_config.api_key,
+                api_base_url=tavily_config.api_base_url,
+                transport=tavily_transport,
+            )
+        else:
+            discovery = _UnavailableVendorDiscovery()
+            extract = _UnavailableTavilyExtract()
+
+        if settings.openai.enabled:
+            openai_config = settings.require_openai_config()
+            assert openai_config.api_key is not None
+            claim_extractor = OpenAIWebsiteClaimExtractor(
+                OpenAIResponsesStructuredTextClient(
+                    api_key=openai_config.api_key,
+                    api_base_url=openai_config.api_base_url,
+                    transport=openai_transport,
+                    usage_recorder=usage_recorder,
+                ),
+                model=openai_config.document_model,
+            )
+        else:
+            claim_extractor = None
+    else:
+        raise ProviderConfigurationError("APP_MODE must be either mock or live")
+
+    return VendorResearchService(
+        jobs=repository,
+        research=repository,
+        discovery=discovery,
+        extract=extract,
+        claim_extractor=claim_extractor,
+        required_fee_categories=required_fee_categories(),
+        clock=clock,
+    )

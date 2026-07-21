@@ -22,6 +22,10 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
         "/api/jobs/{job_id}",
         "/api/jobs/{job_id}/events",
         "/api/jobs/{job_id}/confirm",
+        "/api/jobs/{job_id}/vendor-research",
+        "/api/jobs/{job_id}/vendor-research/discover",
+        "/api/jobs/{job_id}/vendor-research/shortlist",
+        "/api/jobs/{job_id}/vendor-research/analyze",
         "/api/jobs/{job_id}/calls",
         "/api/jobs/{job_id}/negotiate",
         "/api/jobs/{job_id}/report",
@@ -45,6 +49,8 @@ def test_export_openapi_contains_required_routes_and_schemas(tmp_path):
         "AttachIntakeConversationRequest",
         "BrowserVoiceTokenResponse",
         "IntegrationStatusSnapshot",
+        "JobVendorResearchV1",
+        "VendorShortlistRequest",
     ):
         assert schema in document["components"]["schemas"]
 

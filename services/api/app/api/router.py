@@ -14,6 +14,7 @@ from services.api.app.api.dependencies import (
     get_live_voice_operator_service,
     get_service,
     get_settings,
+    get_vendor_research_service,
 )
 from services.api.app.api.integration_status import IntegrationStatusSnapshot
 from services.api.app.api.models import (
@@ -31,8 +32,10 @@ from services.api.app.contracts import (
     HealthResponse,
     JobRecord,
     JobSpecV1,
+    JobVendorResearchV1,
     RecommendationV1,
     VendorDiscoveryResponse,
+    VendorShortlistRequest,
     WebhookAck,
 )
 from services.api.app.core.config import Settings
@@ -46,9 +49,14 @@ from services.api.app.orchestration.live_voice_operator import (
     LiveVoiceOperatorService,
 )
 from services.api.app.orchestration.service import VeraMoveService
+from services.api.app.orchestration.vendor_research import VendorResearchService
 
 router = APIRouter()
 Service = Annotated[VeraMoveService, Depends(get_service)]
+VendorResearch = Annotated[
+    VendorResearchService,
+    Depends(get_vendor_research_service),
+]
 RuntimeSettings = Annotated[Settings, Depends(get_settings)]
 IntakeSessions = Annotated[IntakeSessionService, Depends(get_intake_session_service)]
 BrowserVoiceTokens = Annotated[
@@ -258,6 +266,69 @@ def get_job_events(job_id: UUID, service: Service) -> JobEventsResponse:
 @router.post("/api/jobs/{job_id}/confirm", response_model=JobRecord, tags=["jobs"])
 def confirm_job(job_id: UUID, service: Service) -> JobRecord:
     return service.confirm_job(job_id)
+
+
+@router.get(
+    "/api/jobs/{job_id}/vendor-research",
+    response_model=JobVendorResearchV1,
+    tags=["vendors"],
+)
+def get_vendor_research(
+    job_id: UUID,
+    research: VendorResearch,
+) -> JobVendorResearchV1:
+    return research.get(job_id)
+
+
+@router.post(
+    "/api/jobs/{job_id}/vendor-research/discover",
+    response_model=JobVendorResearchV1,
+    tags=["vendors"],
+)
+def discover_job_vendors(
+    job_id: UUID,
+    research: VendorResearch,
+    refresh: Annotated[bool, Query()] = False,
+) -> JobVendorResearchV1:
+    return research.discover(job_id, refresh=refresh)
+
+
+@router.put(
+    "/api/jobs/{job_id}/vendor-research/shortlist",
+    response_model=JobVendorResearchV1,
+    tags=["vendors"],
+)
+def save_vendor_shortlist(
+    job_id: UUID,
+    request: VendorShortlistRequest,
+    research: VendorResearch,
+) -> JobVendorResearchV1:
+    return research.set_shortlist(job_id, request.vendor_ids)
+
+
+@router.delete(
+    "/api/jobs/{job_id}/vendor-research/shortlist",
+    response_model=JobVendorResearchV1,
+    tags=["vendors"],
+)
+def clear_vendor_shortlist(
+    job_id: UUID,
+    research: VendorResearch,
+) -> JobVendorResearchV1:
+    return research.clear_shortlist(job_id)
+
+
+@router.post(
+    "/api/jobs/{job_id}/vendor-research/analyze",
+    response_model=JobVendorResearchV1,
+    tags=["vendors"],
+)
+def analyze_vendor_websites(
+    job_id: UUID,
+    research: VendorResearch,
+    refresh: Annotated[bool, Query()] = False,
+) -> JobVendorResearchV1:
+    return research.analyze(job_id, refresh=refresh)
 
 
 @router.post("/api/jobs/{job_id}/calls", response_model=JobRecord, tags=["calls"])

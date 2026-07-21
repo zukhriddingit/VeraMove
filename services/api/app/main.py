@@ -9,7 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 
-from services.api.app.api.dependencies import build_repository, build_service
+from services.api.app.api.dependencies import (
+    build_repository,
+    build_service,
+    build_vendor_research_service,
+)
 from services.api.app.api.models import ElevenLabsPostCallWebhook, PostCallWebhookData
 from services.api.app.api.router import router
 from services.api.app.contracts import ElevenLabsWebhookEvent, ErrorDetail, ErrorResponse
@@ -31,6 +35,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     runtime_settings = settings or Settings.from_env()
     repository = build_repository(runtime_settings)
     service = build_service(runtime_settings, repository)
+    vendor_research_service = build_vendor_research_service(
+        runtime_settings,
+        repository,
+        usage_recorder=service._usage_recorder,
+    )
     application = FastAPI(
         title="VeraMove API",
         summary="Mock-first moving-services negotiation API",
@@ -39,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.settings = runtime_settings
     application.state.repository = repository
     application.state.service = service
+    application.state.vendor_research_service = vendor_research_service
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(runtime_settings.cors_allow_origins),

@@ -639,3 +639,60 @@ def test_vendor_discovery_returns_three_synthetic_vendors(client):
     assert response.status_code == 200
     assert response.json()["source"] == "synthetic_mock"
     assert len(response.json()["vendors"]) == 3
+
+
+def test_job_vendor_research_discovers_selects_and_builds_targeted_questions(
+    client,
+    job_spec_payload,
+):
+    job_spec_payload["origin"]["address_summary"] = "Cambridge, MA"
+    job_spec_payload["destination"]["address_summary"] = "Somerville, MA"
+    created = client.post("/api/jobs", json=job_spec_payload)
+    job_id = created.json()["job_spec"]["job_id"]
+    assert client.post(f"/api/jobs/{job_id}/confirm").status_code == 200
+
+    discovered = client.post(f"/api/jobs/{job_id}/vendor-research/discover")
+    assert discovered.status_code == 200
+    assert discovered.json()["source"] == "synthetic_mock"
+    vendor_ids = [vendor["vendor_id"] for vendor in discovered.json()["candidates"]]
+
+    shortlisted = client.put(
+        f"/api/jobs/{job_id}/vendor-research/shortlist",
+        json={"vendor_ids": vendor_ids},
+    )
+    assert shortlisted.status_code == 200
+    assert shortlisted.json()["selected_vendor_ids"] == vendor_ids
+
+    analyzed = client.post(f"/api/jobs/{job_id}/vendor-research/analyze")
+    assert analyzed.status_code == 200
+    assert [item["status"] for item in analyzed.json()["dossiers"]] == [
+        "complete",
+        "complete",
+        "complete",
+    ]
+    for dossier in analyzed.json()["dossiers"]:
+        assert dossier["claims"][0]["classification"] == (
+            "unverified_website_claim"
+        )
+        assert dossier["verification_questions"]
+        assert dossier["missing_fee_categories"]
+
+    fetched = client.get(f"/api/jobs/{job_id}/vendor-research")
+    assert fetched.json() == analyzed.json()
+
+    cleared = client.delete(
+        f"/api/jobs/{job_id}/vendor-research/shortlist"
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["selected_vendor_ids"] == []
+    assert cleared.json()["dossiers"] == []
+
+
+def test_job_vendor_research_requires_confirmation(client, job_spec_payload):
+    created = client.post("/api/jobs", json=job_spec_payload)
+    job_id = created.json()["job_spec"]["job_id"]
+
+    response = client.post(f"/api/jobs/{job_id}/vendor-research/discover")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "domain_conflict"
