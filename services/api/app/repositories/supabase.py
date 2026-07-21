@@ -254,6 +254,27 @@ class SupabaseRepository:
             ) from exc
         return self._copy_vendor_call_authorization(candidate)
 
+    def clear_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> None:
+        if any(
+            attempt.job_spec_version == job_spec_version
+            and attempt.authorization_id is not None
+            for attempt in self.list_attempts(job_id)
+        ):
+            raise DomainConflict(
+                "Vendor call authorizations cannot change after dispatch begins"
+            )
+        self._client.delete_many(
+            "vendor_call_authorizations",
+            {
+                "job_id": f"eq.{job_id}",
+                "job_spec_version": f"eq.{job_spec_version}",
+            },
+        )
+
     def get_vendor_suppression(
         self,
         number_hash: str,

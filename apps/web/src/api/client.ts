@@ -17,8 +17,10 @@ export type CreateIntakeSessionRequest = Schemas["CreateIntakeSessionRequest"];
 export type BrowserVoiceTokenResponse = Schemas["BrowserVoiceTokenResponse"];
 export type AttachIntakeConversationRequest = Schemas["AttachIntakeConversationRequest"];
 export type IntegrationStatusSnapshot = Schemas["IntegrationStatusSnapshot"];
-export type JobVendorResearchV1 = Schemas["JobVendorResearchV1"];
+export type JobVendorResearchV1 = Schemas["JobVendorResearchViewV1"];
 export type VendorShortlistRequest = Schemas["VendorShortlistRequest"];
+export type VendorCallAuthorizationRequest = Schemas["VendorCallAuthorizationRequest"];
+export type VendorCallAuthorizationSelectionV1 = Schemas["VendorCallAuthorizationSelectionV1"];
 export type RuntimeMode = "demo" | "live";
 export type FieldErrors = Record<string, string>;
 export type ApiErrorKind = "http" | "network" | "aborted" | "malformed";
@@ -294,6 +296,19 @@ export const apiClient = {
       `/api/jobs/${jobId}/vendor-research/analyze${refresh ? "?refresh=true" : ""}`,
       { method: "POST" },
     ),
+  extractVendorContacts: (jobId: string) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/contacts`, {
+      method: "POST",
+    }),
+  saveVendorCallAuthorizations: (jobId: string, request: VendorCallAuthorizationRequest) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/call-authorizations`, {
+      method: "PUT",
+      body: JSON.stringify(request),
+    }),
+  clearVendorCallAuthorizations: (jobId: string) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/call-authorizations`, {
+      method: "DELETE",
+    }),
 };
 
 export type { components as OpenAPIComponents, paths as OpenAPIPaths } from "./schema";

@@ -124,6 +124,24 @@ def test_postgrest_mutations_request_representations(
         assert params == {"id": "eq.synthetic-id"}
 
 
+def test_postgrest_delete_many_is_allowlisted_and_returns_rows():
+    transport = RecordingTransport(
+        SupabaseHttpResponse(200, [{"id": "synthetic-authorization"}])
+    )
+
+    rows = make_client(transport).delete_many(
+        "vendor_call_authorizations",
+        {"job_id": "eq.synthetic-job"},
+    )
+
+    assert rows == [{"id": "synthetic-authorization"}]
+    method, _url, headers, params, payload = transport.requests[0]
+    assert method == "DELETE"
+    assert headers["Prefer"] == "return=representation"
+    assert params == {"job_id": "eq.synthetic-job"}
+    assert payload is None
+
+
 def test_postgrest_unique_violation_has_dedicated_safe_exception():
     transport = RecordingTransport(
         SupabaseHttpResponse(

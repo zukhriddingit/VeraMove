@@ -74,6 +74,9 @@ export const discoverJobVendors = apiClient.discoverJobVendors;
 export const saveVendorShortlist = apiClient.saveVendorShortlist;
 export const clearVendorShortlist = apiClient.clearVendorShortlist;
 export const analyzeVendorWebsites = apiClient.analyzeVendorWebsites;
+export const extractVendorContacts = apiClient.extractVendorContacts;
+export const saveVendorCallAuthorizations = apiClient.saveVendorCallAuthorizations;
+export const clearVendorCallAuthorizations = apiClient.clearVendorCallAuthorizations;
 
 export async function negotiateJob(jobId: string): Promise<NegotiationView> {
   const record = await apiClient.negotiate(jobId);

@@ -786,3 +786,36 @@ def test_job_vendor_research_requires_confirmation(client, job_spec_payload):
 
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "domain_conflict"
+
+
+def test_contact_authorization_request_requires_exactly_three_selections(
+    client,
+    job_spec_payload,
+):
+    created = client.post("/api/jobs", json=job_spec_payload)
+    job_id = created.json()["job_spec"]["job_id"]
+
+    response = client.put(
+        f"/api/jobs/{job_id}/vendor-research/call-authorizations",
+        json={"selections": [], "batch_acknowledged": True},
+    )
+
+    assert response.status_code == 422
+
+
+def test_start_calls_rejects_unready_real_redacted_job_before_attempts(
+    client,
+    job_spec_payload,
+):
+    job_spec_payload["data_classification"] = "real_redacted"
+    job_spec_payload["origin"]["address_summary"] = "Cambridge, MA"
+    job_spec_payload["destination"]["address_summary"] = "Somerville, MA"
+    created = client.post("/api/jobs", json=job_spec_payload)
+    job_id = created.json()["job_spec"]["job_id"]
+    assert client.post(f"/api/jobs/{job_id}/confirm").status_code == 200
+
+    response = client.post(f"/api/jobs/{job_id}/calls")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "provider_configuration_error"
+    assert client.get(f"/api/jobs/{job_id}").json()["calls"] == []

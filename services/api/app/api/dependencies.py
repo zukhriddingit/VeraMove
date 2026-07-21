@@ -475,9 +475,13 @@ def build_vendor_research_service(
     return VendorResearchService(
         jobs=repository,
         research=repository,
+        authorizations=repository,
+        calls=repository,
         discovery=discovery,
         extract=extract,
         claim_extractor=claim_extractor,
         required_fee_categories=required_fee_categories(),
         clock=clock,
+        contact_hash_secret=settings.live_voice.contact_hash_secret,
+        consent_max_age_days=settings.live_voice.vendor_consent_max_age_days,
     )

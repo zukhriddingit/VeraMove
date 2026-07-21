@@ -123,6 +123,22 @@ class FakeSupabaseTableClient:
         self.tables[table][key] = deepcopy(row)
         return deepcopy(row)
 
+    def delete_many(
+        self,
+        table: str,
+        filters: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        self._maybe_fail()
+        self.operations.append(("delete", table, deepcopy(filters)))
+        removed = []
+        for key, row in list(self.tables[table].items()):
+            if all(
+                str(row.get(column)) == expression.split(".", 1)[1]
+                for column, expression in filters.items()
+            ):
+                removed.append(self.tables[table].pop(key))
+        return deepcopy(removed)
+
     def upsert(
         self,
         table: str,

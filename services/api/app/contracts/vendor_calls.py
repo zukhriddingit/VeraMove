@@ -148,6 +148,75 @@ class VendorCallAuthorizationV1(ContractModel):
         return self
 
 
+class VendorCallAuthorizationSelectionV1(ContractModel):
+    """Browser-safe consent input referencing one server-issued contact only."""
+
+    vendor_id: UUID
+    contact_id: UUID
+    recipient_timezone: str = Field(min_length=1, max_length=64)
+    consent_method: ConsentMethod
+    consent_evidence_reference: str = Field(
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$"
+    )
+    consented_at: datetime
+    ai_call_consented: Literal[True]
+    recording_consented: Literal[True]
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> VendorCallAuthorizationSelectionV1:
+        if self.consented_at.tzinfo is None or self.consented_at.utcoffset() is None:
+            raise ValueError("consented_at must include a timezone")
+        try:
+            ZoneInfo(self.recipient_timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("recipient_timezone must be an IANA timezone") from exc
+        return self
+
+
+class VendorCallAuthorizationRequest(ContractModel):
+    """Exactly-three reviewed consent selections; arbitrary phone input is impossible."""
+
+    selections: list[VendorCallAuthorizationSelectionV1] = Field(
+        min_length=3,
+        max_length=3,
+    )
+    batch_acknowledged: Literal[True]
+
+    @model_validator(mode="after")
+    def require_distinct_selections(self) -> VendorCallAuthorizationRequest:
+        if len({item.vendor_id for item in self.selections}) != 3:
+            raise ValueError("selections must use exactly three distinct vendors")
+        if len({item.contact_id for item in self.selections}) != 3:
+            raise ValueError("selections must use exactly three distinct contacts")
+        return self
+
+
+class VendorCallAuthorizationSummaryV1(ContractModel):
+    """Public readiness view with no raw destination or suppression hash."""
+
+    authorization_id: UUID
+    vendor_id: UUID
+    contact_id: UUID
+    display_number: str = Field(pattern=r"^\([2-9]\d{2}\) \d{3}-\d{4}$")
+    recipient_timezone: str = Field(min_length=1, max_length=64)
+    consent_method: ConsentMethod
+    consented_at: datetime
+    source_url: HttpUrl
+    ready: bool
+    blocking_reason: Literal[
+        "authorization_expired",
+        "contact_mismatch",
+        "outside_call_window",
+        "suppressed",
+    ] | None = None
+
+    @model_validator(mode="after")
+    def readiness_matches_reason(self) -> VendorCallAuthorizationSummaryV1:
+        if self.ready == (self.blocking_reason is not None):
+            raise ValueError("authorization readiness must match its blocking reason")
+        return self
+
+
 class VendorSuppressionV1(ContractModel):
     """Hashed do-not-call state; no raw destination is stored in this record."""
 
@@ -224,6 +293,9 @@ __all__ = [
     "ConsentMethod",
     "SuppressionReason",
     "VendorCallAuthorizationV1",
+    "VendorCallAuthorizationRequest",
+    "VendorCallAuthorizationSelectionV1",
+    "VendorCallAuthorizationSummaryV1",
     "VendorCallPlanV1",
     "VendorCallPlanQuestionV1",
     "VendorCallPlanWebsiteClaimV1",

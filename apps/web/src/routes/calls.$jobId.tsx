@@ -1,12 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  useCalls,
-  useEvents,
-  useJob,
-  useStartCalls,
-  useVendorsDiscovery,
-} from "@/lib/api/hooks";
+import { useCalls, useEvents, useJob, useStartCalls, useVendorsDiscovery } from "@/lib/api/hooks";
 import { jobActions } from "@/lib/api/actions";
 import { useRuntimeMode } from "@/api/client";
 import { VendorCallCard } from "@/components/veramove/VendorCallCard";
@@ -73,7 +67,7 @@ function CallsPage() {
 
   // ── State-driven header CTA ──────────────────────────────────────────────
   let cta: React.ReactNode = null;
-  if (actions.canStartCalls) {
+  if (actions.canStartCalls && isDemoMode) {
     cta = (
       <Button
         onClick={() => startCalls.mutate(jobId)}
@@ -149,8 +143,8 @@ function CallsPage() {
             )}
           </div>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Three calls using the same locked JobSpec. Every fee, every
-            commitment, and every hidden-fee moment is captured for evidence.
+            Three calls using the same locked JobSpec. Every fee, every commitment, and every
+            hidden-fee moment is captured for evidence.
           </p>
         </div>
         {cta}
@@ -159,7 +153,12 @@ function CallsPage() {
       {stateBanner}
 
       {!isDemoMode && status && !["draft", "intake_complete", "failed"].includes(status) && (
-        <VendorResearchPanel jobId={jobId} />
+        <VendorResearchPanel
+          jobId={jobId}
+          onStartCalls={() => startCalls.mutate(jobId)}
+          startPending={startCalls.isPending}
+          canStartCalls={actions.canStartCalls}
+        />
       )}
 
       {startError && (
@@ -170,18 +169,21 @@ function CallsPage() {
         />
       )}
 
-      {actions.canStartCalls && calls.length === 0 && (
+      {actions.canStartCalls && calls.length === 0 && isDemoMode && (
         <section className="rounded-2xl border border-dashed border-border bg-surface-muted p-8 text-center">
           <PhoneOutgoing className="mx-auto h-6 w-6 text-muted-foreground" />
           <h2 className="mt-2 text-base font-semibold">Ready to place three calls</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            The locked spec (version {job.version}) will be sent to every
-            vendor. Nothing about your move changes after this point.
+            The locked spec (version {job.version}) will be sent to every vendor. Nothing about your
+            move changes after this point.
           </p>
         </section>
       )}
 
-      {(status === "calling" || status === "quotes_ready" || status === "negotiating" || status === "completed") && (
+      {(status === "calling" ||
+        status === "quotes_ready" ||
+        status === "negotiating" ||
+        status === "completed") && (
         <>
           {callsQ.isLoading && calls.length === 0 && (
             <div className="grid gap-4 lg:grid-cols-3">
@@ -205,9 +207,7 @@ function CallsPage() {
                     leverageVendorName={leverageMap.get(c.id)}
                     synthetic={job.synthetic}
                     liveMaterializationPending={
-                      !isDemoMode &&
-                      c.status === "completed" &&
-                      !c.outcome
+                      !isDemoMode && c.status === "completed" && !c.outcome
                     }
                   />
                 ))}
@@ -249,8 +249,7 @@ function renderStateBanner(status: string | undefined, jobId: string) {
   if (status === "draft" || status === "intake_complete") {
     return (
       <div className="rounded-xl border border-border bg-surface-muted p-4 text-sm">
-        This job hasn't been confirmed yet. Vendor calls can't start until
-        the spec is locked.{" "}
+        This job hasn't been confirmed yet. Vendor calls can't start until the spec is locked.{" "}
         <Link
           to="/confirm/$jobId"
           params={{ jobId }}
@@ -265,15 +264,19 @@ function renderStateBanner(status: string | undefined, jobId: string) {
   if (status === "failed") {
     return (
       <div className="rounded-xl border border-risk/30 bg-risk-soft p-4 text-sm">
-        This job ended in a failed state. Only recovery actions supplied by
-        the backend are available.
+        This job ended in a failed state. Only recovery actions supplied by the backend are
+        available.
       </div>
     );
   }
   return null;
 }
 
-function ActivityLog({ events }: { events: Array<{ ts: string; message: string; type?: string }> }) {
+function ActivityLog({
+  events,
+}: {
+  events: Array<{ ts: string; message: string; type?: string }>;
+}) {
   if (events.length === 0) return null;
   // De-duplicate by ts+type to avoid duplicate renders across polls.
   const seen = new Set<string>();
@@ -315,9 +318,7 @@ function TavilyDiscoverySection({ enabledByDefault }: { enabledByDefault: boolea
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 text-muted-foreground" />
           <div>
-            <div className="text-sm font-semibold">
-              Where a production call list comes from
-            </div>
+            <div className="text-sm font-semibold">Where a production call list comes from</div>
             <div className="text-xs text-muted-foreground">
               Discovery candidates · not called in this demonstration
             </div>
@@ -332,17 +333,12 @@ function TavilyDiscoverySection({ enabledByDefault }: { enabledByDefault: boolea
       {open && (
         <div className="border-t border-border p-5 pt-4 text-sm">
           {q.isLoading && <p className="text-muted-foreground">Loading candidates…</p>}
-          {q.isError && (
-            <p className="text-muted-foreground">
-              Discovery unavailable right now.
-            </p>
-          )}
+          {q.isError && <p className="text-muted-foreground">Discovery unavailable right now.</p>}
           {q.data && q.data.length > 0 && (
             <>
               <p className="mb-3 text-xs text-muted-foreground">
-                Vendors surfaced by discovery for a live production run. These
-                are separate from the three role-play counterparties above and
-                are not called in this demonstration.
+                Vendors surfaced by discovery for a live production run. These are separate from the
+                three role-play counterparties above and are not called in this demonstration.
               </p>
               <ul className="grid gap-2 md:grid-cols-2">
                 {q.data.map((v) => (

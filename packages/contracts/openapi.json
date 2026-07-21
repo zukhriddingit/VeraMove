@@ -199,6 +199,16 @@
         "title": "CallStatus",
         "type": "string"
       },
+      "ConsentMethod": {
+        "description": "Reviewed evidence types that can establish current recipient consent.",
+        "enum": [
+          "direct_recipient_opt_in",
+          "existing_business_relationship_confirmation",
+          "provider_test_destination"
+        ],
+        "title": "ConsentMethod",
+        "type": "string"
+      },
       "CreateIntakeSessionRequest": {
         "additionalProperties": false,
         "description": "Select the privacy boundary before creating a browser voice session.",
@@ -1152,10 +1162,31 @@
         "title": "JobState",
         "type": "string"
       },
-      "JobVendorResearchV1": {
+      "JobVendorResearchViewV1": {
         "additionalProperties": false,
-        "description": "Durable discovery, shortlist, and dossier state for one locked JobSpec.",
+        "description": "API-safe research state enriched from protected authorization storage.",
         "properties": {
+          "authorization_ready": {
+            "default": false,
+            "title": "Authorization Ready",
+            "type": "boolean"
+          },
+          "call_authorizations": {
+            "items": {
+              "$ref": "#/components/schemas/VendorCallAuthorizationSummaryV1"
+            },
+            "maxItems": 3,
+            "title": "Call Authorizations",
+            "type": "array"
+          },
+          "call_plans": {
+            "items": {
+              "$ref": "#/components/schemas/VendorCallPlanV1"
+            },
+            "maxItems": 3,
+            "title": "Call Plans",
+            "type": "array"
+          },
           "candidates": {
             "items": {
               "$ref": "#/components/schemas/Vendor"
@@ -1222,7 +1253,7 @@
           "created_at",
           "updated_at"
         ],
-        "title": "JobVendorResearchV1",
+        "title": "JobVendorResearchViewV1",
         "type": "object"
       },
       "MovingServices": {
@@ -2156,6 +2187,372 @@
         "title": "Vendor",
         "type": "object"
       },
+      "VendorCallAuthorizationRequest": {
+        "additionalProperties": false,
+        "description": "Exactly-three reviewed consent selections; arbitrary phone input is impossible.",
+        "properties": {
+          "batch_acknowledged": {
+            "const": true,
+            "title": "Batch Acknowledged",
+            "type": "boolean"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/VendorCallAuthorizationSelectionV1"
+            },
+            "maxItems": 3,
+            "minItems": 3,
+            "title": "Selections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "selections",
+          "batch_acknowledged"
+        ],
+        "title": "VendorCallAuthorizationRequest",
+        "type": "object"
+      },
+      "VendorCallAuthorizationSelectionV1": {
+        "additionalProperties": false,
+        "description": "Browser-safe consent input referencing one server-issued contact only.",
+        "properties": {
+          "ai_call_consented": {
+            "const": true,
+            "title": "Ai Call Consented",
+            "type": "boolean"
+          },
+          "consent_evidence_reference": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$",
+            "title": "Consent Evidence Reference",
+            "type": "string"
+          },
+          "consent_method": {
+            "$ref": "#/components/schemas/ConsentMethod"
+          },
+          "consented_at": {
+            "format": "date-time",
+            "title": "Consented At",
+            "type": "string"
+          },
+          "contact_id": {
+            "format": "uuid",
+            "title": "Contact Id",
+            "type": "string"
+          },
+          "recipient_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Recipient Timezone",
+            "type": "string"
+          },
+          "recording_consented": {
+            "const": true,
+            "title": "Recording Consented",
+            "type": "boolean"
+          },
+          "vendor_id": {
+            "format": "uuid",
+            "title": "Vendor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor_id",
+          "contact_id",
+          "recipient_timezone",
+          "consent_method",
+          "consent_evidence_reference",
+          "consented_at",
+          "ai_call_consented",
+          "recording_consented"
+        ],
+        "title": "VendorCallAuthorizationSelectionV1",
+        "type": "object"
+      },
+      "VendorCallAuthorizationSummaryV1": {
+        "additionalProperties": false,
+        "description": "Public readiness view with no raw destination or suppression hash.",
+        "properties": {
+          "authorization_id": {
+            "format": "uuid",
+            "title": "Authorization Id",
+            "type": "string"
+          },
+          "blocking_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "authorization_expired",
+                  "contact_mismatch",
+                  "outside_call_window",
+                  "suppressed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocking Reason"
+          },
+          "consent_method": {
+            "$ref": "#/components/schemas/ConsentMethod"
+          },
+          "consented_at": {
+            "format": "date-time",
+            "title": "Consented At",
+            "type": "string"
+          },
+          "contact_id": {
+            "format": "uuid",
+            "title": "Contact Id",
+            "type": "string"
+          },
+          "display_number": {
+            "pattern": "^\\([2-9]\\d{2}\\) \\d{3}-\\d{4}$",
+            "title": "Display Number",
+            "type": "string"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "recipient_timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Recipient Timezone",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "vendor_id": {
+            "format": "uuid",
+            "title": "Vendor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "authorization_id",
+          "vendor_id",
+          "contact_id",
+          "display_number",
+          "recipient_timezone",
+          "consent_method",
+          "consented_at",
+          "source_url",
+          "ready"
+        ],
+        "title": "VendorCallAuthorizationSummaryV1",
+        "type": "object"
+      },
+      "VendorCallPlanQuestionV1": {
+        "additionalProperties": false,
+        "description": "One targeted question copied from the deterministic verification plan.",
+        "properties": {
+          "category": {
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "title": "Category",
+            "type": "string"
+          },
+          "claim_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Claim Ids",
+            "type": "array"
+          },
+          "question": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "question_id": {
+            "format": "uuid",
+            "title": "Question Id",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "published_claim",
+              "missing_information",
+              "ambiguous_claim"
+            ],
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "category",
+          "question",
+          "reason"
+        ],
+        "title": "VendorCallPlanQuestionV1",
+        "type": "object"
+      },
+      "VendorCallPlanV1": {
+        "additionalProperties": false,
+        "description": "Deterministic, capped quote-call agenda for one locked JobSpec.",
+        "properties": {
+          "job_spec_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Job Spec Sha256",
+            "type": "string"
+          },
+          "job_spec_version": {
+            "const": "1.0",
+            "title": "Job Spec Version",
+            "type": "string"
+          },
+          "plan_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Plan Version",
+            "type": "string"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/VendorCallPlanQuestionV1"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Questions",
+            "type": "array"
+          },
+          "source_urls": {
+            "items": {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Source Urls",
+            "type": "array"
+          },
+          "vendor_id": {
+            "format": "uuid",
+            "title": "Vendor Id",
+            "type": "string"
+          },
+          "website_claims": {
+            "items": {
+              "$ref": "#/components/schemas/VendorCallPlanWebsiteClaimV1"
+            },
+            "maxItems": 5,
+            "title": "Website Claims",
+            "type": "array"
+          }
+        },
+        "required": [
+          "vendor_id",
+          "job_spec_version",
+          "job_spec_sha256",
+          "questions"
+        ],
+        "title": "VendorCallPlanV1",
+        "type": "object"
+      },
+      "VendorCallPlanWebsiteClaimV1": {
+        "additionalProperties": false,
+        "description": "A bounded unverified website claim supplied as call context, never evidence.",
+        "properties": {
+          "claim_id": {
+            "format": "uuid",
+            "title": "Claim Id",
+            "type": "string"
+          },
+          "classification": {
+            "const": "unverified_website_claim",
+            "default": "unverified_website_claim",
+            "title": "Classification",
+            "type": "string"
+          },
+          "kind": {
+            "pattern": "^[a-z][a-z0-9_]{0,39}$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "summary": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim_id",
+          "kind",
+          "summary",
+          "source_url"
+        ],
+        "title": "VendorCallPlanWebsiteClaimV1",
+        "type": "object"
+      },
+      "VendorContactCandidateV1": {
+        "additionalProperties": false,
+        "description": "One official-site public business contact with tamper-evident provenance.",
+        "properties": {
+          "contact_id": {
+            "format": "uuid",
+            "title": "Contact Id",
+            "type": "string"
+          },
+          "display_number": {
+            "pattern": "^\\([2-9]\\d{2}\\) \\d{3}-\\d{4}$",
+            "title": "Display Number",
+            "type": "string"
+          },
+          "source_excerpt": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Source Excerpt",
+            "type": "string"
+          },
+          "source_excerpt_sha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Source Excerpt Sha256",
+            "type": "string"
+          },
+          "source_url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Source Url",
+            "type": "string"
+          },
+          "vendor_id": {
+            "format": "uuid",
+            "title": "Vendor Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vendor_id",
+          "display_number",
+          "source_url",
+          "source_excerpt",
+          "source_excerpt_sha256"
+        ],
+        "title": "VendorContactCandidateV1",
+        "type": "object"
+      },
       "VendorDiscoveryResponse": {
         "additionalProperties": false,
         "properties": {
@@ -2192,6 +2589,14 @@
             },
             "maxItems": 20,
             "title": "Claims",
+            "type": "array"
+          },
+          "contact_candidates": {
+            "items": {
+              "$ref": "#/components/schemas/VendorContactCandidateV1"
+            },
+            "maxItems": 5,
+            "title": "Contact Candidates",
             "type": "array"
           },
           "missing_fee_categories": {
@@ -3443,7 +3848,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
                 }
               }
             },
@@ -3496,7 +3901,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
                 }
               }
             },
@@ -3514,6 +3919,143 @@
           }
         },
         "summary": "Analyze Vendor Websites",
+        "tags": [
+          "vendors"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/vendor-research/call-authorizations": {
+      "delete": {
+        "operationId": "clear_vendor_call_authorizations_api_jobs__job_id__vendor_research_call_authorizations_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clear Vendor Call Authorizations",
+        "tags": [
+          "vendors"
+        ]
+      },
+      "put": {
+        "operationId": "authorize_vendor_calls_api_jobs__job_id__vendor_research_call_authorizations_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorCallAuthorizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Authorize Vendor Calls",
+        "tags": [
+          "vendors"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/vendor-research/contacts": {
+      "post": {
+        "operationId": "extract_vendor_contacts_api_jobs__job_id__vendor_research_contacts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Extract Vendor Contacts",
         "tags": [
           "vendors"
         ]
@@ -3549,7 +4091,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
                 }
               }
             },
@@ -3592,7 +4134,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
                 }
               }
             },
@@ -3643,7 +4185,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/JobVendorResearchV1"
+                  "$ref": "#/components/schemas/JobVendorResearchViewV1"
                 }
               }
             },

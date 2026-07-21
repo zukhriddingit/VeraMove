@@ -362,6 +362,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/{job_id}/vendor-research/call-authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Authorize Vendor Calls */
+        put: operations["authorize_vendor_calls_api_jobs__job_id__vendor_research_call_authorizations_put"];
+        post?: never;
+        /** Clear Vendor Call Authorizations */
+        delete: operations["clear_vendor_call_authorizations_api_jobs__job_id__vendor_research_call_authorizations_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/vendor-research/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extract Vendor Contacts */
+        post: operations["extract_vendor_contacts_api_jobs__job_id__vendor_research_contacts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jobs/{job_id}/vendor-research/discover": {
         parameters: {
             query?: never;
@@ -545,6 +580,12 @@ export interface components {
          * @enum {string}
          */
         CallStatus: "pending" | "in_progress" | "completed" | "failed";
+        /**
+         * ConsentMethod
+         * @description Reviewed evidence types that can establish current recipient consent.
+         * @enum {string}
+         */
+        ConsentMethod: "direct_recipient_opt_in" | "existing_business_relationship_confirmation" | "provider_test_destination";
         /**
          * CreateIntakeSessionRequest
          * @description Select the privacy boundary before creating a browser voice session.
@@ -941,10 +982,19 @@ export interface components {
          */
         JobState: "draft" | "intake_complete" | "confirmed" | "calling" | "quotes_ready" | "negotiating" | "completed" | "failed";
         /**
-         * JobVendorResearchV1
-         * @description Durable discovery, shortlist, and dossier state for one locked JobSpec.
+         * JobVendorResearchViewV1
+         * @description API-safe research state enriched from protected authorization storage.
          */
-        JobVendorResearchV1: {
+        JobVendorResearchViewV1: {
+            /**
+             * Authorization Ready
+             * @default false
+             */
+            authorization_ready: boolean;
+            /** Call Authorizations */
+            call_authorizations?: components["schemas"]["VendorCallAuthorizationSummaryV1"][];
+            /** Call Plans */
+            call_plans?: components["schemas"]["VendorCallPlanV1"][];
             /** Candidates */
             candidates: components["schemas"]["Vendor"][];
             /**
@@ -1319,6 +1369,200 @@ export interface components {
              */
             vendor_id: string;
         };
+        /**
+         * VendorCallAuthorizationRequest
+         * @description Exactly-three reviewed consent selections; arbitrary phone input is impossible.
+         */
+        VendorCallAuthorizationRequest: {
+            /**
+             * Batch Acknowledged
+             * @constant
+             */
+            batch_acknowledged: true;
+            /** Selections */
+            selections: components["schemas"]["VendorCallAuthorizationSelectionV1"][];
+        };
+        /**
+         * VendorCallAuthorizationSelectionV1
+         * @description Browser-safe consent input referencing one server-issued contact only.
+         */
+        VendorCallAuthorizationSelectionV1: {
+            /**
+             * Ai Call Consented
+             * @constant
+             */
+            ai_call_consented: true;
+            /** Consent Evidence Reference */
+            consent_evidence_reference: string;
+            consent_method: components["schemas"]["ConsentMethod"];
+            /**
+             * Consented At
+             * Format: date-time
+             */
+            consented_at: string;
+            /**
+             * Contact Id
+             * Format: uuid
+             */
+            contact_id: string;
+            /** Recipient Timezone */
+            recipient_timezone: string;
+            /**
+             * Recording Consented
+             * @constant
+             */
+            recording_consented: true;
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+        };
+        /**
+         * VendorCallAuthorizationSummaryV1
+         * @description Public readiness view with no raw destination or suppression hash.
+         */
+        VendorCallAuthorizationSummaryV1: {
+            /**
+             * Authorization Id
+             * Format: uuid
+             */
+            authorization_id: string;
+            /** Blocking Reason */
+            blocking_reason?: ("authorization_expired" | "contact_mismatch" | "outside_call_window" | "suppressed") | null;
+            consent_method: components["schemas"]["ConsentMethod"];
+            /**
+             * Consented At
+             * Format: date-time
+             */
+            consented_at: string;
+            /**
+             * Contact Id
+             * Format: uuid
+             */
+            contact_id: string;
+            /** Display Number */
+            display_number: string;
+            /** Ready */
+            ready: boolean;
+            /** Recipient Timezone */
+            recipient_timezone: string;
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+        };
+        /**
+         * VendorCallPlanQuestionV1
+         * @description One targeted question copied from the deterministic verification plan.
+         */
+        VendorCallPlanQuestionV1: {
+            /** Category */
+            category: string;
+            /** Claim Ids */
+            claim_ids?: string[];
+            /** Question */
+            question: string;
+            /**
+             * Question Id
+             * Format: uuid
+             */
+            question_id: string;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "published_claim" | "missing_information" | "ambiguous_claim";
+        };
+        /**
+         * VendorCallPlanV1
+         * @description Deterministic, capped quote-call agenda for one locked JobSpec.
+         */
+        VendorCallPlanV1: {
+            /** Job Spec Sha256 */
+            job_spec_sha256: string;
+            /**
+             * Job Spec Version
+             * @constant
+             */
+            job_spec_version: "1.0";
+            /**
+             * Plan Version
+             * @default 1.0
+             * @constant
+             */
+            plan_version: "1.0";
+            /** Questions */
+            questions: components["schemas"]["VendorCallPlanQuestionV1"][];
+            /** Source Urls */
+            source_urls?: string[];
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+            /** Website Claims */
+            website_claims?: components["schemas"]["VendorCallPlanWebsiteClaimV1"][];
+        };
+        /**
+         * VendorCallPlanWebsiteClaimV1
+         * @description A bounded unverified website claim supplied as call context, never evidence.
+         */
+        VendorCallPlanWebsiteClaimV1: {
+            /**
+             * Claim Id
+             * Format: uuid
+             */
+            claim_id: string;
+            /**
+             * Classification
+             * @default unverified_website_claim
+             * @constant
+             */
+            classification: "unverified_website_claim";
+            /** Kind */
+            kind: string;
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /** Summary */
+            summary: string;
+        };
+        /**
+         * VendorContactCandidateV1
+         * @description One official-site public business contact with tamper-evident provenance.
+         */
+        VendorContactCandidateV1: {
+            /**
+             * Contact Id
+             * Format: uuid
+             */
+            contact_id?: string;
+            /** Display Number */
+            display_number: string;
+            /** Source Excerpt */
+            source_excerpt: string;
+            /** Source Excerpt Sha256 */
+            source_excerpt_sha256: string;
+            /**
+             * Source Url
+             * Format: uri
+             */
+            source_url: string;
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+        };
         /** VendorDiscoveryResponse */
         VendorDiscoveryResponse: {
             /**
@@ -1336,6 +1580,8 @@ export interface components {
         VendorResearchDossierV1: {
             /** Claims */
             claims?: components["schemas"]["WebsiteResearchClaimV1"][];
+            /** Contact Candidates */
+            contact_candidates?: components["schemas"]["VendorContactCandidateV1"][];
             /** Missing Fee Categories */
             missing_fee_categories?: components["schemas"]["FeeCategory"][];
             /** Researched At */
@@ -2112,7 +2358,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
                 };
             };
             /** @description Validation Error */
@@ -2145,7 +2391,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    authorize_vendor_calls_api_jobs__job_id__vendor_research_call_authorizations_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorCallAuthorizationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_vendor_call_authorizations_api_jobs__job_id__vendor_research_call_authorizations_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    extract_vendor_contacts_api_jobs__job_id__vendor_research_contacts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
                 };
             };
             /** @description Validation Error */
@@ -2178,7 +2521,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
                 };
             };
             /** @description Validation Error */
@@ -2213,7 +2556,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
                 };
             };
             /** @description Validation Error */
@@ -2244,7 +2587,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["JobVendorResearchV1"];
+                    "application/json": components["schemas"]["JobVendorResearchViewV1"];
                 };
             };
             /** @description Validation Error */

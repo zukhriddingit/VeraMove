@@ -100,6 +100,26 @@ export function useAnalyzeVendorWebsites() {
   );
 }
 
+export function useExtractVendorContacts() {
+  return useVendorResearchMutation((jobId: string) => api.extractVendorContacts(jobId));
+}
+
+export function useSaveVendorCallAuthorizations() {
+  return useVendorResearchMutation(
+    ({
+      jobId,
+      request,
+    }: {
+      jobId: string;
+      request: Parameters<typeof api.saveVendorCallAuthorizations>[1];
+    }) => api.saveVendorCallAuthorizations(jobId, request),
+  );
+}
+
+export function useClearVendorCallAuthorizations() {
+  return useVendorResearchMutation((jobId: string) => api.clearVendorCallAuthorizations(jobId));
+}
+
 export function useCalls(jobId: string, { poll = false }: { poll?: boolean } = {}) {
   return useQuery({
     queryKey: qk.calls(jobId),

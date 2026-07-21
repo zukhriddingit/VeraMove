@@ -17,7 +17,11 @@ from services.api.app.contracts.models import (
     Vendor,
     VendorSearchQuery,
 )
-from services.api.app.contracts.vendor_calls import VendorContactCandidateV1
+from services.api.app.contracts.vendor_calls import (
+    VendorCallAuthorizationSummaryV1,
+    VendorCallPlanV1,
+    VendorContactCandidateV1,
+)
 
 
 class WebsiteClaimKind(StrEnum):
@@ -240,6 +244,29 @@ class JobVendorResearchV1(ContractModel):
         return self
 
 
+class JobVendorResearchViewV1(JobVendorResearchV1):
+    """API-safe research state enriched from protected authorization storage."""
+
+    authorization_ready: bool = False
+    call_authorizations: list[VendorCallAuthorizationSummaryV1] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    call_plans: list[VendorCallPlanV1] = Field(default_factory=list, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_authorization_view(self) -> JobVendorResearchViewV1:
+        if self.authorization_ready and (
+            len(self.call_authorizations) != 3
+            or not all(item.ready for item in self.call_authorizations)
+            or len(self.call_plans) != 3
+        ):
+            raise ValueError(
+                "authorization_ready requires three ready authorizations and plans"
+            )
+        return self
+
+
 class WebsiteClaimExtractionResult(ContractModel):
     """Strict provider-facing envelope; orchestration adds trusted IDs and source metadata."""
 
@@ -248,6 +275,7 @@ class WebsiteClaimExtractionResult(ContractModel):
 
 __all__ = [
     "JobVendorResearchV1",
+    "JobVendorResearchViewV1",
     "VendorResearchDossierV1",
     "VendorShortlistRequest",
     "VendorVerificationQuestionV1",

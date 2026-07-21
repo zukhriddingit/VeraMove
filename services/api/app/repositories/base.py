@@ -427,6 +427,12 @@ class VendorCallAuthorizationRepository(Protocol):
         authorization: VendorCallAuthorizationV1,
     ) -> VendorCallAuthorizationV1: ...
 
+    def clear_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> None: ...
+
     def get_vendor_suppression(
         self,
         number_hash: str,

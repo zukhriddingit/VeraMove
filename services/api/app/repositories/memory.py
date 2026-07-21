@@ -211,6 +211,27 @@ class InMemoryRepository:
             else None
         )
 
+    def clear_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> None:
+        with self._lock:
+            if any(
+                attempt.job_id == job_id
+                and attempt.job_spec_version == job_spec_version
+                and attempt.authorization_id is not None
+                for attempt in self._attempts.values()
+            ):
+                raise DomainConflict(
+                    "Vendor call authorizations cannot change after dispatch begins"
+                )
+            self._vendor_call_authorizations = {
+                key: value
+                for key, value in self._vendor_call_authorizations.items()
+                if key[:2] != (job_id, job_spec_version)
+            }
+
     def save_vendor_suppression(
         self,
         suppression: VendorSuppressionV1,

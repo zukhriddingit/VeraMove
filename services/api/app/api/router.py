@@ -34,8 +34,9 @@ from services.api.app.contracts import (
     HealthResponse,
     JobRecord,
     JobSpecV1,
-    JobVendorResearchV1,
+    JobVendorResearchViewV1,
     RecommendationV1,
+    VendorCallAuthorizationRequest,
     VendorDiscoveryResponse,
     VendorShortlistRequest,
     WebhookAck,
@@ -344,65 +345,106 @@ def confirm_job(job_id: UUID, service: Service) -> JobRecord:
 
 @router.get(
     "/api/jobs/{job_id}/vendor-research",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def get_vendor_research(
     job_id: UUID,
     research: VendorResearch,
-) -> JobVendorResearchV1:
-    return research.get(job_id)
+) -> JobVendorResearchViewV1:
+    return research.view(job_id)
 
 
 @router.post(
     "/api/jobs/{job_id}/vendor-research/discover",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def discover_job_vendors(
     job_id: UUID,
     research: VendorResearch,
     refresh: Annotated[bool, Query()] = False,
-) -> JobVendorResearchV1:
-    return research.discover(job_id, refresh=refresh)
+) -> JobVendorResearchViewV1:
+    research.discover(job_id, refresh=refresh)
+    return research.view(job_id)
 
 
 @router.put(
     "/api/jobs/{job_id}/vendor-research/shortlist",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def save_vendor_shortlist(
     job_id: UUID,
     request: VendorShortlistRequest,
     research: VendorResearch,
-) -> JobVendorResearchV1:
-    return research.set_shortlist(job_id, request.vendor_ids)
+) -> JobVendorResearchViewV1:
+    research.set_shortlist(job_id, request.vendor_ids)
+    return research.view(job_id)
 
 
 @router.delete(
     "/api/jobs/{job_id}/vendor-research/shortlist",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def clear_vendor_shortlist(
     job_id: UUID,
     research: VendorResearch,
-) -> JobVendorResearchV1:
-    return research.clear_shortlist(job_id)
+) -> JobVendorResearchViewV1:
+    research.clear_shortlist(job_id)
+    return research.view(job_id)
 
 
 @router.post(
     "/api/jobs/{job_id}/vendor-research/analyze",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def analyze_vendor_websites(
     job_id: UUID,
     research: VendorResearch,
     refresh: Annotated[bool, Query()] = False,
-) -> JobVendorResearchV1:
-    return research.analyze(job_id, refresh=refresh)
+) -> JobVendorResearchViewV1:
+    research.analyze(job_id, refresh=refresh)
+    return research.view(job_id)
+
+
+@router.post(
+    "/api/jobs/{job_id}/vendor-research/contacts",
+    response_model=JobVendorResearchViewV1,
+    tags=["vendors"],
+)
+def extract_vendor_contacts(
+    job_id: UUID,
+    research: VendorResearch,
+) -> JobVendorResearchViewV1:
+    return research.extract_contacts(job_id)
+
+
+@router.put(
+    "/api/jobs/{job_id}/vendor-research/call-authorizations",
+    response_model=JobVendorResearchViewV1,
+    tags=["vendors"],
+)
+def authorize_vendor_calls(
+    job_id: UUID,
+    request: VendorCallAuthorizationRequest,
+    research: VendorResearch,
+) -> JobVendorResearchViewV1:
+    return research.authorize_calls(job_id, request)
+
+
+@router.delete(
+    "/api/jobs/{job_id}/vendor-research/call-authorizations",
+    response_model=JobVendorResearchViewV1,
+    tags=["vendors"],
+)
+def clear_vendor_call_authorizations(
+    job_id: UUID,
+    research: VendorResearch,
+) -> JobVendorResearchViewV1:
+    return research.clear_call_authorizations(job_id)
 
 
 @router.post("/api/jobs/{job_id}/calls", response_model=JobRecord, tags=["calls"])

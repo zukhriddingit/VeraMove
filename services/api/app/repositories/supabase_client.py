@@ -23,6 +23,8 @@ _ALLOWED_TABLES = frozenset(
         "recommendations",
         "event_log",
         "vendor_research",
+        "vendor_call_authorizations",
+        "vendor_call_suppressions",
     }
 )
 _ALLOWED_RPCS = frozenset(
@@ -109,6 +111,12 @@ class SupabaseTableClient(Protocol):
         filters: dict[str, str],
         values: dict[str, Any],
     ) -> dict[str, Any]: ...
+
+    def delete_many(
+        self,
+        table: str,
+        filters: dict[str, str],
+    ) -> list[dict[str, Any]]: ...
 
     def rpc(self, name: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -213,6 +221,26 @@ class SupabasePostgrestClient:
             params=filters,
             prefer="return=representation",
         )
+
+    def delete_many(
+        self,
+        table: str,
+        filters: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        self._validate_table(table)
+        self._validate_filters(filters)
+        body = self._request(
+            "DELETE",
+            table,
+            params=filters,
+            payload=None,
+            prefer="return=representation",
+        )
+        if not isinstance(body, list) or not all(
+            isinstance(row, dict) for row in body
+        ):
+            raise ProviderRequestError("Supabase request failed")
+        return body
 
     def rpc(self, name: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Call one allowlisted transactional function with a bounded safe payload."""
