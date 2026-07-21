@@ -13,6 +13,7 @@ from services.api.app.contracts import (
     Vendor,
     WebsiteClaimExtractionResult,
     WebsiteClaimKind,
+    WebsiteResearchClaimDraft,
     WebsiteResearchClaimV1,
 )
 from services.api.app.core.errors import ProviderRequestError
@@ -68,13 +69,19 @@ class OpenAIWebsiteClaimExtractor:
             user_text=user_text,
             response_schema=WebsiteClaimExtractionResult,
         )
-        try:
-            result = WebsiteClaimExtractionResult.model_validate(raw)
-        except ValidationError as exc:
-            raise ProviderRequestError("OpenAI returned invalid website claims") from exc
+        raw_claims = raw.get("claims") if isinstance(raw, dict) else None
+        if not isinstance(raw_claims, list):
+            raise ProviderRequestError("OpenAI returned invalid website claims")
+
+        drafts: list[WebsiteResearchClaimDraft] = []
+        for raw_claim in raw_claims[:20]:
+            try:
+                drafts.append(WebsiteResearchClaimDraft.model_validate(raw_claim))
+            except ValidationError:
+                continue
 
         claims: list[WebsiteResearchClaimV1] = []
-        for draft in result.claims:
+        for draft in drafts:
             if draft.source_excerpt not in page.content:
                 continue
             if self._contains_contact_data(draft.summary) or self._contains_contact_data(

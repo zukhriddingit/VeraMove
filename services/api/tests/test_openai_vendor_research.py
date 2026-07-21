@@ -211,10 +211,44 @@ def test_extractor_keeps_valid_claims_when_another_draft_is_unsupported(vendor, 
 
 
 def test_extractor_rejects_invalid_structured_output(vendor, page):
-    extractor, _ = _extractor(_completed({"claims": [{"kind": "unsupported"}]}))
+    extractor, _ = _extractor(_completed({"unexpected": []}))
 
     with pytest.raises(ProviderRequestError, match="invalid website claims"):
         extractor.extract(vendor, page, NOW)
+
+
+def test_extractor_discards_invalid_drafts_without_losing_valid_claims(vendor, page):
+    extractor, _ = _extractor(
+        _completed(
+            {
+                "claims": [
+                    {
+                        "kind": "unsupported",
+                        "summary": "Invalid kind.",
+                        "advertised_amount": None,
+                        "currency": None,
+                        "unit": None,
+                        "qualifiers": [],
+                        "source_excerpt": "Moving services starting at $149/hour for two movers.",
+                    },
+                    {
+                        "kind": "hourly_rate",
+                        "summary": "Moving services start at $149 per hour.",
+                        "advertised_amount": "149.00",
+                        "currency": "USD",
+                        "unit": "hour",
+                        "qualifiers": ["starting at", "two movers"],
+                        "source_excerpt": "Moving services starting at $149/hour for two movers.",
+                    },
+                ]
+            }
+        )
+    )
+
+    claims = extractor.extract(vendor, page, NOW)
+
+    assert len(claims) == 1
+    assert claims[0].kind.value == "hourly_rate"
 
 
 def test_mock_extractor_is_stable_source_backed_and_network_free(vendor, page):
