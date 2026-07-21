@@ -18,6 +18,8 @@ from services.api.app.contracts import (
     RecommendationV1,
     TranscriptEvidence,
     Vendor,
+    VendorCallAuthorizationV1,
+    VendorSuppressionV1,
     VerificationStatus,
 )
 from services.api.app.core.errors import (
@@ -156,6 +158,154 @@ class SupabaseRepository:
             on_conflict="id",
         )
         return self._copy_vendor_research(candidate)
+
+    def get_vendor_call_authorization(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+        vendor_id: UUID,
+    ) -> VendorCallAuthorizationV1 | None:
+        rows = self._client.select_many(
+            "vendor_call_authorizations",
+            {
+                "job_id": f"eq.{job_id}",
+                "job_spec_version": f"eq.{job_spec_version}",
+                "vendor_id": f"eq.{vendor_id}",
+            },
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise ProviderRequestError(
+                "Supabase returned duplicate vendor call authorizations"
+            )
+        return self._authorization_from_row(rows[0])
+
+    def list_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> list[VendorCallAuthorizationV1]:
+        rows = self._client.select_many(
+            "vendor_call_authorizations",
+            {
+                "job_id": f"eq.{job_id}",
+                "job_spec_version": f"eq.{job_spec_version}",
+            },
+        )
+        return sorted(
+            (self._authorization_from_row(row) for row in rows),
+            key=lambda item: str(item.vendor_id),
+        )
+
+    def save_vendor_call_authorization(
+        self,
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1:
+        candidate = self._copy_vendor_call_authorization(authorization)
+        job = self._require_job(candidate.job_id)
+        if (
+            not job.job_spec.confirmed
+            or job.job_spec.locked_version != candidate.job_spec_version
+            or job.job_spec.version != candidate.job_spec_version
+        ):
+            raise DomainConflict(
+                "Vendor call authorization requires the locked JobSpec version"
+            )
+        existing = self.get_vendor_call_authorization(
+            candidate.job_id,
+            candidate.job_spec_version,
+            candidate.vendor_id,
+        )
+        if existing is not None:
+            if existing != candidate:
+                raise DomainConflict(
+                    "Vendor call authorization is immutable for this JobSpec"
+                )
+            return existing
+        try:
+            self._client.insert(
+                "vendor_call_authorizations",
+                {
+                    "id": str(candidate.authorization_id),
+                    "job_id": str(candidate.job_id),
+                    "job_spec_version": candidate.job_spec_version,
+                    "job_spec_sha256": candidate.job_spec_sha256,
+                    "vendor_id": str(candidate.vendor_id),
+                    "contact_id": str(candidate.contact_id),
+                    "normalized_number": candidate.normalized_number,
+                    "display_number": candidate.display_number,
+                    "number_hash": candidate.number_hash,
+                    "recipient_timezone": candidate.recipient_timezone,
+                    "consent_method": candidate.consent_method.value,
+                    "consent_evidence_reference": (
+                        candidate.consent_evidence_reference
+                    ),
+                    "consented_at": candidate.consented_at.isoformat(),
+                    "ai_call_consented": candidate.ai_call_consented,
+                    "recording_consented": candidate.recording_consented,
+                    "source_url": str(candidate.source_url),
+                    "created_at": candidate.created_at.isoformat(),
+                },
+            )
+        except SupabaseDuplicate as exc:
+            raise DomainConflict(
+                "Vendor call destination is already authorized for this JobSpec"
+            ) from exc
+        return self._copy_vendor_call_authorization(candidate)
+
+    def get_vendor_suppression(
+        self,
+        number_hash: str,
+    ) -> VendorSuppressionV1 | None:
+        rows = self._client.select_many(
+            "vendor_call_suppressions",
+            {"number_hash": f"eq.{number_hash}"},
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise ProviderRequestError("Supabase returned duplicate suppressions")
+        try:
+            return VendorSuppressionV1(
+                number_hash=rows[0]["number_hash"],
+                reason=rows[0]["reason"],
+                created_at=rows[0]["created_at"],
+            )
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError(
+                "Supabase returned an invalid vendor suppression"
+            ) from exc
+
+    def save_vendor_suppression(
+        self,
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1:
+        candidate = self._copy_vendor_suppression(suppression)
+        existing = self.get_vendor_suppression(candidate.number_hash)
+        if existing is not None:
+            return existing
+        try:
+            self._client.insert(
+                "vendor_call_suppressions",
+                {
+                    "id": str(
+                        uuid5(
+                            NAMESPACE_URL,
+                            f"veramove-vendor-suppression:{candidate.number_hash}",
+                        )
+                    ),
+                    **candidate.model_dump(mode="json"),
+                },
+            )
+        except SupabaseDuplicate as exc:
+            existing = self.get_vendor_suppression(candidate.number_hash)
+            if existing is None:
+                raise ProviderRequestError(
+                    "Supabase suppression conflict could not be resolved"
+                ) from exc
+            return existing
+        return self._copy_vendor_suppression(candidate)
 
     def create_attempt(self, attempt: CallAttempt) -> CallAttempt:
         candidate = self._copy_attempt(attempt)
@@ -746,6 +896,51 @@ class SupabaseRepository:
         return JobVendorResearchV1.model_validate(
             deepcopy(research.model_dump(mode="json"))
         )
+
+    @staticmethod
+    def _copy_vendor_call_authorization(
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1:
+        return VendorCallAuthorizationV1.model_validate(
+            deepcopy(authorization.model_dump(mode="json"))
+        )
+
+    @staticmethod
+    def _copy_vendor_suppression(
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1:
+        return VendorSuppressionV1.model_validate(
+            deepcopy(suppression.model_dump(mode="json"))
+        )
+
+    @staticmethod
+    def _authorization_from_row(
+        row: dict[str, Any],
+    ) -> VendorCallAuthorizationV1:
+        try:
+            return VendorCallAuthorizationV1(
+                authorization_id=row["id"],
+                job_id=row["job_id"],
+                job_spec_version=row["job_spec_version"],
+                job_spec_sha256=row["job_spec_sha256"],
+                vendor_id=row["vendor_id"],
+                contact_id=row["contact_id"],
+                normalized_number=row["normalized_number"],
+                display_number=row["display_number"],
+                number_hash=row["number_hash"],
+                recipient_timezone=row["recipient_timezone"],
+                consent_method=row["consent_method"],
+                consent_evidence_reference=row["consent_evidence_reference"],
+                consented_at=row["consented_at"],
+                ai_call_consented=row["ai_call_consented"],
+                recording_consented=row["recording_consented"],
+                source_url=row["source_url"],
+                created_at=row["created_at"],
+            )
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError(
+                "Supabase returned an invalid vendor call authorization"
+            ) from exc
 
     @staticmethod
     def _attempt_row(attempt: CallAttempt) -> dict[str, Any]:

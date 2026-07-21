@@ -16,6 +16,8 @@ from services.api.app.contracts import (
     JobState,
     JobVendorResearchV1,
     QuoteV1,
+    VendorCallAuthorizationV1,
+    VendorSuppressionV1,
 )
 from services.api.app.orchestration.intake_sessions import (
     IntakeSession,
@@ -402,6 +404,38 @@ class VendorResearchRepository(Protocol):
         self,
         research: JobVendorResearchV1,
     ) -> JobVendorResearchV1: ...
+
+
+class VendorCallAuthorizationRepository(Protocol):
+    """Server-only consent and hashed suppression persistence."""
+
+    def get_vendor_call_authorization(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+        vendor_id: UUID,
+    ) -> VendorCallAuthorizationV1 | None: ...
+
+    def list_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> list[VendorCallAuthorizationV1]: ...
+
+    def save_vendor_call_authorization(
+        self,
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1: ...
+
+    def get_vendor_suppression(
+        self,
+        number_hash: str,
+    ) -> VendorSuppressionV1 | None: ...
+
+    def save_vendor_suppression(
+        self,
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1: ...
 
 
 class IntakeSessionRepository(Protocol):

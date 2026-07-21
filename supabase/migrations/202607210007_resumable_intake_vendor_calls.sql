@@ -453,3 +453,57 @@ grant execute on function public.veramove_claim_intake_resume(uuid, jsonb, times
     to service_role;
 grant execute on function public.veramove_finish_intake_manually(uuid, jsonb, timestamptz)
     to service_role;
+
+-- Official-business destinations are server-owned and require affirmative AI-call and recording
+-- consent. Raw numbers exist only in this protected authorization table; attempts and events keep
+-- the HMAC hash and authorization UUID instead.
+create table if not exists public.vendor_call_authorizations (
+    id uuid primary key,
+    job_id uuid not null references public.jobs(id) on delete cascade,
+    job_spec_version text not null check (job_spec_version = '1.0'),
+    job_spec_sha256 text not null check (job_spec_sha256 ~ '^[a-f0-9]{64}$'),
+    vendor_id uuid not null,
+    contact_id uuid not null,
+    normalized_number text not null check (normalized_number ~ '^\+1[2-9][0-9]{9}$'),
+    display_number text not null check (display_number ~ '^\([2-9][0-9]{2}\) [0-9]{3}-[0-9]{4}$'),
+    number_hash text not null check (number_hash ~ '^[a-f0-9]{64}$'),
+    recipient_timezone text not null check (char_length(recipient_timezone) between 1 and 64),
+    consent_method text not null check (
+        consent_method in (
+            'direct_recipient_opt_in',
+            'existing_business_relationship_confirmation',
+            'provider_test_destination'
+        )
+    ),
+    consent_evidence_reference text not null check (
+        consent_evidence_reference ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$'
+    ),
+    consented_at timestamptz not null,
+    ai_call_consented boolean not null check (ai_call_consented),
+    recording_consented boolean not null check (recording_consented),
+    source_url text not null check (source_url ~ '^https://'),
+    created_at timestamptz not null,
+    check (consented_at <= created_at),
+    unique (job_id, job_spec_version, vendor_id),
+    unique (job_id, job_spec_version, number_hash)
+);
+
+create index if not exists vendor_call_authorizations_job_idx
+    on public.vendor_call_authorizations (job_id, job_spec_version);
+
+create table if not exists public.vendor_call_suppressions (
+    id uuid primary key,
+    number_hash text not null unique check (number_hash ~ '^[a-f0-9]{64}$'),
+    reason text not null check (
+        reason in ('recipient_opt_out', 'manual_block', 'invalid_destination')
+    ),
+    created_at timestamptz not null
+);
+
+alter table public.vendor_call_authorizations enable row level security;
+alter table public.vendor_call_suppressions enable row level security;
+
+revoke all on public.vendor_call_authorizations from anon, authenticated;
+revoke all on public.vendor_call_suppressions from anon, authenticated;
+grant select, insert, update, delete on public.vendor_call_authorizations to service_role;
+grant select, insert, update, delete on public.vendor_call_suppressions to service_role;

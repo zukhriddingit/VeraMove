@@ -14,6 +14,9 @@ from services.api.app.core.errors import ProviderConfigurationError
 INTEGRATION_ENV_NAMES = (
     "APP_MODE",
     "LIVE_CALLS_ENABLED",
+    "REAL_VENDOR_CALLS_ENABLED",
+    "VENDOR_CONTACT_HASH_SECRET",
+    "VENDOR_CONSENT_MAX_AGE_DAYS",
     "ELEVENLABS_API_KEY",
     "ELEVENLABS_INTAKE_AGENT_ID",
     "ELEVENLABS_OUTBOUND_AGENT_ID",
@@ -116,6 +119,45 @@ def test_live_voice_parses_two_agents_and_exactly_three_destinations(monkeypatch
     assert config.destination_numbers == DESTINATIONS
     assert config.public_api_base_url == "https://api.veramove.example"
     assert config.agent_config_version == "2026-07-19.v1"
+
+
+def test_real_vendor_calls_default_disabled(monkeypatch):
+    clear_integration_env(monkeypatch)
+
+    config = Settings.from_env().live_voice
+
+    assert config.real_vendor_calls_enabled is False
+    assert config.contact_hash_secret is None
+    assert config.vendor_consent_max_age_days == 30
+
+
+def test_real_vendor_call_config_requires_separate_gate_and_hash_secret():
+    settings = complete_live_settings(
+        real_vendor_calls_enabled=True,
+        contact_hash_secret=None,
+    )
+
+    with pytest.raises(ProviderConfigurationError, match="VENDOR_CONTACT_HASH_SECRET"):
+        settings.require_real_vendor_call_config()
+
+
+def test_real_vendor_call_config_does_not_require_test_destinations():
+    settings = complete_live_settings(
+        destination_numbers=(),
+        real_vendor_calls_enabled=True,
+        contact_hash_secret="h" * 32,
+    )
+
+    assert settings.require_real_vendor_call_config().destination_numbers == ()
+
+
+@pytest.mark.parametrize("value", ("0", "366", "not-a-number"))
+def test_vendor_consent_age_is_bounded(monkeypatch, value):
+    clear_integration_env(monkeypatch)
+    monkeypatch.setenv("VENDOR_CONSENT_MAX_AGE_DAYS", value)
+
+    with pytest.raises(ProviderConfigurationError, match="VENDOR_CONSENT_MAX_AGE_DAYS"):
+        Settings.from_env()
 
 
 @pytest.mark.parametrize("missing_field", ("intake_agent_id", "outbound_agent_id"))

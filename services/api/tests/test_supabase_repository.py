@@ -12,6 +12,7 @@ import pytest
 from services.api.app.contracts import (
     CallRecord,
     CallStatus,
+    ConsentMethod,
     DataClassification,
     IntakeSource,
     JobRecord,
@@ -19,7 +20,10 @@ from services.api.app.contracts import (
     JobVendorResearchV1,
     ProvenanceReference,
     ProvenanceType,
+    SuppressionReason,
+    VendorCallAuthorizationV1,
     VendorSearchQuery,
+    VendorSuppressionV1,
     VerificationStatus,
 )
 from services.api.app.core.errors import (
@@ -37,6 +41,7 @@ from services.api.app.orchestration.models import (
     CallKind,
     JobEvent,
     VoiceCallReference,
+    job_spec_sha256,
 )
 from services.api.app.repositories.base import (
     VoiceIntakeCompletion,
@@ -68,6 +73,8 @@ class FakeSupabaseTableClient:
                 "event_log",
                 "intake_sessions",
                 "vendor_research",
+                "vendor_call_authorizations",
+                "vendor_call_suppressions",
             )
         }
         self.operations: list[tuple[str, str, dict[str, Any]]] = []
@@ -300,6 +307,57 @@ def test_supabase_vendor_research_round_trip_uses_separate_table(
     assert row["data_classification"] == "real_redacted"
     assert "calls" not in row["payload"]
     assert "quotes" not in row["payload"]
+
+
+def test_supabase_vendor_authorization_and_suppression_are_server_only(
+    repository,
+    table_client,
+    confirmed_record,
+    fixtures,
+):
+    repository.create(confirmed_record)
+    vendor = fixtures.load_vendors()[0]
+    authorization = VendorCallAuthorizationV1(
+        job_id=confirmed_record.job_spec.job_id,
+        job_spec_version=confirmed_record.job_spec.version,
+        job_spec_sha256=job_spec_sha256(confirmed_record.job_spec),
+        vendor_id=vendor.vendor_id,
+        contact_id=uuid4(),
+        normalized_number="+16175550101",
+        display_number="(617) 555-0101",
+        number_hash="a" * 64,
+        recipient_timezone="America/New_York",
+        consent_method=ConsentMethod.PROVIDER_TEST_DESTINATION,
+        consent_evidence_reference="consent:synthetic:001",
+        consented_at=FIXED_NOW,
+        ai_call_consented=True,
+        recording_consented=True,
+        source_url="https://vendor.example/contact",
+        created_at=FIXED_NOW,
+    )
+    suppression = VendorSuppressionV1(
+        number_hash=authorization.number_hash,
+        reason=SuppressionReason.MANUAL_BLOCK,
+        created_at=FIXED_NOW,
+    )
+
+    assert repository.save_vendor_call_authorization(authorization) == authorization
+    assert repository.get_vendor_call_authorization(
+        authorization.job_id,
+        authorization.job_spec_version,
+        authorization.vendor_id,
+    ) == authorization
+    assert repository.list_vendor_call_authorizations(
+        authorization.job_id,
+        authorization.job_spec_version,
+    ) == [authorization]
+    assert repository.save_vendor_suppression(suppression) == suppression
+    assert repository.get_vendor_suppression(authorization.number_hash) == suppression
+    row = table_client.tables["vendor_call_authorizations"][
+        str(authorization.authorization_id)
+    ]
+    assert row["normalized_number"] == "+16175550101"
+    assert "normalized_number" not in authorization.model_dump(mode="json")
 
 
 def test_supabase_create_maps_duplicate_job(repository, confirmed_record):

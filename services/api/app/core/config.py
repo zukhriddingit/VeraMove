@@ -39,6 +39,21 @@ def _boolean_env(name: str, *, default: bool = False) -> bool:
     raise ProviderConfigurationError(f"{name} must be one of: 1, true, yes, on, 0, false, no, off")
 
 
+def _bounded_integer_env(name: str, *, default: int, minimum: int, maximum: int) -> int:
+    raw = _optional_env(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ProviderConfigurationError(f"{name} must be an integer") from exc
+    if not minimum <= value <= maximum:
+        raise ProviderConfigurationError(
+            f"{name} must be between {minimum} and {maximum}"
+        )
+    return value
+
+
 def _cors_origins_env() -> tuple[str, ...]:
     value = _optional_env("CORS_ALLOW_ORIGINS")
     if value is None:
@@ -135,6 +150,9 @@ class LiveVoiceConfig:
     public_api_base_url: str | None = None
     agent_config_version: str | None = None
     live_calls_enabled: bool = False
+    real_vendor_calls_enabled: bool = False
+    contact_hash_secret: str | None = None
+    vendor_consent_max_age_days: int = 30
     api_base_url: str = "https://api.elevenlabs.io"
 
 
@@ -256,6 +274,54 @@ class Settings:
             )
         return config
 
+    def require_real_vendor_call_config(self) -> LiveVoiceConfig:
+        """Fail closed for consented official-business calls without test destinations."""
+
+        if self.app_mode != "live":
+            raise ProviderConfigurationError(
+                "Real vendor calls require APP_MODE=live"
+            )
+        config = self.live_voice
+        if not config.live_calls_enabled or not config.real_vendor_calls_enabled:
+            raise ProviderConfigurationError(
+                "Real vendor calls require LIVE_CALLS_ENABLED=true and "
+                "REAL_VENDOR_CALLS_ENABLED=true"
+            )
+        self.require_supabase_config()
+        required = {
+            "ELEVENLABS_API_KEY": config.api_key,
+            "ELEVENLABS_OUTBOUND_AGENT_ID": config.outbound_agent_id,
+            "ELEVENLABS_PHONE_NUMBER_ID": config.phone_number_id,
+            "PUBLIC_API_BASE_URL": config.public_api_base_url,
+            "AGENT_CONFIG_VERSION": config.agent_config_version,
+        }
+        missing = [
+            name
+            for name, value in required.items()
+            if value is None or not value.strip()
+        ]
+        if missing:
+            raise ProviderConfigurationError(
+                f"Missing real vendor call configuration: {', '.join(missing)}"
+            )
+        secrets = {
+            "ELEVENLABS_WEBHOOK_SECRET": config.webhook_secret,
+            "RECORDING_SIGNING_SECRET": config.recording_signing_secret,
+            "VOICE_OPERATOR_SECRET": config.operator_secret,
+            "VENDOR_CONTACT_HASH_SECRET": config.contact_hash_secret,
+        }
+        weak = [
+            name for name, value in secrets.items() if not _secret_is_strong(value)
+        ]
+        if weak:
+            raise ProviderConfigurationError(
+                "Real vendor call secrets must be at least "
+                f"{MIN_LIVE_SECRET_BYTES} bytes: {', '.join(weak)}"
+            )
+        assert config.public_api_base_url is not None
+        _https_origin("PUBLIC_API_BASE_URL", config.public_api_base_url)
+        return config
+
     def require_openai_config(self) -> OpenAIConfig:
         """Fail closed unless the optional OpenAI boundary is fully enabled."""
 
@@ -334,6 +400,16 @@ class Settings:
                 ),
                 agent_config_version=_optional_env("AGENT_CONFIG_VERSION"),
                 live_calls_enabled=_boolean_env("LIVE_CALLS_ENABLED"),
+                real_vendor_calls_enabled=_boolean_env(
+                    "REAL_VENDOR_CALLS_ENABLED"
+                ),
+                contact_hash_secret=_optional_env("VENDOR_CONTACT_HASH_SECRET"),
+                vendor_consent_max_age_days=_bounded_integer_env(
+                    "VENDOR_CONSENT_MAX_AGE_DAYS",
+                    default=30,
+                    minimum=1,
+                    maximum=365,
+                ),
                 api_base_url=_https_origin(
                     "ELEVENLABS_API_BASE_URL",
                     _optional_env("ELEVENLABS_API_BASE_URL") or "https://api.elevenlabs.io",

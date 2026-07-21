@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import html
 import re
+from datetime import datetime, time, timedelta
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid5
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import HttpUrl, TypeAdapter, ValidationError
 
 from services.api.app.contracts import (
     ProvenanceType,
     Vendor,
+    VendorCallAuthorizationV1,
     VendorContactCandidateV1,
 )
 from services.api.app.core.errors import DomainConflict
@@ -27,6 +31,7 @@ _VISIBLE_US_PHONE = re.compile(
     r"(?<!\d)(?P<number>(?:\+?1[\s.-]*)?(?:\([2-9]\d{2}\)|[2-9]\d{2})[\s.-]*\d{3}[\s.-]*\d{4})(?!\d)",
 )
 _EXTENSION = re.compile(r"(?:;ext=|\bext\.?|\bx)\s*\d{1,8}\s*$", re.IGNORECASE)
+_NORMALIZED_US_PHONE = re.compile(r"^\+1[2-9]\d{9}$")
 
 
 def official_website_url(vendor: Vendor) -> HttpUrl:
@@ -91,6 +96,48 @@ def extract_official_us_contacts(
     return contacts
 
 
+def destination_hash(secret: str, normalized_number: str) -> str:
+    """Create a stable server-only HMAC identifier for suppression checks."""
+
+    if len(secret.encode()) < 32:
+        raise DomainConflict("Vendor contact hash secret is not configured safely")
+    if _NORMALIZED_US_PHONE.fullmatch(normalized_number) is None:
+        raise DomainConflict("Vendor destination is not a normalized US number")
+    return hmac.new(
+        secret.encode(),
+        normalized_number.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def permitted_call_time(now: datetime, timezone_name: str) -> bool:
+    """Permit outbound calls only from 08:00 inclusive to 21:00 local time."""
+
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise DomainConflict("Outbound call time must include a timezone")
+    try:
+        local = now.astimezone(ZoneInfo(timezone_name))
+    except ZoneInfoNotFoundError as exc:
+        raise DomainConflict("Recipient timezone is invalid") from exc
+    return time(8, 0) <= local.time().replace(tzinfo=None) < time(21, 0)
+
+
+def authorization_is_current(
+    authorization: VendorCallAuthorizationV1,
+    now: datetime,
+    *,
+    max_age_days: int,
+) -> bool:
+    """Check a bounded affirmative consent lifetime without mutating evidence."""
+
+    if now.tzinfo is None or now.utcoffset() is None:
+        raise DomainConflict("Authorization check time must include a timezone")
+    if not 1 <= max_age_days <= 365:
+        raise DomainConflict("Consent maximum age must be between 1 and 365 days")
+    age = now - authorization.consented_at
+    return timedelta(0) <= age <= timedelta(days=max_age_days)
+
+
 def _host(url: HttpUrl) -> str:
     host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
     return host.removeprefix("www.")
@@ -116,4 +163,10 @@ def _source_excerpt(raw: str, display: str) -> str:
     return (cleaned or display)[:160]
 
 
-__all__ = ["extract_official_us_contacts", "official_website_url"]
+__all__ = [
+    "authorization_is_current",
+    "destination_hash",
+    "extract_official_us_contacts",
+    "official_website_url",
+    "permitted_call_time",
+]

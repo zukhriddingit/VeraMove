@@ -45,7 +45,11 @@ from services.api.app.contracts.models import (
 )
 from services.api.app.contracts.vendor_calls import (
     CallContext,
+    ConsentMethod,
+    SuppressionReason,
+    VendorCallAuthorizationV1,
     VendorContactCandidateV1,
+    VendorSuppressionV1,
 )
 from services.api.app.contracts.vendor_research import (
     JobVendorResearchV1,
@@ -67,6 +71,7 @@ __all__ = [
     "CallRecord",
     "CallStatus",
     "CallContext",
+    "ConsentMethod",
     "DataClassification",
     "DocumentParseResult",
     "DwellingType",
@@ -94,15 +99,18 @@ __all__ = [
     "RecommendationRanking",
     "RecommendationV1",
     "SourceContext",
+    "SuppressionReason",
     "TranscriptEvidence",
     "TranscriptQuoteFacts",
     "Vendor",
+    "VendorCallAuthorizationV1",
     "VendorContactCandidateV1",
     "VendorDiscoveryResponse",
     "VendorResearchDossierV1",
     "VendorSearchQuery",
     "VendorShortlistRequest",
     "VendorVerificationQuestionV1",
+    "VendorSuppressionV1",
     "VerifiedCompetingQuote",
     "VerificationStatus",
     "WebhookAck",

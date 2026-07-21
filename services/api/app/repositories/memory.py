@@ -14,6 +14,8 @@ from services.api.app.contracts import (
     JobState,
     JobVendorResearchV1,
     QuoteV1,
+    VendorCallAuthorizationV1,
+    VendorSuppressionV1,
     VerificationStatus,
 )
 from services.api.app.core.errors import (
@@ -51,6 +53,10 @@ class InMemoryRepository:
         self._events: dict[UUID, list[dict[str, Any]]] = {}
         self._intake_sessions: dict[UUID, dict[str, Any]] = {}
         self._vendor_research: dict[tuple[UUID, str], dict[str, Any]] = {}
+        self._vendor_call_authorizations: dict[
+            tuple[UUID, str, UUID], dict[str, Any]
+        ] = {}
+        self._vendor_suppressions: dict[str, dict[str, Any]] = {}
         self._webhook_keys: set[str] = set()
         self._voice_webhook_receipts: dict[str, dict[str, Any]] = {}
         self._job_revisions: dict[UUID, int] = {}
@@ -114,6 +120,111 @@ class InMemoryRepository:
                 (candidate.job_id, candidate.job_spec_version)
             ] = deepcopy(candidate.model_dump(mode="json"))
         return self._copy_vendor_research(candidate)
+
+    def get_vendor_call_authorization(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+        vendor_id: UUID,
+    ) -> VendorCallAuthorizationV1 | None:
+        with self._lock:
+            payload = deepcopy(
+                self._vendor_call_authorizations.get(
+                    (job_id, job_spec_version, vendor_id)
+                )
+            )
+        return (
+            VendorCallAuthorizationV1.model_validate(payload)
+            if payload is not None
+            else None
+        )
+
+    def list_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> list[VendorCallAuthorizationV1]:
+        with self._lock:
+            payloads = [
+                deepcopy(payload)
+                for (stored_job_id, version, _), payload in sorted(
+                    self._vendor_call_authorizations.items(),
+                    key=lambda item: str(item[0][2]),
+                )
+                if stored_job_id == job_id and version == job_spec_version
+            ]
+        return [
+            VendorCallAuthorizationV1.model_validate(payload)
+            for payload in payloads
+        ]
+
+    def save_vendor_call_authorization(
+        self,
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1:
+        candidate = self._copy_vendor_call_authorization(authorization)
+        key = (
+            candidate.job_id,
+            candidate.job_spec_version,
+            candidate.vendor_id,
+        )
+        with self._lock:
+            job = JobRecord.model_validate(self._require_job(candidate.job_id))
+            if (
+                not job.job_spec.confirmed
+                or job.job_spec.locked_version != candidate.job_spec_version
+                or job.job_spec.version != candidate.job_spec_version
+            ):
+                raise DomainConflict(
+                    "Vendor call authorization requires the locked JobSpec version"
+                )
+            existing = self._vendor_call_authorizations.get(key)
+            if existing is not None:
+                saved = VendorCallAuthorizationV1.model_validate(deepcopy(existing))
+                if saved != candidate:
+                    raise DomainConflict(
+                        "Vendor call authorization is immutable for this JobSpec"
+                    )
+                return saved
+            if any(
+                payload["number_hash"] == candidate.number_hash
+                and stored_key[:2] == key[:2]
+                for stored_key, payload in self._vendor_call_authorizations.items()
+            ):
+                raise DomainConflict(
+                    "Each authorized vendor must use a distinct destination"
+                )
+            self._vendor_call_authorizations[key] = deepcopy(
+                candidate.model_dump(mode="json")
+            )
+        return self._copy_vendor_call_authorization(candidate)
+
+    def get_vendor_suppression(
+        self,
+        number_hash: str,
+    ) -> VendorSuppressionV1 | None:
+        with self._lock:
+            payload = deepcopy(self._vendor_suppressions.get(number_hash))
+        return (
+            VendorSuppressionV1.model_validate(payload)
+            if payload is not None
+            else None
+        )
+
+    def save_vendor_suppression(
+        self,
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1:
+        candidate = self._copy_vendor_suppression(suppression)
+        with self._lock:
+            existing = self._vendor_suppressions.get(candidate.number_hash)
+            if existing is None:
+                self._vendor_suppressions[candidate.number_hash] = deepcopy(
+                    candidate.model_dump(mode="json")
+                )
+            else:
+                candidate = VendorSuppressionV1.model_validate(deepcopy(existing))
+        return self._copy_vendor_suppression(candidate)
 
     def create_attempt(self, attempt: CallAttempt) -> CallAttempt:
         with self._lock:
@@ -696,6 +807,8 @@ class InMemoryRepository:
             self._events.clear()
             self._intake_sessions.clear()
             self._vendor_research.clear()
+            self._vendor_call_authorizations.clear()
+            self._vendor_suppressions.clear()
             self._webhook_keys.clear()
             self._voice_webhook_receipts.clear()
             self._job_revisions.clear()
@@ -780,6 +893,22 @@ class InMemoryRepository:
     ) -> JobVendorResearchV1:
         return JobVendorResearchV1.model_validate(
             deepcopy(research.model_dump(mode="json"))
+        )
+
+    @staticmethod
+    def _copy_vendor_call_authorization(
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1:
+        return VendorCallAuthorizationV1.model_validate(
+            deepcopy(authorization.model_dump(mode="json"))
+        )
+
+    @staticmethod
+    def _copy_vendor_suppression(
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1:
+        return VendorSuppressionV1.model_validate(
+            deepcopy(suppression.model_dump(mode="json"))
         )
 
     @staticmethod
