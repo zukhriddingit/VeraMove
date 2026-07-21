@@ -1,6 +1,9 @@
 """Protocols for model-backed parsing, narration, and negotiation."""
 
+from datetime import datetime
 from typing import Any, Protocol
+
+from pydantic import BaseModel
 
 from services.api.app.contracts import (
     DocumentParseResult,
@@ -8,7 +11,10 @@ from services.api.app.contracts import (
     JobSpecV1,
     QuoteV1,
     RecommendationRanking,
+    Vendor,
+    WebsiteResearchClaimV1,
 )
+from services.api.app.integrations.tavily.base import ExtractedWebPage
 
 
 class NegotiationGateway(Protocol):
@@ -40,6 +46,28 @@ class StructuredDocumentClient(Protocol):
         source_id: str,
         response_schema: type[DocumentParseResult],
     ) -> DocumentParseResult | dict[str, Any]: ...
+
+
+class StructuredTextClient(Protocol):
+    def parse_text(
+        self,
+        *,
+        model: str,
+        capability: str,
+        schema_name: str,
+        system_prompt: str,
+        user_text: str,
+        response_schema: type[BaseModel],
+    ) -> dict[str, Any]: ...
+
+
+class WebsiteClaimExtractor(Protocol):
+    def extract(
+        self,
+        vendor: Vendor,
+        page: ExtractedWebPage,
+        retrieved_at: datetime,
+    ) -> list[WebsiteResearchClaimV1]: ...
 
 
 class GroundedNarrativeClient(Protocol):

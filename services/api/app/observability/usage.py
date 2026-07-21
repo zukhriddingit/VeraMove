@@ -14,7 +14,11 @@ class UsageRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    capability: Literal["document_extraction", "recommendation_narration"]
+    capability: Literal[
+        "document_extraction",
+        "recommendation_narration",
+        "vendor_website_research",
+    ]
     model: str = Field(min_length=1, max_length=200)
     input_tokens: int = Field(default=0, ge=0)
     output_tokens: int = Field(default=0, ge=0)
@@ -29,7 +33,11 @@ class UsageAggregate(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    capability: Literal["document_extraction", "recommendation_narration"]
+    capability: Literal[
+        "document_extraction",
+        "recommendation_narration",
+        "vendor_website_research",
+    ]
     model: str
     request_count: int = Field(ge=0)
     successful_requests: int = Field(ge=0)

@@ -9,6 +9,7 @@ from time import perf_counter
 from typing import Any
 
 import httpx
+from pydantic import BaseModel
 
 from services.api.app.contracts import (
     DocumentParseResult,
@@ -297,6 +298,75 @@ class OpenAIResponsesClient(_OpenAIResponsesBase):
                 "detail": "low",
             }
         raise ProviderRequestError("OpenAI received an unsupported document type")
+
+
+class OpenAIResponsesStructuredTextClient(_OpenAIResponsesBase):
+    """Return one strict structured object from bounded text-only input."""
+
+    def parse_text(
+        self,
+        *,
+        model: str,
+        capability: str,
+        schema_name: str,
+        system_prompt: str,
+        user_text: str,
+        response_schema: type[BaseModel],
+    ) -> dict[str, Any]:
+        payload = {
+            "model": model,
+            "reasoning": {"effort": "none"},
+            "input": [
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": system_prompt}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": user_text}],
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": _strict_json_schema(response_schema.model_json_schema()),
+                }
+            },
+        }
+        response, started = self._post(payload, capability)
+        try:
+            result = json.loads(self._output_text(response))
+        except json.JSONDecodeError as exc:
+            self._record_usage(
+                capability,
+                model,
+                response,
+                started,
+                "invalid_response",
+            )
+            raise ProviderRequestError("OpenAI returned invalid structured output") from exc
+        except ProviderRequestError:
+            self._record_usage(
+                capability,
+                model,
+                response,
+                started,
+                "invalid_response",
+            )
+            raise
+        if not isinstance(result, dict):
+            self._record_usage(
+                capability,
+                model,
+                response,
+                started,
+                "invalid_response",
+            )
+            raise ProviderRequestError("OpenAI returned invalid structured output")
+        self._record_usage(capability, model, response, started, "success")
+        return result
 
 
 class OpenAIResponsesNarrativeClient(_OpenAIResponsesBase):
