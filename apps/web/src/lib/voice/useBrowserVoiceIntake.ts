@@ -1,23 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useConversation } from "@elevenlabs/react";
-import type { JobSpecV1 } from "@/api/client";
+import type { IntakeDataMode, IntakeSessionResponse, JobSpecV1 } from "@/api/client";
 import {
   attachIntakeConversation,
   createIntakeSession,
+  finishIntakeManually,
   getIntegrationStatus,
   getIntakeSession,
   issueBrowserVoiceToken,
+  recoverIntakeSession,
+  resumeIntakeSession,
 } from "@/lib/api/endpoints";
+import { nextVoicePhase, pollDecision, type BrowserVoicePhase } from "./browserVoiceState";
 
-export type BrowserVoicePhase =
-  | "ready"
-  | "requesting_microphone"
-  | "connecting"
-  | "connected"
-  | "processing"
-  | "delayed"
-  | "completed"
-  | "failed";
+export type { BrowserVoicePhase } from "./browserVoiceState";
 
 export interface VoiceTurn {
   id: string;
@@ -26,7 +22,6 @@ export interface VoiceTurn {
 }
 
 const POLL_INTERVAL_MS = 1_500;
-const MAX_POLL_ATTEMPTS = 40;
 
 function publicError(error: unknown): string {
   if (error instanceof DOMException && error.name === "NotAllowedError") {
@@ -40,14 +35,18 @@ function publicError(error: unknown): string {
 
 export function useBrowserVoiceIntake() {
   const [phase, setPhase] = useState<BrowserVoicePhase>("ready");
+  const [dataMode, setDataMode] = useState<IntakeDataMode | null>(null);
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
   const [jobSpec, setJobSpec] = useState<JobSpecV1 | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [missingFields, setMissingFields] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isActionPending, setIsActionPending] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
   const pollTimerRef = useRef<number | null>(null);
   const pollingRef = useRef(false);
   const failedRef = useRef(false);
+  const connectedRef = useRef(false);
   const mountedRef = useRef(true);
   const seenTurnsRef = useRef(new Set<string>());
   const endSessionRef = useRef<() => void>(() => undefined);
@@ -71,53 +70,94 @@ export function useBrowserVoiceIntake() {
     [stopPolling],
   );
 
+  const applySession = useCallback(
+    (session: IntakeSessionResponse): boolean => {
+      const next = nextVoicePhase(session);
+      if (!next) return false;
+      stopPolling();
+      if (!mountedRef.current) return true;
+
+      if (next === "completed" && session.job_spec) {
+        setJobSpec(session.job_spec);
+        setJobId(session.job_id);
+        setMissingFields([]);
+        setError(null);
+        setPhase("completed");
+        return true;
+      }
+      if (next === "incomplete" && session.partial_job_spec) {
+        setJobSpec(session.partial_job_spec);
+        setJobId(session.job_id);
+        setMissingFields(session.missing_fields);
+        setError(null);
+        setPhase("incomplete");
+        return true;
+      }
+      fail("The interview ended, but no safe move draft could be recovered. Please start over.");
+      return true;
+    },
+    [fail, stopPolling],
+  );
+
   const pollForResult = useCallback(
-    async (attempt = 0) => {
+    async (completedAttempts = 0) => {
       const sessionId = sessionIdRef.current;
       if (!sessionId || failedRef.current || !mountedRef.current) return;
       pollingRef.current = true;
 
+      let session: IntakeSessionResponse | null = null;
       try {
-        const session = await getIntakeSession(sessionId);
+        session = await getIntakeSession(sessionId);
         if (!mountedRef.current || failedRef.current) return;
-        if (session.status === "completed" && session.job_spec) {
-          stopPolling();
-          setJobSpec(session.job_spec);
-          setJobId(session.job_id);
-          setPhase("completed");
-          return;
-        }
-        if (session.status === "failed") {
-          fail(
-            "The interview ended, but its move details could not be processed. Please try again.",
-          );
-          return;
-        }
+        if (applySession(session)) return;
       } catch {
-        // A transient Render or network failure should not discard a finished interview.
+        // Count a transient Render/network failure, then use the bounded provider repair below.
       }
 
-      if (attempt + 1 >= MAX_POLL_ATTEMPTS) {
-        pollingRef.current = false;
-        setPhase("delayed");
+      const attempts = completedAttempts + 1;
+      const decision = pollDecision(attempts, session?.status ?? "in_progress");
+      if (decision.kind === "poll") {
+        pollTimerRef.current = window.setTimeout(
+          () => void pollForResult(attempts),
+          POLL_INTERVAL_MS,
+        );
         return;
       }
-      pollTimerRef.current = window.setTimeout(
-        () => void pollForResult(attempt + 1),
-        POLL_INTERVAL_MS,
+      if (decision.kind === "recover") {
+        try {
+          const recovered = await recoverIntakeSession(sessionId);
+          if (!mountedRef.current || failedRef.current) return;
+          if (applySession(recovered)) return;
+        } catch {
+          // A still-processing provider result becomes an explicit retryable state.
+        }
+      }
+
+      pollingRef.current = false;
+      if (!mountedRef.current) return;
+      setError(
+        "The provider has not produced a final result yet. Retry once, or start over without waiting.",
       );
+      setPhase("unavailable");
     },
-    [fail, stopPolling],
+    [applySession],
   );
+
+  const beginFinalizing = useCallback(() => {
+    if (pollingRef.current || failedRef.current || !sessionIdRef.current) return;
+    setPhase("finalizing");
+    void pollForResult();
+  }, [pollForResult]);
 
   const { startSession, endSession, mode } = useConversation({
     onConnect: ({ conversationId }) => {
       const sessionId = sessionIdRef.current;
       if (!sessionId || !mountedRef.current) return;
+      connectedRef.current = true;
       setPhase("connected");
       void attachIntakeConversation(sessionId, conversationId).catch(() => {
         endSessionRef.current();
-        fail("The voice interview connected but could not be securely linked. Please retry.");
+        fail("The voice interview connected but could not be securely linked. Please start over.");
       });
     },
     onMessage: ({ event_id: eventId, message, role }) => {
@@ -129,16 +169,15 @@ export function useBrowserVoiceIntake() {
       setTurns((current) => [...current, { id: key, role, text }]);
     },
     onError: () => {
-      fail("The voice connection was interrupted. Please retry the interview.");
-    },
-    onDisconnect: (details) => {
-      if (!mountedRef.current || failedRef.current) return;
-      if (details.reason === "error") {
-        fail("The voice connection was interrupted. Please retry the interview.");
+      if (connectedRef.current && sessionIdRef.current) {
+        beginFinalizing();
         return;
       }
-      setPhase("processing");
-      void pollForResult();
+      fail("The voice connection could not be established. Please try again.");
+    },
+    onDisconnect: () => {
+      if (!mountedRef.current || failedRef.current) return;
+      beginFinalizing();
     },
   });
 
@@ -154,12 +193,37 @@ export function useBrowserVoiceIntake() {
     };
   }, [stopPolling]);
 
+  const connect = useCallback(
+    async (session: IntakeSessionResponse) => {
+      sessionIdRef.current = session.intake_session_id;
+      setDataMode(session.data_mode);
+      if (session.partial_job_spec) {
+        setJobSpec(session.partial_job_spec);
+        setMissingFields(session.missing_fields);
+      }
+      setPhase("connecting");
+      const credential = await issueBrowserVoiceToken(session.intake_session_id);
+      await startSession({
+        conversationToken: credential.conversation_token,
+        connectionType: "webrtc",
+        dynamicVariables: credential.dynamic_variables,
+      });
+    },
+    [startSession],
+  );
+
   const start = useCallback(async () => {
+    if (!dataMode) {
+      setError("Choose whether this is a fictional role-play or your real redacted move.");
+      return;
+    }
     failedRef.current = false;
+    connectedRef.current = false;
     stopPolling();
     setError(null);
     setJobSpec(null);
     setJobId(null);
+    setMissingFields([]);
     setTurns([]);
     seenTurnsRef.current.clear();
     sessionIdRef.current = null;
@@ -167,7 +231,7 @@ export function useBrowserVoiceIntake() {
     try {
       const status = await getIntegrationStatus();
       if (!status.live_voice.enabled || !status.live_voice.configured) {
-        fail("Live voice is not available yet. Switch to Demo Mode or try again after deployment.");
+        fail("Live voice is not available yet. Switch to Demo Mode or try again later.");
         return;
       }
 
@@ -179,55 +243,105 @@ export function useBrowserVoiceIntake() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
 
-      setPhase("connecting");
-      const session = await createIntakeSession();
-      sessionIdRef.current = session.intake_session_id;
-      const credential = await issueBrowserVoiceToken(session.intake_session_id);
-      startSession({
-        conversationToken: credential.conversation_token,
-        connectionType: "webrtc",
-        dynamicVariables: credential.dynamic_variables,
-      });
+      await connect(await createIntakeSession(dataMode));
     } catch (caught) {
       fail(publicError(caught));
     }
-  }, [fail, startSession, stopPolling]);
+  }, [connect, dataMode, fail, stopPolling]);
 
   const end = useCallback(() => {
     if (phase !== "connected" && phase !== "connecting") return;
-    setPhase("processing");
     endSession();
-  }, [endSession, phase]);
+    beginFinalizing();
+  }, [beginFinalizing, endSession, phase]);
 
-  const retryResult = useCallback(() => {
-    if (!sessionIdRef.current || pollingRef.current) return;
-    setPhase("processing");
-    void pollForResult();
-  }, [pollForResult]);
+  const retryResult = useCallback(async () => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || pollingRef.current) return;
+    setError(null);
+    setPhase("finalizing");
+    pollingRef.current = true;
+    try {
+      const current = await getIntakeSession(sessionId);
+      if (applySession(current)) return;
+      const recovered = await recoverIntakeSession(sessionId);
+      if (applySession(recovered)) return;
+    } catch {
+      // Keep the explicit unavailable state; never restart an unbounded poll loop.
+    }
+    pollingRef.current = false;
+    if (!mountedRef.current) return;
+    setError("A final provider result is still unavailable. You can retry or start over.");
+    setPhase("unavailable");
+  }, [applySession]);
 
-  const reset = useCallback(() => {
+  const continueSpeaking = useCallback(async () => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || phase !== "incomplete" || isActionPending) return;
+    setIsActionPending(true);
+    setError(null);
     failedRef.current = false;
+    connectedRef.current = false;
+    try {
+      await connect(await resumeIntakeSession(sessionId));
+    } catch {
+      setError("The continuation could not start. Your partial draft is still safe; try again.");
+      setPhase("incomplete");
+    } finally {
+      if (mountedRef.current) setIsActionPending(false);
+    }
+  }, [connect, isActionPending, phase]);
+
+  const finishManually = useCallback(async () => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId || phase !== "incomplete" || isActionPending) return;
+    setIsActionPending(true);
+    setError(null);
+    try {
+      const record = await finishIntakeManually(sessionId);
+      setJobSpec(record.job_spec);
+      setJobId(record.job_spec.job_id ?? null);
+      setPhase("completed");
+    } catch {
+      setError("The manual editor could not be opened. Your partial draft is still safe; retry.");
+    } finally {
+      if (mountedRef.current) setIsActionPending(false);
+    }
+  }, [isActionPending, phase]);
+
+  const startOver = useCallback(() => {
+    failedRef.current = false;
+    connectedRef.current = false;
     stopPolling();
     endSession();
     sessionIdRef.current = null;
     setPhase("ready");
+    setDataMode(null);
     setTurns([]);
     setJobSpec(null);
     setJobId(null);
+    setMissingFields([]);
     setError(null);
+    setIsActionPending(false);
     seenTurnsRef.current.clear();
   }, [endSession, stopPolling]);
 
   return {
     phase,
+    dataMode,
+    setDataMode,
     turns,
     jobSpec,
     jobId,
+    missingFields,
     error,
+    isActionPending,
     isAgentSpeaking: mode === "speaking",
     start,
     end,
-    reset,
     retryResult,
+    continueSpeaking,
+    finishManually,
+    startOver,
   };
 }

@@ -15,6 +15,9 @@ export const createIntakeSession = apiClient.createIntakeSession;
 export const issueBrowserVoiceToken = apiClient.issueBrowserVoiceToken;
 export const attachIntakeConversation = apiClient.attachIntakeConversation;
 export const getIntakeSession = apiClient.getIntakeSession;
+export const recoverIntakeSession = apiClient.recoverIntakeSession;
+export const resumeIntakeSession = apiClient.resumeIntakeSession;
+export const finishIntakeManually = apiClient.finishIntakeManually;
 
 export async function getJob(jobId: string) {
   return toJobView(await apiClient.getJob(jobId));

@@ -12,6 +12,8 @@ export type JobEventsResponse = Schemas["JobEventsResponse"];
 export type VendorDiscoveryResponse = Schemas["VendorDiscoveryResponse"];
 export type HealthResponse = Schemas["HealthResponse"] | Schemas["RuntimeHealthResponse"];
 export type IntakeSessionResponse = Schemas["IntakeSessionResponse"];
+export type IntakeDataMode = Schemas["IntakeDataMode"];
+export type CreateIntakeSessionRequest = Schemas["CreateIntakeSessionRequest"];
 export type BrowserVoiceTokenResponse = Schemas["BrowserVoiceTokenResponse"];
 export type AttachIntakeConversationRequest = Schemas["AttachIntakeConversationRequest"];
 export type IntegrationStatusSnapshot = Schemas["IntegrationStatusSnapshot"];
@@ -221,8 +223,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 export const apiClient = {
   health: () => apiFetch<HealthResponse>("/health"),
   integrationStatus: () => apiFetch<IntegrationStatusSnapshot>("/api/integrations/status"),
-  createIntakeSession: () =>
-    apiFetch<IntakeSessionResponse>("/api/intake/sessions", { method: "POST" }),
+  createIntakeSession: (dataMode: IntakeDataMode) =>
+    apiFetch<IntakeSessionResponse>("/api/intake/sessions", {
+      method: "POST",
+      body: JSON.stringify({ data_mode: dataMode } satisfies CreateIntakeSessionRequest),
+    }),
   issueBrowserVoiceToken: (sessionId: string) =>
     apiFetch<BrowserVoiceTokenResponse>(`/api/intake/sessions/${sessionId}/voice-token`, {
       method: "POST",
@@ -234,6 +239,18 @@ export const apiClient = {
     }),
   getIntakeSession: (sessionId: string) =>
     apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}`),
+  recoverIntakeSession: (sessionId: string) =>
+    apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}/recover`, {
+      method: "POST",
+    }),
+  resumeIntakeSession: (sessionId: string) =>
+    apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}/resume`, {
+      method: "POST",
+    }),
+  finishIntakeManually: (sessionId: string) =>
+    apiFetch<JobRecord>(`/api/intake/sessions/${sessionId}/finish-manually`, {
+      method: "POST",
+    }),
   createJob: (jobSpec: JobSpecV1) =>
     apiFetch<JobRecord>("/api/jobs", { method: "POST", body: JSON.stringify(jobSpec) }),
   createJobFromDocument: (documentText: string) =>

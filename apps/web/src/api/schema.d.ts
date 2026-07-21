@@ -123,6 +123,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/intake/sessions/{session_id}/finish-manually": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Finish Intake Manually */
+        post: operations["finish_intake_manually_api_intake_sessions__session_id__finish_manually_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/sessions/{session_id}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recover Intake Session */
+        post: operations["recover_intake_session_api_intake_sessions__session_id__recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/intake/sessions/{session_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume Intake Session */
+        post: operations["resume_intake_session_api_intake_sessions__session_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/intake/sessions/{session_id}/voice-token": {
         parameters: {
             query?: never;
@@ -495,6 +546,14 @@ export interface components {
          */
         CallStatus: "pending" | "in_progress" | "completed" | "failed";
         /**
+         * CreateIntakeSessionRequest
+         * @description Select the privacy boundary before creating a browser voice session.
+         */
+        CreateIntakeSessionRequest: {
+            /** @default supervised_role_play */
+            data_mode: components["schemas"]["IntakeDataMode"];
+        };
+        /**
          * DataClassification
          * @enum {string}
          */
@@ -622,12 +681,19 @@ export interface components {
             status: "ok";
         };
         /**
+         * IntakeDataMode
+         * @description Explicit privacy boundary selected before starting a browser interview.
+         * @enum {string}
+         */
+        IntakeDataMode: "supervised_role_play" | "real_redacted";
+        /**
          * IntakeDynamicVariables
          * @description The complete custom-variable set defined by the Intake agent.
          */
         IntakeDynamicVariables: {
             /** Agent Config Version */
             agent_config_version: string;
+            intake_data_mode: components["schemas"]["IntakeDataMode"];
             /**
              * Intake Session Id
              * Format: uuid
@@ -638,7 +704,29 @@ export interface components {
              * Format: uuid
              */
             job_id: string;
+            /**
+             * Missing Fields Json
+             * @default []
+             */
+            missing_fields_json: string;
+            /**
+             * Partial Job Spec Json
+             * @default {}
+             */
+            partial_job_spec_json: string;
+            /**
+             * Resume Mode
+             * @default fresh
+             * @enum {string}
+             */
+            resume_mode: "fresh" | "structured_partial";
         };
+        /**
+         * IntakeRecoveryAction
+         * @description The one terminal action claimed by an incomplete intake.
+         * @enum {string}
+         */
+        IntakeRecoveryAction: "resume" | "manual";
         /**
          * IntakeSessionResponse
          * @description Expose safe intake correlation and the result only after completion.
@@ -646,6 +734,7 @@ export interface components {
         IntakeSessionResponse: {
             /** Conversation Id */
             conversation_id?: string | null;
+            data_mode: components["schemas"]["IntakeDataMode"];
             /**
              * Intake Session Id
              * Format: uuid
@@ -657,14 +746,32 @@ export interface components {
              */
             job_id: string;
             job_spec?: components["schemas"]["JobSpecV1"] | null;
+            /**
+             * Missing Fields
+             * @default []
+             */
+            missing_fields: string[];
+            partial_job_spec?: components["schemas"]["JobSpecV1"] | null;
+            recovery_action?: components["schemas"]["IntakeRecoveryAction"] | null;
+            /**
+             * Recovery Available
+             * @default false
+             */
+            recovery_available: boolean;
+            /** Recovery Target Id */
+            recovery_target_id?: string | null;
+            /** Resumed From Session Id */
+            resumed_from_session_id?: string | null;
             status: components["schemas"]["IntakeSessionStatus"];
+            /** Terminal Reason */
+            terminal_reason?: string | null;
         };
         /**
          * IntakeSessionStatus
          * @description Lifecycle of provider correlation before a normal JobRecord exists.
          * @enum {string}
          */
-        IntakeSessionStatus: "pending" | "in_progress" | "completed" | "failed";
+        IntakeSessionStatus: "pending" | "in_progress" | "incomplete" | "completed" | "failed";
         /**
          * IntakeSource
          * @enum {string}
@@ -1498,7 +1605,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateIntakeSessionRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -1507,6 +1618,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1556,6 +1676,99 @@ export interface operations {
                 "application/json": components["schemas"]["AttachIntakeConversationRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    finish_intake_manually_api_intake_sessions__session_id__finish_manually_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRecord"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recover_intake_session_api_intake_sessions__session_id__recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntakeSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_intake_session_api_intake_sessions__session_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

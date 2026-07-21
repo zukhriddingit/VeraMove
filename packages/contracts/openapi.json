@@ -199,6 +199,18 @@
         "title": "CallStatus",
         "type": "string"
       },
+      "CreateIntakeSessionRequest": {
+        "additionalProperties": false,
+        "description": "Select the privacy boundary before creating a browser voice session.",
+        "properties": {
+          "data_mode": {
+            "$ref": "#/components/schemas/IntakeDataMode",
+            "default": "supervised_role_play"
+          }
+        },
+        "title": "CreateIntakeSessionRequest",
+        "type": "object"
+      },
       "DataClassification": {
         "enum": [
           "synthetic",
@@ -481,6 +493,15 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "IntakeDataMode": {
+        "description": "Explicit privacy boundary selected before starting a browser interview.",
+        "enum": [
+          "supervised_role_play",
+          "real_redacted"
+        ],
+        "title": "IntakeDataMode",
+        "type": "string"
+      },
       "IntakeDynamicVariables": {
         "additionalProperties": false,
         "description": "The complete custom-variable set defined by the Intake agent.",
@@ -491,6 +512,9 @@
             "title": "Agent Config Version",
             "type": "string"
           },
+          "intake_data_mode": {
+            "$ref": "#/components/schemas/IntakeDataMode"
+          },
           "intake_session_id": {
             "format": "uuid",
             "title": "Intake Session Id",
@@ -500,15 +524,48 @@
             "format": "uuid",
             "title": "Job Id",
             "type": "string"
+          },
+          "missing_fields_json": {
+            "default": "[]",
+            "maxLength": 8000,
+            "minLength": 2,
+            "title": "Missing Fields Json",
+            "type": "string"
+          },
+          "partial_job_spec_json": {
+            "default": "{}",
+            "maxLength": 50000,
+            "minLength": 2,
+            "title": "Partial Job Spec Json",
+            "type": "string"
+          },
+          "resume_mode": {
+            "default": "fresh",
+            "enum": [
+              "fresh",
+              "structured_partial"
+            ],
+            "title": "Resume Mode",
+            "type": "string"
           }
         },
         "required": [
           "job_id",
           "intake_session_id",
-          "agent_config_version"
+          "agent_config_version",
+          "intake_data_mode"
         ],
         "title": "IntakeDynamicVariables",
         "type": "object"
+      },
+      "IntakeRecoveryAction": {
+        "description": "The one terminal action claimed by an incomplete intake.",
+        "enum": [
+          "resume",
+          "manual"
+        ],
+        "title": "IntakeRecoveryAction",
+        "type": "string"
       },
       "IntakeSessionResponse": {
         "additionalProperties": false,
@@ -524,6 +581,9 @@
               }
             ],
             "title": "Conversation Id"
+          },
+          "data_mode": {
+            "$ref": "#/components/schemas/IntakeDataMode"
           },
           "intake_session_id": {
             "format": "uuid",
@@ -545,13 +605,82 @@
               }
             ]
           },
+          "missing_fields": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Fields",
+            "type": "array"
+          },
+          "partial_job_spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobSpecV1"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recovery_action": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntakeRecoveryAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recovery_available": {
+            "default": false,
+            "title": "Recovery Available",
+            "type": "boolean"
+          },
+          "recovery_target_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recovery Target Id"
+          },
+          "resumed_from_session_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumed From Session Id"
+          },
           "status": {
             "$ref": "#/components/schemas/IntakeSessionStatus"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
           }
         },
         "required": [
           "intake_session_id",
           "job_id",
+          "data_mode",
           "status"
         ],
         "title": "IntakeSessionResponse",
@@ -562,6 +691,7 @@
         "enum": [
           "pending",
           "in_progress",
+          "incomplete",
           "completed",
           "failed"
         ],
@@ -2609,6 +2739,23 @@
     "/api/intake/sessions": {
       "post": {
         "operationId": "create_intake_session_api_intake_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateIntakeSessionRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {
@@ -2619,6 +2766,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Create Intake Session",
@@ -2718,6 +2875,135 @@
           }
         },
         "summary": "Attach Browser Voice Conversation",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/api/intake/sessions/{session_id}/finish-manually": {
+      "post": {
+        "operationId": "finish_intake_manually_api_intake_sessions__session_id__finish_manually_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finish Intake Manually",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/api/intake/sessions/{session_id}/recover": {
+      "post": {
+        "operationId": "recover_intake_session_api_intake_sessions__session_id__recover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Recover Intake Session",
+        "tags": [
+          "intake"
+        ]
+      }
+    },
+    "/api/intake/sessions/{session_id}/resume": {
+      "post": {
+        "operationId": "resume_intake_session_api_intake_sessions__session_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntakeSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Resume Intake Session",
         "tags": [
           "intake"
         ]
