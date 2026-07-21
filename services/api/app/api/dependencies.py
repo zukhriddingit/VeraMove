@@ -82,6 +82,7 @@ from services.api.app.repositories.base import (
     IntakeSessionRepository,
     JobRepository,
     QuoteRepository,
+    VendorCallAuthorizationRepository,
     VendorResearchRepository,
 )
 from services.api.app.repositories.memory import InMemoryRepository
@@ -130,6 +131,7 @@ class ApplicationRepository(
     QuoteRepository,
     IntakeSessionRepository,
     VendorResearchRepository,
+    VendorCallAuthorizationRepository,
     Protocol,
 ):
     """One repository implementation used across the aggregate transaction boundary."""
@@ -397,6 +399,17 @@ def build_service(
             else None
         ),
         required_fee_categories=required_fee_categories(),
+        vendor_research=repository,
+        vendor_authorizations=repository,
+        real_vendor_call_guard=(
+            settings.require_real_vendor_call_config
+            if settings.app_mode == "live"
+            else None
+        ),
+        vendor_contact_hash_secret=settings.live_voice.contact_hash_secret,
+        vendor_consent_max_age_days=(
+            settings.live_voice.vendor_consent_max_age_days
+        ),
     )
     service._integration_status = IntegrationStatusReporter(
         settings,

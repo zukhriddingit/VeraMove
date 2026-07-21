@@ -12,16 +12,25 @@ from uuid import uuid4
 import pytest
 
 from services.api.app.contracts import (
+    CallContext,
     CallOutcomeType,
     CallStatus,
+    ConsentMethod,
     DataClassification,
     DwellingType,
     FeeCategory,
     IntakeSource,
     JobState,
+    JobVendorResearchV1,
+    ProvenanceReference,
+    ProvenanceType,
+    VendorCallAuthorizationV1,
+    VendorContactCandidateV1,
+    VendorResearchDossierV1,
+    VendorSearchQuery,
     VerificationStatus,
 )
-from services.api.app.core.errors import DomainConflict
+from services.api.app.core.errors import DomainConflict, ProviderRequestError
 from services.api.app.integrations.elevenlabs.webhook import ElevenLabsWebhookProcessor
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
@@ -32,10 +41,15 @@ from services.api.app.orchestration.intake_sessions import (
     IntakeSessionStatus,
 )
 from services.api.app.orchestration.mock_intelligence import MockIntelligenceProvider
-from services.api.app.orchestration.models import VoiceCallReference, VoiceCallResult
+from services.api.app.orchestration.models import (
+    VoiceCallReference,
+    VoiceCallResult,
+    job_spec_sha256,
+)
 from services.api.app.orchestration.recording_capability import RecordingCapabilitySigner
 from services.api.app.orchestration.role_play import FixtureRolePlayVendorRoster
 from services.api.app.orchestration.service import VeraMoveService
+from services.api.app.orchestration.vendor_contacts import destination_hash
 from services.api.app.orchestration.voice_materializer import _optional_dwelling
 from services.api.app.repositories.memory import InMemoryRepository
 
@@ -44,6 +58,7 @@ SECRET = "synthetic-async-webhook-secret"
 INTAKE_AGENT_ID = "agent_synthetic_intake"
 OUTBOUND_AGENT_ID = "agent_synthetic_outbound"
 CONFIG_VERSION = "2026-07-19.1"
+CONTACT_HASH_SECRET = "synthetic-contact-hash-secret-32-bytes-minimum"
 
 
 class AcceptedAsyncVoiceProvider:
@@ -53,8 +68,9 @@ class AcceptedAsyncVoiceProvider:
     outbound_agent_id = OUTBOUND_AGENT_ID
     agent_config_version = CONFIG_VERSION
 
-    def initiate_quote_call(self, job_spec, vendor, call_id, destination_slot):
-        del job_spec, vendor
+    def initiate_quote_call(self, job_spec, vendor, call_id, destination, call_plan):
+        del job_spec, vendor, call_plan
+        destination_slot = destination.destination_slot
         return VoiceCallResult(
             reference=VoiceCallReference(
                 conversation_id=f"conv_synthetic_quote_{destination_slot}_{call_id}",
@@ -69,9 +85,11 @@ class AcceptedAsyncVoiceProvider:
         verified_competitor,
         planned_quote,
         call_id,
-        destination_slot,
+        destination,
+        call_plan,
     ):
-        del job_spec, target_vendor, verified_competitor, planned_quote
+        del job_spec, target_vendor, verified_competitor, planned_quote, call_plan
+        destination_slot = destination.destination_slot
         return VoiceCallResult(
             reference=VoiceCallReference(
                 conversation_id=f"conv_synthetic_negotiation_{destination_slot}_{call_id}",
@@ -80,14 +98,21 @@ class AcceptedAsyncVoiceProvider:
         )
 
 
-def _service(fixtures, *, with_recording_signer: bool = True):
-    repository = InMemoryRepository()
+def _service(
+    fixtures,
+    *,
+    with_recording_signer: bool = True,
+    repository=None,
+    voice=None,
+    real_vendor_calls: bool = False,
+):
+    repository = repository or InMemoryRepository()
     service = VeraMoveService(
         jobs=repository,
         calls=repository,
         quotes=repository,
         intake_sessions=repository,
-        voice=AcceptedAsyncVoiceProvider(),
+        voice=voice or AcceptedAsyncVoiceProvider(),
         intelligence=MockIntelligenceProvider(
             fixtures,
             MockNegotiationGateway(fixtures),
@@ -106,8 +131,125 @@ def _service(fixtures, *, with_recording_signer: bool = True):
         ),
         required_fee_categories={FeeCategory.BASE_SERVICE, FeeCategory.STAIRS},
         clock=lambda: NOW,
+        vendor_research=repository,
+        vendor_authorizations=repository,
+        real_vendor_call_guard=(lambda: object()) if real_vendor_calls else None,
+        vendor_contact_hash_secret=(
+            CONTACT_HASH_SECRET if real_vendor_calls else None
+        ),
     )
     return service, repository
+
+
+class RecordingOfficialVoiceProvider(AcceptedAsyncVoiceProvider):
+    def __init__(self, repository, *, fail_on_index=None):
+        self.repository = repository
+        self.fail_on_index = fail_on_index
+        self.destinations = []
+        self.plans = []
+
+    def initiate_quote_call(self, job_spec, vendor, call_id, destination, call_plan):
+        assert len(self.repository.list_attempts(job_spec.job_id)) == 3
+        index = len(self.destinations)
+        self.destinations.append(destination)
+        self.plans.append(call_plan)
+        if index == self.fail_on_index:
+            raise ProviderRequestError("Synthetic official provider rejection")
+        return super().initiate_quote_call(
+            job_spec,
+            vendor,
+            call_id,
+            destination,
+            call_plan,
+        )
+
+
+def _authorized_real_job(service, repository, fixtures, job_spec):
+    real_spec = job_spec.model_copy(
+        update={
+            "data_classification": DataClassification.REAL_REDACTED,
+            "origin": job_spec.origin.model_copy(
+                update={"address_summary": "Boston, MA"}, deep=True
+            ),
+            "destination": job_spec.destination.model_copy(
+                update={"address_summary": "Cambridge, MA"}, deep=True
+            ),
+        },
+        deep=True,
+    )
+    service.create_job(real_spec)
+    locked = service.confirm_job(real_spec.job_id).job_spec
+    vendors = [
+        vendor.model_copy(
+            update={
+                "data_classification": DataClassification.REAL_REDACTED,
+                "provenance": [
+                    ProvenanceReference(
+                        source_type=ProvenanceType.TAVILY,
+                        source_id=f"official-{index}.example",
+                        location=f"https://official-{index}.example/pricing",
+                    )
+                ],
+            },
+            deep=True,
+        )
+        for index, vendor in enumerate(fixtures.load_vendors())
+    ]
+    dossiers = []
+    for index, vendor in enumerate(vendors):
+        suffix = 101 + index
+        contact = VendorContactCandidateV1(
+            vendor_id=vendor.vendor_id,
+            normalized_number=f"+16175550{suffix}",
+            display_number=f"(617) 555-0{suffix}",
+            source_url=f"https://official-{index}.example/contact",
+            source_excerpt=f"Synthetic office contact (617) 555-0{suffix}",
+            source_excerpt_sha256=f"{index + 1}" * 64,
+        )
+        dossier = VendorResearchDossierV1(
+            vendor=vendor,
+            status="complete",
+            contact_candidates=[contact],
+            researched_at=NOW,
+        )
+        dossiers.append(dossier)
+        repository.save_vendor_call_authorization(
+            VendorCallAuthorizationV1(
+                job_id=locked.job_id,
+                job_spec_version=locked.version,
+                job_spec_sha256=job_spec_sha256(locked),
+                vendor_id=vendor.vendor_id,
+                contact_id=contact.contact_id,
+                normalized_number=contact.normalized_number,
+                display_number=contact.display_number,
+                number_hash=destination_hash(
+                    CONTACT_HASH_SECRET,
+                    contact.normalized_number,
+                ),
+                recipient_timezone="America/New_York",
+                consent_method=ConsentMethod.PROVIDER_TEST_DESTINATION,
+                consent_evidence_reference=f"test-destination:{index}",
+                consented_at=NOW - timedelta(hours=1),
+                ai_call_consented=True,
+                recording_consented=True,
+                source_url=contact.source_url,
+                created_at=NOW,
+            )
+        )
+    repository.save_vendor_research(
+        JobVendorResearchV1(
+            job_id=locked.job_id,
+            job_spec_version=locked.version,
+            query=VendorSearchQuery(city="Boston", state="MA"),
+            candidates=vendors,
+            selected_vendor_ids=[item.vendor.vendor_id for item in dossiers],
+            dossiers=dossiers,
+            source="tavily",
+            created_at=NOW,
+            updated_at=NOW,
+        )
+    )
+    return locked
 
 
 def _sign(body: bytes, timestamp: datetime = NOW) -> str:
@@ -267,6 +409,111 @@ def _intake_collected_data() -> dict:
         "storage_days": None,
         "insurance_preference": "Synthetic standard coverage",
     }
+
+
+def test_real_dispatch_persists_exactly_three_attempts_before_network(
+    fixtures,
+    job_spec,
+):
+    repository = InMemoryRepository()
+    voice = RecordingOfficialVoiceProvider(repository, fail_on_index=1)
+    service, _ = _service(
+        fixtures,
+        repository=repository,
+        voice=voice,
+        real_vendor_calls=True,
+    )
+    locked = _authorized_real_job(service, repository, fixtures, job_spec)
+
+    calling = service.start_calls(locked.job_id)
+
+    attempts = service.list_call_attempts(locked.job_id)
+    assert calling.state is JobState.CALLING
+    assert len(attempts) == 3
+    assert len({item.authorization_id for item in attempts}) == 3
+    assert all(item.call_context is CallContext.OFFICIAL_BUSINESS for item in attempts)
+    assert all(item.call_plan is not None for item in attempts)
+    assert len(voice.destinations) == 3
+    assert voice.destinations[1].authorization_id == attempts[1].authorization_id
+    assert attempts[1].status is CallStatus.FAILED
+    assert repository.list_calls(locked.job_id)[0].outcome.type is CallOutcomeType.FAILED
+
+
+def test_real_dispatch_rejects_stale_batch_before_any_attempt(fixtures, job_spec):
+    repository = InMemoryRepository()
+    voice = RecordingOfficialVoiceProvider(repository)
+    service, _ = _service(
+        fixtures,
+        repository=repository,
+        voice=voice,
+        real_vendor_calls=True,
+    )
+    locked = _authorized_real_job(service, repository, fixtures, job_spec)
+    authorization = repository.list_vendor_call_authorizations(
+        locked.job_id,
+        locked.version,
+    )[0]
+    repository._vendor_call_authorizations.pop(
+        (locked.job_id, locked.version, authorization.vendor_id)
+    )
+
+    with pytest.raises(DomainConflict, match="exactly three"):
+        service.start_calls(locked.job_id)
+
+    assert service.list_call_attempts(locked.job_id) == []
+    assert voice.destinations == []
+
+
+def test_verified_official_recipient_opt_out_creates_hash_only_suppression(
+    fixtures,
+    job_spec,
+):
+    repository = InMemoryRepository()
+    voice = RecordingOfficialVoiceProvider(repository)
+    service, _ = _service(
+        fixtures,
+        repository=repository,
+        voice=voice,
+        real_vendor_calls=True,
+    )
+    locked = _authorized_real_job(service, repository, fixtures, job_spec)
+    service.start_calls(locked.job_id)
+    attempt = service.list_call_attempts(locked.job_id)[0]
+    authorization = repository.get_vendor_call_authorization(
+        locked.job_id,
+        locked.version,
+        attempt.vendor.vendor_id,
+    )
+    assert attempt.reference is not None and authorization is not None
+    body = _provider_body(
+        agent_id=OUTBOUND_AGENT_ID,
+        conversation_id=attempt.reference.conversation_id,
+        dynamic_variables={
+            "job_id": str(attempt.job_id),
+            "call_id": str(attempt.call_id),
+            "vendor_id": str(attempt.vendor.vendor_id),
+            "call_mode": attempt.call_mode,
+            "call_context": attempt.call_context.value,
+            "job_spec_version": attempt.job_spec_version,
+            "agent_config_version": attempt.agent_config_version,
+            "job_spec_sha256": attempt.job_spec_sha256,
+        },
+        collected_data={
+            "recording_consent": True,
+            "recipient_opt_out": True,
+            "outcome_type": "documented_decline",
+            "outcome_reason": "Recipient asked VeraMove not to call again.",
+        },
+    )
+
+    acknowledgement = service.handle_elevenlabs_webhook(body, _sign(body))
+
+    assert acknowledgement.accepted is True
+    suppression = repository.get_vendor_suppression(authorization.number_hash)
+    assert suppression is not None
+    assert suppression.reason.value == "recipient_opt_out"
+    persisted = repr(repository._vendor_suppressions) + repr(repository._events)
+    assert authorization.normalized_number not in persisted
 
 
 def test_signed_outbound_completion_materializes_one_canonical_quote(fixtures, job_spec):

@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import HttpUrl
@@ -14,10 +13,12 @@ from services.api.app.contracts import (
     JobSpecV1,
     QuoteV1,
     Vendor,
+    VendorCallPlanV1,
 )
 from services.api.app.core.errors import ResourceNotFound
 from services.api.app.orchestration.fixtures import DemoFixtures
 from services.api.app.orchestration.models import VoiceCallReference, VoiceCallResult
+from services.api.app.orchestration.providers import VoiceCallDestination
 
 
 def mock_completed_at() -> datetime:
@@ -52,9 +53,10 @@ class MockVoiceProvider:
         job_spec: JobSpecV1,
         vendor: Vendor,
         call_id: UUID,
-        destination_slot: Literal[0, 1, 2] = 0,
+        destination: VoiceCallDestination | None = None,
+        call_plan: VendorCallPlanV1 | None = None,
     ) -> VoiceCallResult:
-        del destination_slot
+        del destination, call_plan
         fixture_quotes = self._fixtures.load_initial_quotes()
         fixture_quote = next(
             (quote for quote in fixture_quotes if quote.vendor.vendor_id == vendor.vendor_id),
@@ -76,9 +78,10 @@ class MockVoiceProvider:
         verified_competitor: QuoteV1,
         planned_quote: QuoteV1,
         call_id: UUID,
-        destination_slot: Literal[0, 1, 2] = 0,
+        destination: VoiceCallDestination | None = None,
+        call_plan: VendorCallPlanV1 | None = None,
     ) -> VoiceCallResult:
-        del verified_competitor, destination_slot
+        del verified_competitor, destination, call_plan
         quote = self._rebind_quote(
             planned_quote,
             job_spec,

@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
 import httpx
 
-from services.api.app.contracts import JobSpecV1, QuoteV1, Vendor
+from services.api.app.contracts import (
+    CallContext,
+    JobSpecV1,
+    QuoteV1,
+    Vendor,
+    VendorCallPlanV1,
+)
 from services.api.app.core.config import LiveVoiceConfig, Settings
 from services.api.app.core.errors import ProviderRequestError
 from services.api.app.integrations.elevenlabs.base import JsonHttpTransport
@@ -17,6 +23,7 @@ from services.api.app.orchestration.models import (
     VoiceCallResult,
     job_spec_sha256,
 )
+from services.api.app.orchestration.providers import VoiceCallDestination
 
 
 class HttpxJsonTransport:
@@ -71,9 +78,11 @@ class ElevenLabsVoiceProvider:
         job_spec: JobSpecV1,
         vendor: Vendor,
         call_id: UUID,
-        destination_slot: Literal[0, 1, 2] = 0,
+        destination: VoiceCallDestination | int | None = None,
+        call_plan: VendorCallPlanV1 | None = None,
     ) -> VoiceCallResult:
-        config = self._settings.require_live_voice_config()
+        destination = self._normalize_destination(destination)
+        config = self._config_for(destination)
         assert config.outbound_agent_id is not None
         return self._initiate(
             config,
@@ -81,13 +90,14 @@ class ElevenLabsVoiceProvider:
             job_spec,
             vendor,
             call_id,
-            destination_slot,
+            destination,
             {
                 "call_mode": "quote",
                 "verified_competitor_quote_id": "",
                 "verified_competitor_total": "",
                 "verified_competitor_evidence_json": "",
                 "negotiation_objective": "",
+                **self._call_plan_variables(call_plan, job_spec, vendor),
             },
         )
 
@@ -98,9 +108,11 @@ class ElevenLabsVoiceProvider:
         verified_competitor: QuoteV1,
         planned_quote: QuoteV1,
         call_id: UUID,
-        destination_slot: Literal[0, 1, 2] = 0,
+        destination: VoiceCallDestination | int | None = None,
+        call_plan: VendorCallPlanV1 | None = None,
     ) -> VoiceCallResult:
-        config = self._settings.require_live_voice_config()
+        destination = self._normalize_destination(destination)
+        config = self._config_for(destination)
         assert config.outbound_agent_id is not None
         leverage_total = (
             verified_competitor.comparable_total
@@ -115,7 +127,7 @@ class ElevenLabsVoiceProvider:
             job_spec,
             target_vendor,
             call_id,
-            destination_slot,
+            destination,
             {
                 "call_mode": "negotiation",
                 "verified_competitor_quote_id": str(verified_competitor.quote_id),
@@ -139,6 +151,11 @@ class ElevenLabsVoiceProvider:
                     separators=(",", ":"),
                     sort_keys=True,
                 ),
+                **self._call_plan_variables(
+                    call_plan,
+                    job_spec,
+                    target_vendor,
+                ),
             },
         )
 
@@ -149,19 +166,14 @@ class ElevenLabsVoiceProvider:
         job_spec: JobSpecV1,
         vendor: Vendor,
         call_id: UUID,
-        destination_slot: Literal[0, 1, 2],
+        destination: VoiceCallDestination,
         dynamic_variables: dict[str, str],
     ) -> VoiceCallResult:
         assert config.api_key is not None
         assert config.phone_number_id is not None
         assert config.outbound_agent_id is not None
         assert config.agent_config_version is not None
-        if isinstance(destination_slot, bool) or destination_slot not in {0, 1, 2}:
-            raise ProviderRequestError("Invalid live destination slot")
-        try:
-            destination_number = config.destination_numbers[destination_slot]
-        except (IndexError, TypeError):
-            raise ProviderRequestError("Invalid live destination slot") from None
+        destination_number = self._destination_number(config, destination)
         canonical_job_spec_json = json.dumps(
             job_spec.model_dump(mode="json"),
             separators=(",", ":"),
@@ -181,10 +193,11 @@ class ElevenLabsVoiceProvider:
                     "job_spec_json": canonical_job_spec_json,
                     "job_spec_sha256": job_spec_sha256(job_spec),
                     "agent_config_version": config.agent_config_version,
+                    "call_context": destination.call_context.value,
                     **dynamic_variables,
                 }
             },
-            "call_recording_enabled": True,
+            "call_recording_enabled": destination.recording_consented,
         }
         body = self._transport.post_json(
             (f"{config.api_base_url.rstrip('/')}/v1/convai/twilio/outbound-call"),
@@ -209,3 +222,76 @@ class ElevenLabsVoiceProvider:
                 provider_call_id=provider_call_id.strip(),
             )
         )
+
+    def _config_for(self, destination: VoiceCallDestination) -> LiveVoiceConfig:
+        if destination.call_context is CallContext.OFFICIAL_BUSINESS:
+            return self._settings.require_real_vendor_call_config()
+        return self._settings.require_live_voice_config()
+
+    @staticmethod
+    def _normalize_destination(
+        destination: VoiceCallDestination | int | None,
+    ) -> VoiceCallDestination:
+        if destination is None:
+            return VoiceCallDestination.supervised_role_play(0)
+        if isinstance(destination, bool):
+            raise ProviderRequestError("Invalid live destination slot")
+        if isinstance(destination, int):
+            if destination not in {0, 1, 2}:
+                raise ProviderRequestError("Invalid live destination slot")
+            return VoiceCallDestination.supervised_role_play(destination)
+        return destination
+
+    @staticmethod
+    def _destination_number(
+        config: LiveVoiceConfig,
+        destination: VoiceCallDestination,
+    ) -> str:
+        if destination.call_context is CallContext.OFFICIAL_BUSINESS:
+            if destination.normalized_number is None:
+                raise ProviderRequestError(
+                    "Authorized vendor destination could not be resolved"
+                )
+            return destination.normalized_number
+        try:
+            return config.destination_numbers[destination.destination_slot]
+        except (IndexError, TypeError):
+            raise ProviderRequestError("Invalid live destination slot") from None
+
+    @staticmethod
+    def _call_plan_variables(
+        call_plan: VendorCallPlanV1 | None,
+        job_spec: JobSpecV1,
+        vendor: Vendor,
+    ) -> dict[str, str]:
+        if call_plan is None:
+            return {
+                "vendor_call_plan_json": "",
+                "website_claims_json": "[]",
+                "verification_questions_json": "[]",
+            }
+        if (
+            call_plan.vendor_id != vendor.vendor_id
+            or call_plan.job_spec_version != job_spec.version
+            or call_plan.job_spec_sha256 != job_spec_sha256(job_spec)
+        ):
+            raise ProviderRequestError(
+                "Vendor call plan does not match the locked JobSpec"
+            )
+        return {
+            "vendor_call_plan_json": json.dumps(
+                call_plan.model_dump(mode="json"),
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            "website_claims_json": json.dumps(
+                [item.model_dump(mode="json") for item in call_plan.website_claims],
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+            "verification_questions_json": json.dumps(
+                [item.model_dump(mode="json") for item in call_plan.questions],
+                separators=(",", ":"),
+                sort_keys=True,
+            ),
+        }

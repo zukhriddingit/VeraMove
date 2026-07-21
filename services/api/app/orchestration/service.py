@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal, cast
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from services.api.app.contracts import (
+    CallContext,
     CallOutcome,
     CallOutcomeType,
     CallStatus,
+    DataClassification,
     FeeCategory,
     JobRecord,
     JobSpecV1,
@@ -20,6 +23,9 @@ from services.api.app.contracts import (
     RecommendationRanking,
     RecommendationV1,
     Vendor,
+    VendorCallAuthorizationV1,
+    VendorCallPlanV1,
+    VendorContactCandidateV1,
     WebhookAck,
 )
 from services.api.app.core.errors import (
@@ -56,21 +62,31 @@ from services.api.app.orchestration.models import (
     JobEvent,
     NegotiationContext,
     VoiceCallResult,
+    job_spec_sha256,
 )
 from services.api.app.orchestration.providers import (
     IntelligenceProvider,
     QuoteVerificationGateway,
+    VoiceCallDestination,
     VoiceProvider,
 )
 from services.api.app.orchestration.recording_capability import RecordingCapabilitySigner
 from services.api.app.orchestration.role_play import DiscoveryVendorRoster, VendorRoster
 from services.api.app.orchestration.tools import VoiceTools
+from services.api.app.orchestration.vendor_call_plans import build_vendor_call_plan
+from services.api.app.orchestration.vendor_contacts import (
+    authorization_is_current,
+    destination_hash,
+    permitted_call_time,
+)
 from services.api.app.orchestration.voice_materializer import VoiceMaterializer
 from services.api.app.repositories.base import (
     CallRepository,
     IntakeSessionRepository,
     JobRepository,
     QuoteRepository,
+    VendorCallAuthorizationRepository,
+    VendorResearchRepository,
     VoiceMaterializationRepository,
 )
 
@@ -79,6 +95,15 @@ def utc_now() -> datetime:
     """Return an aware UTC timestamp for production composition."""
 
     return datetime.now(UTC)
+
+
+@dataclass(frozen=True, slots=True)
+class _QuoteDispatch:
+    """One transient provider destination paired with its persisted safe agenda."""
+
+    vendor: Vendor
+    destination: VoiceCallDestination
+    call_plan: VendorCallPlanV1 | None
 
 
 class VeraMoveService:
@@ -101,6 +126,11 @@ class VeraMoveService:
         quote_verifier: QuoteVerificationGateway | None = None,
         recording_signer: RecordingCapabilitySigner | None = None,
         required_fee_categories: set[FeeCategory] | None = None,
+        vendor_research: VendorResearchRepository | None = None,
+        vendor_authorizations: VendorCallAuthorizationRepository | None = None,
+        real_vendor_call_guard: Callable[[], object] | None = None,
+        vendor_contact_hash_secret: str | None = None,
+        vendor_consent_max_age_days: int = 30,
     ) -> None:
         self._jobs = jobs
         self._calls = calls
@@ -114,6 +144,11 @@ class VeraMoveService:
         self._recommendation_narrator = recommendation_narrator
         self._tools = VoiceTools(calls, quotes, clock=clock)
         self._clock = clock
+        self._vendor_research = vendor_research
+        self._vendor_authorizations = vendor_authorizations
+        self._real_vendor_call_guard = real_vendor_call_guard
+        self._vendor_contact_hash_secret = vendor_contact_hash_secret
+        self._vendor_consent_max_age_days = vendor_consent_max_age_days
         self._mock_voice_webhook_compatibility = (
             getattr(voice, "outbound_agent_id", "") == "synthetic-mock-outbound-agent"
         )
@@ -131,6 +166,7 @@ class VeraMoveService:
             ),
             recommendation_builder=self._build_recommendation,
             clock=clock,
+            vendor_authorizations=vendor_authorizations,
         )
 
     def create_job(self, job_spec: JobSpecV1) -> JobRecord:
@@ -230,6 +266,10 @@ class VeraMoveService:
         record = self.get_job(job_id)
         if not record.job_spec.confirmed:
             raise DomainConflict("Calls require a confirmed JobSpec")
+        if record.job_spec.data_classification is DataClassification.REAL_REDACTED:
+            raise DomainConflict(
+                "Official-business calls must start as one authorized three-vendor batch"
+            )
 
         existing = next(
             (
@@ -255,7 +295,10 @@ class VeraMoveService:
                 attempt.job_spec_snapshot,
                 vendor,
                 attempt.call_id,
-                attempt.destination_slot,
+                VoiceCallDestination.supervised_role_play(
+                    attempt.destination_slot
+                ),
+                attempt.call_plan,
             )
         except ProviderRequestError:
             self._record_provider_failure(attempt)
@@ -278,20 +321,19 @@ class VeraMoveService:
             return record
 
         validate_transition(record.state, JobState.CALLING)
-        vendors = self._initial_vendors(record)
+        dispatches = self._quote_dispatches(record)
         record.state = JobState.CALLING
         record.updated_at = self._clock()
         self._jobs.save(record)
 
-        initial_vendors = vendors[: self._voice.initial_call_limit]
         attempts: list[CallAttempt] = []
-        for destination_slot, vendor in enumerate(initial_vendors):
+        for destination_slot, dispatch in enumerate(dispatches):
             existing = next(
                 (
                     attempt
                     for attempt in self._calls.list_attempts(job_id)
                     if attempt.kind is CallKind.QUOTE
-                    and attempt.vendor.vendor_id == vendor.vendor_id
+                    and attempt.vendor.vendor_id == dispatch.vendor.vendor_id
                     and attempt.job_spec_version == record.job_spec.version
                 ),
                 None,
@@ -300,13 +342,16 @@ class VeraMoveService:
                 existing
                 or self._new_attempt(
                     record,
-                    vendor,
+                    dispatch.vendor,
                     CallKind.QUOTE,
                     destination_slot=destination_slot,
+                    call_context=dispatch.destination.call_context,
+                    authorization_id=dispatch.destination.authorization_id,
+                    call_plan=dispatch.call_plan,
                 )
             )
 
-        for attempt in attempts:
+        for attempt, dispatch in zip(attempts, dispatches, strict=True):
             if attempt.status is not CallStatus.PENDING:
                 continue
             try:
@@ -314,9 +359,10 @@ class VeraMoveService:
                     attempt.job_spec_snapshot,
                     attempt.vendor,
                     attempt.call_id,
-                    attempt.destination_slot,
+                    dispatch.destination,
+                    attempt.call_plan,
                 )
-            except ProviderRequestError:
+            except (ProviderConfigurationError, ProviderRequestError):
                 self._record_provider_failure(attempt)
                 continue
             except DomainError:
@@ -413,7 +459,11 @@ class VeraMoveService:
                     evidence.evidence_id for evidence in competitor.transcript_evidence
                 ),
             ),
+            call_context=target_attempt.call_context,
+            authorization_id=target_attempt.authorization_id,
+            call_plan=target_attempt.call_plan,
         )
+        destination = self._destination_for_attempt(attempt)
         try:
             result = self._voice.initiate_negotiation_call(
                 attempt.job_spec_snapshot,
@@ -421,7 +471,8 @@ class VeraMoveService:
                 competitor,
                 planned,
                 attempt.call_id,
-                attempt.destination_slot,
+                destination,
+                attempt.call_plan,
             )
         except (ProviderConfigurationError, ProviderRequestError):
             self._record_provider_failure(attempt)
@@ -563,6 +614,226 @@ class VeraMoveService:
             raise DomainConflict("Initial calling requires three distinct vendors")
         return list(distinct.values())[:3]
 
+    def _quote_dispatches(self, record: JobRecord) -> list[_QuoteDispatch]:
+        if self._voice.initial_call_limit != 3:
+            raise DomainConflict("The initial voice provider limit must be exactly three")
+        if record.job_spec.data_classification is DataClassification.REAL_REDACTED:
+            return self._official_quote_dispatches(record)
+        vendors = self._initial_vendors(record)
+        return [
+            _QuoteDispatch(
+                vendor=vendor,
+                destination=VoiceCallDestination.supervised_role_play(slot),
+                call_plan=None,
+            )
+            for slot, vendor in enumerate(vendors)
+        ]
+
+    def _official_quote_dispatches(self, record: JobRecord) -> list[_QuoteDispatch]:
+        """Resolve three consented destinations before creating any attempt."""
+
+        if self._real_vendor_call_guard is None:
+            raise ProviderConfigurationError(
+                "Official-business calls are not configured"
+            )
+        self._real_vendor_call_guard()
+        if (
+            self._vendor_research is None
+            or self._vendor_authorizations is None
+            or self._vendor_contact_hash_secret is None
+        ):
+            raise ProviderConfigurationError(
+                "Official-business repositories and contact hashing are not configured"
+            )
+        job_spec = record.job_spec
+        if (
+            not job_spec.confirmed
+            or job_spec.locked_version != job_spec.version
+            or job_spec.data_classification is not DataClassification.REAL_REDACTED
+        ):
+            raise DomainConflict(
+                "Official-business calls require a locked real_redacted JobSpec"
+            )
+        research = self._vendor_research.get_vendor_research(
+            job_spec.job_id,
+            job_spec.version,
+        )
+        if (
+            research is None
+            or research.source != "tavily"
+            or len(research.selected_vendor_ids) != 3
+            or len(research.dossiers) != 3
+        ):
+            raise DomainConflict(
+                "Official-business calls require three researched vendors"
+            )
+        authorizations = self._vendor_authorizations.list_vendor_call_authorizations(
+            job_spec.job_id,
+            job_spec.version,
+        )
+        if (
+            len(authorizations) != 3
+            or len({item.vendor_id for item in authorizations}) != 3
+            or len({item.number_hash for item in authorizations}) != 3
+        ):
+            raise DomainConflict(
+                "Official-business calls require exactly three distinct authorizations"
+            )
+        authorization_by_vendor = {
+            item.vendor_id: item for item in authorizations
+        }
+        if set(authorization_by_vendor) != set(research.selected_vendor_ids):
+            raise DomainConflict(
+                "Authorizations must exactly match the selected vendor shortlist"
+            )
+        dossier_by_vendor = {
+            item.vendor.vendor_id: item for item in research.dossiers
+        }
+        snapshot_hash = job_spec_sha256(job_spec)
+        now = self._clock()
+        dispatches: list[_QuoteDispatch] = []
+        for slot, vendor_id in enumerate(research.selected_vendor_ids):
+            authorization = authorization_by_vendor[vendor_id]
+            dossier = dossier_by_vendor.get(vendor_id)
+            if dossier is None:
+                raise DomainConflict("Selected vendor research is incomplete")
+            self._validate_authorization(
+                authorization,
+                dossier.contact_candidates,
+                expected_job_id=job_spec.job_id,
+                expected_version=job_spec.version,
+                expected_vendor_id=vendor_id,
+                snapshot_hash=snapshot_hash,
+                now=now,
+            )
+            plan = build_vendor_call_plan(job_spec, dossier)
+            dispatches.append(
+                _QuoteDispatch(
+                    vendor=dossier.vendor,
+                    destination=VoiceCallDestination(
+                        call_context=CallContext.OFFICIAL_BUSINESS,
+                        destination_slot=cast(Literal[0, 1, 2], slot),
+                        authorization_id=authorization.authorization_id,
+                        normalized_number=authorization.normalized_number,
+                        number_hash=authorization.number_hash,
+                        recording_consented=authorization.recording_consented,
+                    ),
+                    call_plan=plan,
+                )
+            )
+        return dispatches
+
+    def _validate_authorization(
+        self,
+        authorization: VendorCallAuthorizationV1,
+        contacts: list[VendorContactCandidateV1],
+        *,
+        expected_job_id: UUID,
+        expected_version: str,
+        expected_vendor_id: UUID,
+        snapshot_hash: str,
+        now: datetime,
+    ) -> None:
+        assert self._vendor_authorizations is not None
+        assert self._vendor_contact_hash_secret is not None
+        contact = next(
+            (
+                item
+                for item in contacts
+                if item.contact_id == authorization.contact_id
+                and item.vendor_id == authorization.vendor_id
+            ),
+            None,
+        )
+        if (
+            authorization.job_id != expected_job_id
+            or authorization.job_spec_version != expected_version
+            or authorization.vendor_id != expected_vendor_id
+            or authorization.job_spec_sha256 != snapshot_hash
+            or contact is None
+            or authorization.normalized_number != contact.normalized_number
+            or authorization.display_number != contact.display_number
+            or str(authorization.source_url) != str(contact.source_url)
+            or authorization.number_hash
+            != destination_hash(
+                self._vendor_contact_hash_secret,
+                authorization.normalized_number,
+            )
+            or not authorization_is_current(
+                authorization,
+                now,
+                max_age_days=self._vendor_consent_max_age_days,
+            )
+            or not permitted_call_time(now, authorization.recipient_timezone)
+        ):
+            raise DomainConflict(
+                "Vendor call authorization is stale, mismatched, or outside its call window"
+            )
+        if self._vendor_authorizations.get_vendor_suppression(
+            authorization.number_hash
+        ) is not None:
+            raise DomainConflict("Vendor call destination is suppressed")
+
+    def _destination_for_attempt(self, attempt: CallAttempt) -> VoiceCallDestination:
+        if attempt.call_context is CallContext.SUPERVISED_ROLE_PLAY:
+            return VoiceCallDestination.supervised_role_play(
+                attempt.destination_slot
+            )
+        if self._vendor_authorizations is None or attempt.authorization_id is None:
+            raise ProviderConfigurationError(
+                "Official-business destination cannot be resolved"
+            )
+        if self._real_vendor_call_guard is None:
+            raise ProviderConfigurationError(
+                "Official-business calls are not configured"
+            )
+        self._real_vendor_call_guard()
+        authorization = self._vendor_authorizations.get_vendor_call_authorization(
+            attempt.job_id,
+            attempt.job_spec_version,
+            attempt.vendor.vendor_id,
+        )
+        if (
+            authorization is None
+            or authorization.authorization_id != attempt.authorization_id
+        ):
+            raise DomainConflict("Official-business authorization is unavailable")
+        research = (
+            self._vendor_research.get_vendor_research(
+                attempt.job_id,
+                attempt.job_spec_version,
+            )
+            if self._vendor_research is not None
+            else None
+        )
+        dossier = next(
+            (
+                item
+                for item in (research.dossiers if research is not None else [])
+                if item.vendor.vendor_id == attempt.vendor.vendor_id
+            ),
+            None,
+        )
+        if dossier is None:
+            raise DomainConflict("Official-business vendor research is unavailable")
+        self._validate_authorization(
+            authorization,
+            dossier.contact_candidates,
+            expected_job_id=attempt.job_id,
+            expected_version=attempt.job_spec_version,
+            expected_vendor_id=attempt.vendor.vendor_id,
+            snapshot_hash=attempt.job_spec_sha256,
+            now=self._clock(),
+        )
+        return VoiceCallDestination(
+            call_context=CallContext.OFFICIAL_BUSINESS,
+            destination_slot=attempt.destination_slot,
+            authorization_id=authorization.authorization_id,
+            normalized_number=authorization.normalized_number,
+            number_hash=authorization.number_hash,
+            recording_consented=authorization.recording_consented,
+        )
+
     def _new_attempt(
         self,
         record: JobRecord,
@@ -570,6 +841,9 @@ class VeraMoveService:
         kind: CallKind,
         destination_slot: Literal[0, 1, 2],
         negotiation_context: NegotiationContext | None = None,
+        call_context: CallContext = CallContext.SUPERVISED_ROLE_PLAY,
+        authorization_id: UUID | None = None,
+        call_plan: VendorCallPlanV1 | None = None,
     ) -> CallAttempt:
         attempt = CallAttempt(
             call_id=uuid4(),
@@ -589,6 +863,9 @@ class VeraMoveService:
                 "provider-v1",
             ),
             negotiation_context=negotiation_context,
+            call_context=call_context,
+            authorization_id=authorization_id,
+            call_plan=call_plan,
             status=CallStatus.PENDING,
             started_at=self._clock(),
         )

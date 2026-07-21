@@ -68,6 +68,7 @@ OUTBOUND_COLLECTION_FIELDS = frozenset(
         "fee_items_json",
         "addressed_fee_categories_json",
         "concessions_json",
+        "recipient_opt_out",
     }
 )
 ALLOWED_COLLECTION_FIELDS = INTAKE_COLLECTION_FIELDS | OUTBOUND_COLLECTION_FIELDS
@@ -111,6 +112,7 @@ def parse_dynamic_variables(data: dict[str, Any]) -> ElevenLabsDynamicVariables:
         ),
         "vendor_id": _optional_uuid(variables.get("vendor_id"), "vendor_id"),
         "call_mode": variables.get("call_mode"),
+        "call_context": variables.get("call_context"),
         "job_spec_version": variables.get("job_spec_version"),
         "agent_config_version": variables.get("agent_config_version"),
         "job_spec_sha256": variables.get("job_spec_sha256"),

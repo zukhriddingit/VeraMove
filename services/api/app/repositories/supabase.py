@@ -968,6 +968,17 @@ class SupabaseRepository:
                 else {}
             ),
             "provider_version_id": attempt.provider_version_id,
+            "call_context": attempt.call_context.value,
+            "authorization_id": (
+                str(attempt.authorization_id)
+                if attempt.authorization_id is not None
+                else None
+            ),
+            "call_plan": (
+                attempt.call_plan.model_dump(mode="json")
+                if attempt.call_plan is not None
+                else None
+            ),
             "status": attempt.status.value,
             "data_classification": attempt.vendor.data_classification.value,
             "payload": attempt.model_dump(mode="json"),

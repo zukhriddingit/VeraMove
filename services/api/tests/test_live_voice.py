@@ -12,7 +12,14 @@ from uuid import uuid4
 import pytest
 
 from services.api.app.api.dependencies import build_service
-from services.api.app.contracts import CallStatus, JobState
+from services.api.app.contracts import (
+    CallContext,
+    CallStatus,
+    FeeCategory,
+    JobState,
+    VendorCallPlanQuestionV1,
+    VendorCallPlanV1,
+)
 from services.api.app.core.config import LiveVoiceConfig, Settings, SupabaseConfig
 from services.api.app.core.errors import (
     ProviderConfigurationError,
@@ -26,6 +33,8 @@ from services.api.app.integrations.elevenlabs.live import ElevenLabsVoiceProvide
 from services.api.app.integrations.elevenlabs.recordings import (
     ElevenLabsRecordingClient,
 )
+from services.api.app.orchestration.models import job_spec_sha256
+from services.api.app.orchestration.providers import VoiceCallDestination
 from services.api.app.repositories.memory import InMemoryRepository
 
 
@@ -375,6 +384,69 @@ def test_live_provider_selects_negotiator_and_verified_leverage(
         "currency": planned.currency,
         "target_total": str(planned.negotiated_total),
     }
+
+
+def test_live_provider_uses_authorized_destination_and_research_plan(
+    live_settings,
+    fixtures,
+    job_spec,
+):
+    settings = replace(
+        live_settings,
+        live_voice=replace(
+            live_settings.live_voice,
+            real_vendor_calls_enabled=True,
+            contact_hash_secret="h" * 32,
+        ),
+    )
+    transport = RecordingTransport(
+        {"success": True, "conversation_id": "conv-real", "callSid": "CA-real"}
+    )
+    provider = ElevenLabsVoiceProvider(settings, transport)
+    vendor = fixtures.load_vendors()[0]
+    plan = VendorCallPlanV1(
+        vendor_id=vendor.vendor_id,
+        job_spec_version=job_spec.version,
+        job_spec_sha256=job_spec_sha256(job_spec),
+        questions=[
+            VendorCallPlanQuestionV1(
+                question_id=uuid4(),
+                category=FeeCategory.TRAVEL.value,
+                question="What travel fee applies to this exact move?",
+                reason="missing_information",
+            )
+        ],
+    )
+    destination = VoiceCallDestination(
+        call_context=CallContext.OFFICIAL_BUSINESS,
+        destination_slot=0,
+        authorization_id=uuid4(),
+        normalized_number="+16175550101",
+        number_hash="a" * 64,
+        recording_consented=True,
+    )
+
+    provider.initiate_quote_call(
+        job_spec,
+        vendor,
+        uuid4(),
+        destination,
+        plan,
+    )
+
+    payload = transport.requests[0]["payload"]
+    assert payload["to_number"] == "+16175550101"
+    assert payload["call_recording_enabled"] is True
+    variables = payload["conversation_initiation_client_data"]["dynamic_variables"]
+    assert variables["call_context"] == "official_business"
+    assert json.loads(variables["vendor_call_plan_json"])["vendor_id"] == str(
+        vendor.vendor_id
+    )
+    assert json.loads(variables["website_claims_json"]) == []
+    assert json.loads(variables["verification_questions_json"])[0][
+        "category"
+    ] == FeeCategory.TRAVEL.value
+    assert "+16175550101" not in json.dumps(variables)
 
 
 def test_live_provider_uses_zero_comparable_total_without_truthiness_fallback(

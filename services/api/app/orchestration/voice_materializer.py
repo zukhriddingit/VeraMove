@@ -28,6 +28,8 @@ from services.api.app.contracts import (
     OriginDestinationAccess,
     QuoteV1,
     RecommendationV1,
+    SuppressionReason,
+    VendorSuppressionV1,
     WebhookAck,
 )
 from services.api.app.core.errors import DomainConflict, ResourceNotFound
@@ -55,6 +57,7 @@ from services.api.app.repositories.base import (
     IntakeSessionRepository,
     JobRepository,
     QuoteRepository,
+    VendorCallAuthorizationRepository,
     VoiceIntakeCompletion,
     VoiceIntakeFailure,
     VoiceIntakeIncomplete,
@@ -90,6 +93,7 @@ class VoiceMaterializer:
         required_fee_categories: set[FeeCategory],
         recommendation_builder: Callable[[JobRecord], RecommendationV1],
         clock: Callable[[], datetime],
+        vendor_authorizations: VendorCallAuthorizationRepository | None = None,
     ) -> None:
         self._jobs = jobs
         self._calls = calls
@@ -102,6 +106,7 @@ class VoiceMaterializer:
         self._required_fee_categories = set(required_fee_categories)
         self._recommendation_builder = recommendation_builder
         self._clock = clock
+        self._vendor_authorizations = vendor_authorizations
 
     def materialize(self, event: VerifiedElevenLabsEvent) -> WebhookAck:
         """Materialize one authenticated provider event exactly once."""
@@ -146,6 +151,8 @@ class VoiceMaterializer:
                 recording_url=materialized.recording_url,
                 provider_version_id=materialized.provider_version_id,
             )
+            if materialized.recipient_opt_out and attempt.authorization_id is not None:
+                self._save_recipient_opt_out(attempt)
         except DomainConflict:
             self._fail_receipt(
                 event.idempotency_key,
@@ -170,6 +177,31 @@ class VoiceMaterializer:
             )
             raise
         return WebhookAck(accepted=not finalized.duplicate, duplicate=finalized.duplicate)
+
+    def _save_recipient_opt_out(self, attempt: CallAttempt) -> None:
+        """Persist a hash-only suppression before accepting the terminal event."""
+
+        if self._vendor_authorizations is None or attempt.authorization_id is None:
+            raise DomainConflict(
+                "Recipient opt-out requires an official-business authorization"
+            )
+        authorization = self._vendor_authorizations.get_vendor_call_authorization(
+            attempt.job_id,
+            attempt.job_spec_version,
+            attempt.vendor.vendor_id,
+        )
+        if (
+            authorization is None
+            or authorization.authorization_id != attempt.authorization_id
+        ):
+            raise DomainConflict("Recipient opt-out authorization is unavailable")
+        self._vendor_authorizations.save_vendor_suppression(
+            VendorSuppressionV1(
+                number_hash=authorization.number_hash,
+                reason=SuppressionReason.RECIPIENT_OPT_OUT,
+                created_at=self._clock(),
+            )
+        )
 
     def _materialize_intake(self, event: VerifiedPostCallTranscription) -> WebhookAck:
         session = self._require_intake_session(event)

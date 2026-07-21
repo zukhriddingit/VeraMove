@@ -491,6 +491,45 @@ create table if not exists public.vendor_call_authorizations (
 create index if not exists vendor_call_authorizations_job_idx
     on public.vendor_call_authorizations (job_id, job_spec_version);
 
+alter table public.call_attempts
+    add column if not exists call_context text not null default 'supervised_role_play',
+    add column if not exists authorization_id uuid
+        references public.vendor_call_authorizations(id),
+    add column if not exists call_plan jsonb;
+
+alter table public.call_attempts
+    drop constraint if exists call_attempts_context_shape_check;
+alter table public.call_attempts
+    add constraint call_attempts_context_shape_check
+    check (
+        (
+            call_context = 'supervised_role_play'
+            and authorization_id is null
+        )
+        or
+        (
+            call_context = 'official_business'
+            and authorization_id is not null
+        )
+    );
+
+alter table public.call_attempts
+    drop constraint if exists call_attempts_plan_safety_check;
+alter table public.call_attempts
+    add constraint call_attempts_plan_safety_check
+    check (
+        call_plan is null
+        or (
+            jsonb_typeof(call_plan) = 'object'
+            and call_plan::text !~ '\+1[2-9][0-9]{9}'
+            and call_plan::text !~* '"(normalized_number|phone|phone_number|to_number)"[[:space:]]*:'
+        )
+    );
+
+create index if not exists call_attempts_authorization_idx
+    on public.call_attempts (authorization_id)
+    where authorization_id is not null;
+
 create table if not exists public.vendor_call_suppressions (
     id uuid primary key,
     number_hash text not null unique check (number_hash ~ '^[a-f0-9]{64}$'),

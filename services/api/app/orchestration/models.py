@@ -13,10 +13,12 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 from services.api.app.contracts import (
+    CallContext,
     CallOutcome,
     CallStatus,
     JobSpecV1,
     Vendor,
+    VendorCallPlanV1,
 )
 
 
@@ -80,6 +82,9 @@ class CallAttempt(BaseModel):
     completed_at: datetime | None = None
     reference: VoiceCallReference | None = None
     provider_version_id: str | None = Field(default=None, max_length=200)
+    call_context: CallContext = CallContext.SUPERVISED_ROLE_PLAY
+    authorization_id: UUID | None = None
+    call_plan: VendorCallPlanV1 | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -99,6 +104,7 @@ class CallAttempt(BaseModel):
         values.setdefault("call_mode", kind)
         values.setdefault("expected_agent_id", "synthetic-mock-outbound-agent")
         values.setdefault("agent_config_version", "mock-v1")
+        values.setdefault("call_context", CallContext.SUPERVISED_ROLE_PLAY)
         return values
 
     @model_validator(mode="after")
@@ -113,6 +119,23 @@ class CallAttempt(BaseModel):
             raise ValueError("Quote attempts cannot contain negotiation context")
         if self.kind is CallKind.NEGOTIATION and self.negotiation_context is None:
             raise ValueError("Negotiation attempts require verified context")
+        if self.call_context is CallContext.OFFICIAL_BUSINESS:
+            if self.authorization_id is None:
+                raise ValueError(
+                    "official-business attempts require an authorization reference"
+                )
+            if self.call_plan is None:
+                raise ValueError("official-business attempts require a vendor call plan")
+        elif self.authorization_id is not None:
+            raise ValueError(
+                "role-play attempts cannot reference a vendor authorization"
+            )
+        if self.call_plan is not None and (
+            self.call_plan.vendor_id != self.vendor.vendor_id
+            or self.call_plan.job_spec_version != self.job_spec_version
+            or self.call_plan.job_spec_sha256 != self.job_spec_sha256
+        ):
+            raise ValueError("call plan does not match the attempt snapshot")
         return self
 
 
