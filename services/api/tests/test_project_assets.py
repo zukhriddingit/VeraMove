@@ -55,6 +55,18 @@ def test_migration_has_all_tables_indexes_jsonb_and_idempotency():
     assert "create index if not exists" in sql
 
 
+def test_vendor_research_migration_is_isolated_and_service_role_only():
+    path = ROOT / "supabase/migrations/202607210006_vendor_research.sql"
+    sql = path.read_text(encoding="utf-8").lower()
+    assert "create table if not exists vendor_research" in sql
+    assert "references jobs(id) on delete cascade" in sql
+    assert "unique (job_id, job_spec_version)" in sql
+    assert "payload jsonb not null" in sql
+    assert "alter table vendor_research enable row level security" in sql
+    assert "revoke all on vendor_research from anon, authenticated" in sql
+    assert "grant select, insert, update, delete on vendor_research to service_role" in sql
+
+
 def test_all_demo_json_is_explicitly_synthetic_or_covered_by_disclosure():
     readme = (ROOT / "data/demo/README.md").read_text(encoding="utf-8").lower()
     assert "every file" in readme and "synthetic" in readme

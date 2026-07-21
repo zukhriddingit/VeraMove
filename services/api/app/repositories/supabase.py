@@ -12,6 +12,7 @@ from services.api.app.contracts import (
     CallRecord,
     DataClassification,
     JobRecord,
+    JobVendorResearchV1,
     QuoteV1,
     RecommendationV1,
     TranscriptEvidence,
@@ -99,6 +100,59 @@ class SupabaseRepository:
         )
         self._persist_recommendation(candidate)
         return self._copy_job(candidate)
+
+    def get_vendor_research(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> JobVendorResearchV1 | None:
+        rows = self._client.select_many(
+            "vendor_research",
+            {
+                "job_id": f"eq.{job_id}",
+                "job_spec_version": f"eq.{job_spec_version}",
+            },
+        )
+        if not rows:
+            return None
+        if len(rows) != 1 or not isinstance(rows[0].get("payload"), dict):
+            raise ProviderRequestError(
+                "Supabase returned invalid vendor research"
+            )
+        return JobVendorResearchV1.model_validate(deepcopy(rows[0]["payload"]))
+
+    def save_vendor_research(
+        self,
+        research: JobVendorResearchV1,
+    ) -> JobVendorResearchV1:
+        candidate = self._copy_vendor_research(research)
+        job = self._require_job(candidate.job_id)
+        if candidate.job_spec_version != job.job_spec.version:
+            raise DomainConflict(
+                "Vendor research JobSpec version does not match the job"
+            )
+        row_id = uuid5(
+            NAMESPACE_URL,
+            f"veramove-vendor-research:{candidate.job_id}:{candidate.job_spec_version}",
+        )
+        self._client.upsert(
+            "vendor_research",
+            {
+                "id": str(row_id),
+                "job_id": str(candidate.job_id),
+                "job_spec_version": candidate.job_spec_version,
+                "data_classification": (
+                    DataClassification.REAL_REDACTED.value
+                    if candidate.source == "tavily"
+                    else DataClassification.SYNTHETIC.value
+                ),
+                "payload": candidate.model_dump(mode="json"),
+                "created_at": candidate.created_at.isoformat(),
+                "updated_at": candidate.updated_at.isoformat(),
+            },
+            on_conflict="id",
+        )
+        return self._copy_vendor_research(candidate)
 
     def create_attempt(self, attempt: CallAttempt) -> CallAttempt:
         candidate = self._copy_attempt(attempt)
@@ -606,6 +660,14 @@ class SupabaseRepository:
             "created_at": record.created_at.isoformat(),
             "updated_at": record.updated_at.isoformat(),
         }
+
+    @staticmethod
+    def _copy_vendor_research(
+        research: JobVendorResearchV1,
+    ) -> JobVendorResearchV1:
+        return JobVendorResearchV1.model_validate(
+            deepcopy(research.model_dump(mode="json"))
+        )
 
     @staticmethod
     def _attempt_row(attempt: CallAttempt) -> dict[str, Any]:

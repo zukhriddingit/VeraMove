@@ -22,6 +22,7 @@ _ALLOWED_TABLES = frozenset(
         "transcript_evidence",
         "recommendations",
         "event_log",
+        "vendor_research",
     }
 )
 _ALLOWED_RPCS = frozenset(

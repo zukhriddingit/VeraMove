@@ -11,6 +11,7 @@ from uuid import UUID
 from services.api.app.contracts import (
     CallRecord,
     JobRecord,
+    JobVendorResearchV1,
     QuoteV1,
     VerificationStatus,
 )
@@ -47,6 +48,7 @@ class InMemoryRepository:
         self._attempts: dict[UUID, dict[str, Any]] = {}
         self._events: dict[UUID, list[dict[str, Any]]] = {}
         self._intake_sessions: dict[UUID, dict[str, Any]] = {}
+        self._vendor_research: dict[tuple[UUID, str], dict[str, Any]] = {}
         self._webhook_keys: set[str] = set()
         self._voice_webhook_receipts: dict[str, dict[str, Any]] = {}
         self._job_revisions: dict[UUID, int] = {}
@@ -79,6 +81,37 @@ class InMemoryRepository:
                 raise DomainConflict("Confirmed JobSpec version is locked and cannot be changed")
             self._jobs[job_id] = deepcopy(candidate.model_dump(mode="json"))
         return self._copy(candidate)
+
+    def get_vendor_research(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> JobVendorResearchV1 | None:
+        with self._lock:
+            payload = deepcopy(
+                self._vendor_research.get((job_id, job_spec_version))
+            )
+        return (
+            JobVendorResearchV1.model_validate(payload)
+            if payload is not None
+            else None
+        )
+
+    def save_vendor_research(
+        self,
+        research: JobVendorResearchV1,
+    ) -> JobVendorResearchV1:
+        candidate = self._copy_vendor_research(research)
+        with self._lock:
+            job = JobRecord.model_validate(self._require_job(candidate.job_id))
+            if candidate.job_spec_version != job.job_spec.version:
+                raise DomainConflict(
+                    "Vendor research JobSpec version does not match the job"
+                )
+            self._vendor_research[
+                (candidate.job_id, candidate.job_spec_version)
+            ] = deepcopy(candidate.model_dump(mode="json"))
+        return self._copy_vendor_research(candidate)
 
     def create_attempt(self, attempt: CallAttempt) -> CallAttempt:
         with self._lock:
@@ -568,6 +601,7 @@ class InMemoryRepository:
             self._attempts.clear()
             self._events.clear()
             self._intake_sessions.clear()
+            self._vendor_research.clear()
             self._webhook_keys.clear()
             self._voice_webhook_receipts.clear()
             self._job_revisions.clear()
@@ -597,6 +631,14 @@ class InMemoryRepository:
     @staticmethod
     def _copy(record: JobRecord) -> JobRecord:
         return JobRecord.model_validate(deepcopy(record.model_dump(mode="json")))
+
+    @staticmethod
+    def _copy_vendor_research(
+        research: JobVendorResearchV1,
+    ) -> JobVendorResearchV1:
+        return JobVendorResearchV1.model_validate(
+            deepcopy(research.model_dump(mode="json"))
+        )
 
     @staticmethod
     def _copy_attempt(attempt: CallAttempt) -> CallAttempt:

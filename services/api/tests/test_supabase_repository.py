@@ -16,8 +16,10 @@ from services.api.app.contracts import (
     IntakeSource,
     JobRecord,
     JobState,
+    JobVendorResearchV1,
     ProvenanceReference,
     ProvenanceType,
+    VendorSearchQuery,
     VerificationStatus,
 )
 from services.api.app.core.errors import (
@@ -64,6 +66,7 @@ class FakeSupabaseTableClient:
                 "recommendations",
                 "event_log",
                 "intake_sessions",
+                "vendor_research",
             )
         }
         self.operations: list[tuple[str, str, dict[str, Any]]] = []
@@ -252,6 +255,48 @@ def test_supabase_job_round_trip_and_confirmed_lock(
     )
     with pytest.raises(DomainConflict, match="locked"):
         repository.save(mutated)
+
+
+def test_supabase_vendor_research_round_trip_uses_separate_table(
+    repository,
+    table_client,
+    confirmed_record,
+    fixtures,
+):
+    repository.create(confirmed_record)
+    candidates = [
+        vendor.model_copy(
+            update={"data_classification": DataClassification.REAL_REDACTED},
+            deep=True,
+        )
+        for vendor in fixtures.load_vendors()
+    ]
+    research = JobVendorResearchV1(
+        job_id=confirmed_record.job_spec.job_id,
+        job_spec_version=confirmed_record.job_spec.version,
+        query=VendorSearchQuery(city="Newton", state="MA"),
+        candidates=candidates,
+        source="tavily",
+        created_at=FIXED_NOW,
+        updated_at=FIXED_NOW,
+    )
+
+    saved = repository.save_vendor_research(research)
+    saved.candidates.clear()
+    loaded = repository.get_vendor_research(
+        confirmed_record.job_spec.job_id,
+        confirmed_record.job_spec.version,
+    )
+
+    assert loaded is not None
+    assert len(loaded.candidates) == 3
+    assert len(table_client.tables["vendor_research"]) == 1
+    row = next(iter(table_client.tables["vendor_research"].values()))
+    assert row["job_id"] == str(confirmed_record.job_spec.job_id)
+    assert row["job_spec_version"] == "1.0"
+    assert row["data_classification"] == "real_redacted"
+    assert "calls" not in row["payload"]
+    assert "quotes" not in row["payload"]
 
 
 def test_supabase_create_maps_duplicate_job(repository, confirmed_record):

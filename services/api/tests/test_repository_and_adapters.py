@@ -10,9 +10,12 @@ import pytest
 from services.api.app.contracts import (
     CallRecord,
     CallStatus,
+    DataClassification,
     IntakeSource,
     JobRecord,
     JobState,
+    JobVendorResearchV1,
+    VendorSearchQuery,
     VerificationStatus,
 )
 from services.api.app.core.errors import DomainConflict
@@ -74,6 +77,41 @@ def test_repository_returns_defensive_copy(job_spec):
     stored = repository.get(job_spec.job_id)
     assert stored is not None
     assert stored.state is JobState.INTAKE_COMPLETE
+
+
+def test_memory_vendor_research_round_trip_is_independent_and_deep_copied(
+    fixtures,
+    job_spec,
+):
+    repository = InMemoryRepository()
+    record = make_confirmed_record(job_spec)
+    repository.create(record)
+    candidates = [
+        vendor.model_copy(
+            update={"data_classification": DataClassification.REAL_REDACTED},
+            deep=True,
+        )
+        for vendor in fixtures.load_vendors()
+    ]
+    research = JobVendorResearchV1(
+        job_id=job_spec.job_id,
+        job_spec_version=job_spec.version,
+        query=VendorSearchQuery(city="Newton", state="MA"),
+        candidates=candidates,
+        source="tavily",
+        created_at=record.updated_at,
+        updated_at=record.updated_at,
+    )
+
+    saved = repository.save_vendor_research(research)
+    saved.candidates.clear()
+    loaded = repository.get_vendor_research(job_spec.job_id, job_spec.version)
+
+    assert loaded is not None
+    assert len(loaded.candidates) == 3
+    assert repository.get(job_spec.job_id) == record
+    repository.reset()
+    assert repository.get_vendor_research(job_spec.job_id, job_spec.version) is None
 
 
 def test_repository_preserves_confirmed_snapshot_and_provider_reference(fixtures, job_spec):

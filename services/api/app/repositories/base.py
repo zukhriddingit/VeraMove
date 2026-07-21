@@ -14,6 +14,7 @@ from services.api.app.contracts import (
     IntakeSource,
     JobRecord,
     JobState,
+    JobVendorResearchV1,
     QuoteV1,
 )
 from services.api.app.orchestration.intake_sessions import (
@@ -356,6 +357,21 @@ class QuoteRepository(Protocol):
         target_vendor_id: UUID,
         job_spec_version: str,
     ) -> QuoteV1 | None: ...
+
+
+class VendorResearchRepository(Protocol):
+    """Research persistence isolated from call and quote aggregates."""
+
+    def get_vendor_research(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> JobVendorResearchV1 | None: ...
+
+    def save_vendor_research(
+        self,
+        research: JobVendorResearchV1,
+    ) -> JobVendorResearchV1: ...
 
 
 class IntakeSessionRepository(Protocol):
