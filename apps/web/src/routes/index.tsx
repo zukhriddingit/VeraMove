@@ -53,7 +53,11 @@ function Landing() {
           {/* Runtime + health surface — users always know what they're seeing. */}
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <RuntimeModeBadge />
-            <HealthIndicator onUseDemo={() => navigate({ to: "/confirm/$jobId", params: { jobId: DEMO_JOB_ID } })} />
+            <HealthIndicator
+              onUseDemo={() =>
+                setRuntimeMode("demo", { redirectTo: `/confirm/${DEMO_JOB_ID}` })
+              }
+            />
           </div>
 
           {isDemoMode && (
