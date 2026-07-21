@@ -109,11 +109,17 @@ def test_extract_truncates_content_before_returning_it():
 @pytest.mark.parametrize(
     "urls",
     [
-        (HttpUrl("https://a.example"),),
+        (),
         (
             HttpUrl("https://a.example"),
             HttpUrl("https://a.example"),
             HttpUrl("https://c.example"),
+        ),
+        (
+            HttpUrl("https://a.example"),
+            HttpUrl("https://b.example"),
+            HttpUrl("https://c.example"),
+            HttpUrl("https://d.example"),
         ),
         (
             HttpUrl("http://a.example"),
@@ -122,9 +128,23 @@ def test_extract_truncates_content_before_returning_it():
         ),
     ],
 )
-def test_extract_rejects_unsafe_or_non_three_url_input(urls):
+def test_extract_rejects_unsafe_or_out_of_bounds_url_input(urls):
     with pytest.raises(ProviderRequestError):
         _client(RecordingTransport({})).extract(urls)  # type: ignore[arg-type]
+
+
+def test_extract_allows_a_scoped_single_url_retry():
+    url = HttpUrl("https://a.example")
+    transport = RecordingTransport(
+        {
+            "results": [{"url": str(url), "raw_content": "Rate $149"}],
+            "failed_results": [],
+        }
+    )
+
+    pages = _client(transport).extract((url,))
+
+    assert pages[str(url)] is not None
 
 
 @pytest.mark.parametrize(
@@ -154,4 +174,3 @@ def test_extract_translates_unexpected_transport_failure():
             transport=FailingTransport(),
         ).extract(_urls())
     assert "secret provider detail" not in str(raised.value)
-

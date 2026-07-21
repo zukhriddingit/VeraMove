@@ -32,7 +32,7 @@ class ExtractedWebPage:
 class TavilyExtractClient(Protocol):
     def extract(
         self,
-        urls: tuple[HttpUrl, HttpUrl, HttpUrl],
+        urls: tuple[HttpUrl, ...],
     ) -> dict[str, ExtractedWebPage | None]: ...
 
 

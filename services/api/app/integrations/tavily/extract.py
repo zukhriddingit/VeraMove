@@ -39,7 +39,7 @@ class HttpxTavilyExtractTransport:
 
 
 class TavilyHttpExtractClient:
-    """Extract exactly three trusted pages and return only capped text."""
+    """Extract one to three trusted pages and return only capped text."""
 
     def __init__(
         self,
@@ -53,12 +53,12 @@ class TavilyHttpExtractClient:
 
     def extract(
         self,
-        urls: tuple[HttpUrl, HttpUrl, HttpUrl],
+        urls: tuple[HttpUrl, ...],
     ) -> dict[str, ExtractedWebPage | None]:
         normalized = [str(url) for url in urls]
-        if len(normalized) != 3 or len(set(normalized)) != 3:
+        if not 1 <= len(normalized) <= 3 or len(set(normalized)) != len(normalized):
             raise ProviderRequestError(
-                "Tavily extraction requires exactly three distinct URLs"
+                "Tavily extraction requires one to three distinct URLs"
             )
         if any(url.scheme != "https" for url in urls):
             raise ProviderRequestError("Tavily extraction requires HTTPS URLs")
@@ -88,7 +88,7 @@ class TavilyHttpExtractClient:
     @staticmethod
     def _parse(
         response: Any,
-        urls: tuple[HttpUrl, HttpUrl, HttpUrl],
+        urls: tuple[HttpUrl, ...],
     ) -> dict[str, ExtractedWebPage | None]:
         if not isinstance(response, dict):
             raise ProviderRequestError("Tavily returned a malformed extract response")
