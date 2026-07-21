@@ -41,6 +41,7 @@ from services.api.app.integrations.elevenlabs.models import (
 from services.api.app.intelligence.quotes import is_measurable_quote_improvement
 from services.api.app.intelligence.ranking import is_quote_eligible
 from services.api.app.orchestration.intake_sessions import (
+    IntakeDataMode,
     IntakeSession,
     IntakeSessionStatus,
 )
@@ -56,6 +57,7 @@ from services.api.app.repositories.base import (
     QuoteRepository,
     VoiceIntakeCompletion,
     VoiceIntakeFailure,
+    VoiceIntakeIncomplete,
     VoiceMaterializationRepository,
     VoiceWebhookLease,
     VoiceWebhookMaterialization,
@@ -67,6 +69,8 @@ from services.api.app.repositories.base import (
 VOICE_WEBHOOK_LEASE_SECONDS = 120
 MAX_INTAKE_LIST_ITEMS = 200
 MAX_SPECIAL_ITEM_LENGTH = 300
+_REDACTED_CITY_STATE = re.compile(r"^[A-Za-z][A-Za-z .'-]{0,98}, [A-Z]{2}$")
+_INTAKE_CONTROL_FIELDS = frozenset({"recording_consent", "summary_confirmed"})
 
 
 class VoiceMaterializer:
@@ -182,40 +186,61 @@ class VoiceMaterializer:
             return duplicate
         assert lease_token is not None
         try:
-            job_spec = _intake_job_spec(event, session)
-            if existing is not None and existing.job_spec != job_spec:
-                raise DomainConflict(
-                    "Intake session already owns a different canonical JobSpec"
+            if session.status is IntakeSessionStatus.INCOMPLETE:
+                raise DomainConflict("Incomplete intake session is already terminal")
+            if existing is not None:
+                raise DomainConflict("Intake session already owns a canonical JobSpec")
+            if event.collected_data.get("recording_consent") is not True:
+                canonical = _failed_intake_materialization(
+                    session,
+                    event,
+                    "consent_unavailable",
                 )
-            record = existing or JobRecord(
-                job_spec=job_spec,
-                state=JobState.INTAKE_COMPLETE,
-                created_at=event.event_timestamp,
-                updated_at=event.event_timestamp,
-            )
-            completed_session = session.model_copy(
-                update={
-                    "conversation_id": event.conversation_id,
-                    "status": IntakeSessionStatus.COMPLETED,
-                    "updated_at": event.event_timestamp,
-                    "completed_at": event.event_timestamp,
-                },
-                deep=True,
-            )
-            canonical = VoiceIntakeCompletion(
-                session=completed_session,
-                job=record,
-                event=JobEvent(
-                    event_id=uuid5(
-                        NAMESPACE_URL,
-                        f"voice-intake-event:{event.event_type}:{session.intake_session_id}",
-                    ),
-                    job_id=record.job_spec.job_id,
-                    event_type=event.event_type,
-                    occurred_at=event.event_timestamp,
-                    metadata={"provider_status": event.provider_status},
-                ),
-            )
+            elif not (
+                session.base_job_spec is not None
+                or _has_collected_move_fact(event.collected_data)
+            ):
+                canonical = _failed_intake_materialization(
+                    session,
+                    event,
+                    "no_move_facts",
+                )
+            else:
+                collected = _intake_job_spec(event, session, require_summary=False)
+                job_spec = _merge_intake_specs(
+                    session.base_job_spec,
+                    collected,
+                    event.collected_data,
+                )
+                missing_fields = tuple(job_spec.missing_required_fields())
+                if (
+                    event.collected_data.get("summary_confirmed") is True
+                    and not missing_fields
+                ):
+                    canonical = _completed_intake_materialization(
+                        session,
+                        event,
+                        job_spec,
+                    )
+                else:
+                    canonical = VoiceIntakeIncomplete(
+                        session=session.model_copy(
+                            update={
+                                "conversation_id": event.conversation_id,
+                                "status": IntakeSessionStatus.INCOMPLETE,
+                                "partial_job_spec": job_spec,
+                                "missing_fields": missing_fields,
+                                "terminal_reason": (
+                                    "missing_required_fields"
+                                    if event.collected_data.get("summary_confirmed") is True
+                                    else "user_ended_before_summary"
+                                ),
+                                "updated_at": event.event_timestamp,
+                            },
+                            deep=True,
+                        ),
+                        event_type=event.event_type,
+                    )
         except (DomainConflict, ValidationError):
             self._fail_receipt(
                 event.idempotency_key,
@@ -672,15 +697,33 @@ class _IntakeStore:
     def get(self, job_id: UUID) -> JobRecord | None:
         return self._jobs.get(job_id)
 
+    def claim_intake_resume(
+        self,
+        session_id: UUID,
+        child: IntakeSession,
+        now: datetime,
+    ) -> IntakeSession:
+        return self._sessions.claim_intake_resume(session_id, child, now)
+
+    def finish_intake_manually(
+        self,
+        session_id: UUID,
+        job: JobRecord,
+        now: datetime,
+    ) -> JobRecord:
+        return self._sessions.finish_intake_manually(session_id, job, now)
+
 
 def _intake_job_spec(
     event: VerifiedPostCallTranscription,
     session: IntakeSession,
+    *,
+    require_summary: bool = True,
 ) -> JobSpecV1:
     data = event.collected_data
     if data.get("recording_consent") is not True:
         raise DomainConflict("Voice intake requires recording consent")
-    if data.get("summary_confirmed") is not True:
+    if require_summary and data.get("summary_confirmed") is not True:
         raise DomainConflict("Voice intake requires confirmed summary readback")
     origin = OriginDestinationAccess(
         address_summary=_optional_string(data.get("origin_address_summary")),
@@ -711,7 +754,7 @@ def _intake_job_spec(
         ),
     )
     try:
-        return JobSpecV1(
+        result = JobSpecV1(
             job_id=session.job_id,
             intake_source=IntakeSource.VOICE,
             move_date=_optional_date(data.get("move_date")),
@@ -734,10 +777,201 @@ def _intake_job_spec(
             confirmed=False,
             confirmed_at=None,
             locked_version=None,
-            data_classification=DataClassification.ROLE_PLAY,
+            data_classification=(
+                DataClassification.REAL_REDACTED
+                if session.data_mode is IntakeDataMode.REAL_REDACTED
+                else DataClassification.ROLE_PLAY
+            ),
         )
     except ValidationError as exc:
         raise DomainConflict("Voice intake fields do not form a valid JobSpecV1") from exc
+    if session.data_mode is IntakeDataMode.REAL_REDACTED:
+        for access in (result.origin, result.destination):
+            if (
+                access.address_summary is not None
+                and _REDACTED_CITY_STATE.fullmatch(access.address_summary) is None
+            ):
+                raise DomainConflict(
+                    "Real-redacted voice intake requires city and state only"
+                )
+    return result
+
+
+def _completed_intake_materialization(
+    session: IntakeSession,
+    event: VerifiedPostCallTranscription,
+    job_spec: JobSpecV1,
+) -> VoiceIntakeCompletion:
+    record = JobRecord(
+        job_spec=job_spec,
+        state=JobState.INTAKE_COMPLETE,
+        created_at=event.event_timestamp,
+        updated_at=event.event_timestamp,
+    )
+    completed_session = session.model_copy(
+        update={
+            "conversation_id": event.conversation_id,
+            "status": IntakeSessionStatus.COMPLETED,
+            "updated_at": event.event_timestamp,
+            "completed_at": event.event_timestamp,
+        },
+        deep=True,
+    )
+    return VoiceIntakeCompletion(
+        session=completed_session,
+        job=record,
+        event=JobEvent(
+            event_id=uuid5(
+                NAMESPACE_URL,
+                f"voice-intake-event:{event.event_type}:{session.intake_session_id}",
+            ),
+            job_id=record.job_spec.job_id,
+            event_type=event.event_type,
+            occurred_at=event.event_timestamp,
+            metadata={"provider_status": event.provider_status},
+        ),
+    )
+
+
+def _failed_intake_materialization(
+    session: IntakeSession,
+    event: VerifiedPostCallTranscription,
+    failure_code: str,
+) -> VoiceIntakeFailure:
+    return VoiceIntakeFailure(
+        session=session.model_copy(
+            update={
+                "conversation_id": event.conversation_id,
+                "status": IntakeSessionStatus.FAILED,
+                "failure_code": failure_code,
+                "updated_at": event.event_timestamp,
+            },
+            deep=True,
+        ),
+        event_type=event.event_type,
+    )
+
+
+def _has_collected_move_fact(data: dict[str, Any]) -> bool:
+    return any(
+        key not in _INTAKE_CONTROL_FIELDS and value is not None
+        for key, value in data.items()
+    )
+
+
+def _merge_intake_specs(
+    base: JobSpecV1 | None,
+    collected: JobSpecV1,
+    collected_data: dict[str, Any],
+) -> JobSpecV1:
+    if base is None:
+        return collected
+
+    def choose(key: str, previous: Any, replacement: Any) -> Any:
+        if key in collected_data and collected_data[key] is not None:
+            return replacement
+        return previous
+
+    def merge_access(
+        previous: OriginDestinationAccess,
+        replacement: OriginDestinationAccess,
+        prefix: str,
+    ) -> OriginDestinationAccess:
+        return OriginDestinationAccess(
+            address_summary=choose(
+                f"{prefix}_address_summary",
+                previous.address_summary,
+                replacement.address_summary,
+            ),
+            dwelling_type=choose(
+                f"{prefix}_dwelling_type",
+                previous.dwelling_type,
+                replacement.dwelling_type,
+            ),
+            floors=choose(f"{prefix}_floors", previous.floors, replacement.floors),
+            stairs=choose(f"{prefix}_stairs", previous.stairs, replacement.stairs),
+            elevator_access=choose(
+                f"{prefix}_elevator_access",
+                previous.elevator_access,
+                replacement.elevator_access,
+            ),
+            parking_distance_feet=choose(
+                f"{prefix}_parking_distance_feet",
+                previous.parking_distance_feet,
+                replacement.parking_distance_feet,
+            ),
+            access_notes=previous.access_notes,
+        )
+
+    storage = choose("storage", base.services.storage, collected.services.storage)
+    storage_days = choose(
+        "storage_days",
+        base.services.storage_days,
+        collected.services.storage_days,
+    )
+    if storage is not True:
+        storage_days = None
+    merged = base.model_copy(
+        update={
+            "job_id": collected.job_id,
+            "intake_source": IntakeSource.VOICE,
+            "move_date": choose("move_date", base.move_date, collected.move_date),
+            "date_flexible": choose(
+                "date_flexible",
+                base.date_flexible,
+                collected.date_flexible,
+            ),
+            "origin": merge_access(base.origin, collected.origin, "origin"),
+            "destination": merge_access(
+                base.destination,
+                collected.destination,
+                "destination",
+            ),
+            "bedroom_count": choose(
+                "bedroom_count",
+                base.bedroom_count,
+                collected.bedroom_count,
+            ),
+            "inventory": choose(
+                "inventory_json",
+                base.inventory,
+                collected.inventory,
+            ),
+            "oversized_or_fragile_items": choose(
+                "special_items_json",
+                base.oversized_or_fragile_items,
+                collected.oversized_or_fragile_items,
+            ),
+            "services": MovingServices(
+                packing=choose(
+                    "packing",
+                    base.services.packing,
+                    collected.services.packing,
+                ),
+                disassembly=choose(
+                    "disassembly",
+                    base.services.disassembly,
+                    collected.services.disassembly,
+                ),
+                storage=storage,
+                storage_days=storage_days,
+            ),
+            "insurance_preference": choose(
+                "insurance_preference",
+                base.insurance_preference,
+                collected.insurance_preference,
+            ),
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+            "data_classification": collected.data_classification,
+        },
+        deep=True,
+    )
+    try:
+        return JobSpecV1.model_validate(merged.model_dump(mode="json"))
+    except ValidationError as exc:
+        raise DomainConflict("Resumed voice intake does not form a valid JobSpecV1") from exc
 
 
 def _inventory(value: Any, session_id: UUID) -> list[InventoryItem]:

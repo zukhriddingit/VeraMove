@@ -26,6 +26,8 @@ from services.api.app.integrations.elevenlabs.webhook import ElevenLabsWebhookPr
 from services.api.app.integrations.openai.mock import MockNegotiationGateway
 from services.api.app.integrations.tavily.mock import MockVendorDiscoveryGateway
 from services.api.app.orchestration.intake_sessions import (
+    IntakeDataMode,
+    IntakeSession,
     IntakeSessionService,
     IntakeSessionStatus,
 )
@@ -388,6 +390,180 @@ def test_signed_intake_completion_creates_one_unconfirmed_voice_job(fixtures):
     persisted = repr(repository._jobs) + repr(repository._intake_sessions)
     assert "Synthetic caller transcript" not in persisted
     assert "+15550101001" not in persisted
+
+
+def test_early_end_materializes_structured_incomplete_real_redacted_intake(fixtures):
+    service, repository = _service(fixtures)
+    sessions = IntakeSessionService(
+        repository,
+        expected_agent_id=INTAKE_AGENT_ID,
+        agent_config_version=CONFIG_VERSION,
+        clock=lambda: NOW,
+    )
+    session_view = sessions.create_web_session(data_mode=IntakeDataMode.REAL_REDACTED)
+    conversation_id = "conv_synthetic_incomplete_intake"
+    sessions.attach_conversation(
+        session_view.intake_session_id,
+        conversation_id,
+        agent_id=INTAKE_AGENT_ID,
+    )
+    body = _provider_body(
+        agent_id=INTAKE_AGENT_ID,
+        conversation_id=conversation_id,
+        dynamic_variables={
+            "job_id": str(session_view.job_id),
+            "intake_session_id": str(session_view.intake_session_id),
+            "agent_config_version": CONFIG_VERSION,
+        },
+        collected_data={
+            "recording_consent": True,
+            "summary_confirmed": False,
+            "move_date": "2026-08-27",
+            "date_flexible": True,
+            "origin_address_summary": "Boston, MA",
+            "origin_stairs": 5,
+        },
+        transcript=[
+            {
+                "role": "user",
+                "message": "This transient partial interview must not persist.",
+                "time_in_call_secs": 5,
+            }
+        ],
+    )
+
+    acknowledgement = service.handle_elevenlabs_webhook(body, _sign(body))
+
+    assert acknowledgement.accepted is True
+    assert repository.get(session_view.job_id) is None
+    stored = repository.get_intake_session(session_view.intake_session_id)
+    assert stored is not None
+    assert stored.status is IntakeSessionStatus.INCOMPLETE
+    assert stored.partial_job_spec is not None
+    assert stored.partial_job_spec.move_date.isoformat() == "2026-08-27"
+    assert stored.partial_job_spec.data_classification is DataClassification.REAL_REDACTED
+    assert "destination.address_summary" in stored.missing_fields
+    assert "transient partial interview" not in repr(repository._intake_sessions)
+
+
+def test_incomplete_summary_and_declined_consent_reach_explicit_terminal_states(fixtures):
+    for suffix, collected_data, expected_status, expected_reason in (
+        (
+            "missing",
+            {
+                "recording_consent": True,
+                "summary_confirmed": True,
+                "move_date": "2026-08-27",
+            },
+            IntakeSessionStatus.INCOMPLETE,
+            "missing_required_fields",
+        ),
+        (
+            "consent",
+            {"recording_consent": False},
+            IntakeSessionStatus.FAILED,
+            "consent_unavailable",
+        ),
+    ):
+        service, repository = _service(fixtures)
+        sessions = IntakeSessionService(
+            repository,
+            expected_agent_id=INTAKE_AGENT_ID,
+            agent_config_version=CONFIG_VERSION,
+            clock=lambda: NOW,
+        )
+        session_view = sessions.create_web_session()
+        conversation_id = f"conv_synthetic_terminal_{suffix}"
+        sessions.attach_conversation(
+            session_view.intake_session_id,
+            conversation_id,
+            agent_id=INTAKE_AGENT_ID,
+        )
+        body = _provider_body(
+            agent_id=INTAKE_AGENT_ID,
+            conversation_id=conversation_id,
+            dynamic_variables={
+                "job_id": str(session_view.job_id),
+                "intake_session_id": str(session_view.intake_session_id),
+                "agent_config_version": CONFIG_VERSION,
+            },
+            collected_data=collected_data,
+            has_audio=False,
+        )
+
+        assert service.handle_elevenlabs_webhook(body, _sign(body)).accepted is True
+        stored = repository.get_intake_session(session_view.intake_session_id)
+        assert stored is not None and stored.status is expected_status
+        if expected_status is IntakeSessionStatus.INCOMPLETE:
+            assert stored.terminal_reason == expected_reason
+        else:
+            assert stored.failure_code == expected_reason
+        assert repository.get(session_view.job_id) is None
+
+
+def test_resumed_completion_merges_new_values_over_structured_base(fixtures):
+    service, repository = _service(fixtures)
+    child_job_id = uuid4()
+    base = fixtures.load_job().model_copy(
+        update={
+            "job_id": child_job_id,
+            "intake_source": IntakeSource.VOICE,
+            "destination": fixtures.load_job().destination.model_copy(
+                update={"address_summary": None},
+                deep=True,
+            ),
+            "data_classification": DataClassification.ROLE_PLAY,
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+        },
+        deep=True,
+    )
+    child = IntakeSession(
+        job_id=child_job_id,
+        expected_agent_id=INTAKE_AGENT_ID,
+        agent_config_version=CONFIG_VERSION,
+        base_job_spec=base,
+        resumed_from_session_id=uuid4(),
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    repository.create_intake_session(child)
+    sessions = IntakeSessionService(
+        repository,
+        expected_agent_id=INTAKE_AGENT_ID,
+        agent_config_version=CONFIG_VERSION,
+        clock=lambda: NOW,
+    )
+    conversation_id = "conv_synthetic_resumed_intake"
+    sessions.attach_conversation(
+        child.intake_session_id,
+        conversation_id,
+        agent_id=INTAKE_AGENT_ID,
+    )
+    body = _provider_body(
+        agent_id=INTAKE_AGENT_ID,
+        conversation_id=conversation_id,
+        dynamic_variables={
+            "job_id": str(child.job_id),
+            "intake_session_id": str(child.intake_session_id),
+            "agent_config_version": CONFIG_VERSION,
+        },
+        collected_data={
+            "recording_consent": True,
+            "summary_confirmed": True,
+            "destination_address_summary": "Cambridge, MA",
+        },
+    )
+
+    acknowledgement = service.handle_elevenlabs_webhook(body, _sign(body))
+
+    assert acknowledgement.accepted is True
+    completed = service.get_job(child.job_id).job_spec
+    assert completed.move_date == base.move_date
+    assert completed.inventory == base.inventory
+    assert completed.destination.address_summary == "Cambridge, MA"
+    assert completed.missing_required_fields() == []
 
 
 def test_signed_intake_normalizes_real_provider_inventory_and_dwelling(fixtures):
