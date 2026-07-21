@@ -51,7 +51,69 @@ from services.api.app.repositories.base import (
     VendorResearchRepository,
 )
 
-_CITY_STATE = re.compile(r"^(?P<city>[A-Za-z][A-Za-z .'-]{0,98}), (?P<state>[A-Z]{2})$")
+_CITY_STATE = re.compile(
+    r"^(?P<city>[A-Za-z][A-Za-z .'-]{0,98}), (?P<state>[A-Za-z][A-Za-z .'-]{1,49})$"
+)
+_US_STATE_ABBREVIATIONS = {
+    "alabama": "AL",
+    "alaska": "AK",
+    "arizona": "AZ",
+    "arkansas": "AR",
+    "california": "CA",
+    "colorado": "CO",
+    "connecticut": "CT",
+    "delaware": "DE",
+    "district of columbia": "DC",
+    "d.c.": "DC",
+    "florida": "FL",
+    "georgia": "GA",
+    "hawaii": "HI",
+    "idaho": "ID",
+    "illinois": "IL",
+    "indiana": "IN",
+    "iowa": "IA",
+    "kansas": "KS",
+    "kentucky": "KY",
+    "louisiana": "LA",
+    "maine": "ME",
+    "maryland": "MD",
+    "massachusetts": "MA",
+    "michigan": "MI",
+    "minnesota": "MN",
+    "mississippi": "MS",
+    "missouri": "MO",
+    "montana": "MT",
+    "nebraska": "NE",
+    "nevada": "NV",
+    "new hampshire": "NH",
+    "new jersey": "NJ",
+    "new mexico": "NM",
+    "new york": "NY",
+    "north carolina": "NC",
+    "north dakota": "ND",
+    "ohio": "OH",
+    "oklahoma": "OK",
+    "oregon": "OR",
+    "pennsylvania": "PA",
+    "rhode island": "RI",
+    "south carolina": "SC",
+    "south dakota": "SD",
+    "tennessee": "TN",
+    "texas": "TX",
+    "utah": "UT",
+    "vermont": "VT",
+    "virginia": "VA",
+    "washington": "WA",
+    "west virginia": "WV",
+    "wisconsin": "WI",
+    "wyoming": "WY",
+    "puerto rico": "PR",
+    "guam": "GU",
+    "american samoa": "AS",
+    "u.s. virgin islands": "VI",
+    "northern mariana islands": "MP",
+}
+_US_STATE_CODES = frozenset(_US_STATE_ABBREVIATIONS.values())
 _HTTP_URL = TypeAdapter(HttpUrl)
 
 
@@ -538,7 +600,15 @@ class VendorResearchService:
             raise DomainConflict(
                 "Vendor discovery requires origin and destination as city and state only"
             )
-        return match.group("city"), match.group("state")
+        state_text = match.group("state").strip()
+        state_code = state_text.upper() if len(state_text) == 2 else None
+        if state_code not in _US_STATE_CODES:
+            state_code = _US_STATE_ABBREVIATIONS.get(state_text.casefold())
+        if state_code is None:
+            raise DomainConflict(
+                "Vendor discovery requires origin and destination as city and state only"
+            )
+        return match.group("city").strip(), state_code
 
     def _build_query(self, job: JobRecord) -> VendorSearchQuery:
         origin_city, origin_state = self._city_state(
