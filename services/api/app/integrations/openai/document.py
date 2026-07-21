@@ -43,10 +43,21 @@ def _normalize_document_result(
         if isinstance(response, DocumentParseResult)
         else deepcopy(response)
     )
-    job_spec = JobSpecV1.model_validate(payload.get("job_spec")).model_copy(
-        update={"job_id": uuid4()},
-        deep=True,
-    )
+    model_job_spec = payload.get("job_spec")
+    if not isinstance(model_job_spec, dict):
+        raise ValueError("document result must contain a JobSpec object")
+
+    # Provider output supplies facts, never canonical identities. Structured-output
+    # schemas omit UUID format because OpenAI does not support that constraint, so
+    # replace model-authored IDs before strict application validation.
+    model_job_spec["job_id"] = uuid4()
+    inventory = model_job_spec.get("inventory")
+    if isinstance(inventory, list):
+        for item in inventory:
+            if isinstance(item, dict):
+                item["item_id"] = uuid4()
+
+    job_spec = JobSpecV1.model_validate(model_job_spec)
     payload["job_spec"] = job_spec.model_dump(mode="python")
     payload["missing_fields"] = job_spec.missing_required_fields()
     return DocumentParseResult.model_validate(payload)
