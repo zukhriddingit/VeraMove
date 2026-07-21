@@ -76,13 +76,11 @@ class OpenAIWebsiteClaimExtractor:
         claims: list[WebsiteResearchClaimV1] = []
         for draft in result.claims:
             if draft.source_excerpt not in page.content:
-                raise ProviderRequestError(
-                    "OpenAI returned an unsupported source excerpt"
-                )
+                continue
             if self._contains_contact_data(draft.summary) or self._contains_contact_data(
                 draft.source_excerpt
             ):
-                raise ProviderRequestError("OpenAI returned unsupported contact data")
+                continue
             claim_id = uuid5(
                 NAMESPACE_URL,
                 "|".join(

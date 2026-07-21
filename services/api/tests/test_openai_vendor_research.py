@@ -127,7 +127,7 @@ def test_request_uses_strict_schema_and_untrusted_data_delimiters(vendor, page):
     assert usage.snapshot()[0].capability == "vendor_website_research"
 
 
-def test_extractor_rejects_excerpt_not_present_in_page(vendor, page):
+def test_extractor_discards_excerpt_not_present_in_page(vendor, page):
     extractor, _ = _extractor(
         _completed(
             {
@@ -146,11 +146,10 @@ def test_extractor_rejects_excerpt_not_present_in_page(vendor, page):
         )
     )
 
-    with pytest.raises(ProviderRequestError, match="unsupported source excerpt"):
-        extractor.extract(vendor, page, NOW)
+    assert extractor.extract(vendor, page, NOW) == []
 
 
-def test_extractor_rejects_contact_data_in_persisted_claim(vendor, page):
+def test_extractor_discards_contact_data_in_persisted_claim(vendor, page):
     contact_page = ExtractedWebPage(
         url=page.url,
         content="Call +1 617 555 0199 for a moving quote.",
@@ -174,8 +173,41 @@ def test_extractor_rejects_contact_data_in_persisted_claim(vendor, page):
         )
     )
 
-    with pytest.raises(ProviderRequestError, match="contact data"):
-        extractor.extract(vendor, contact_page, NOW)
+    assert extractor.extract(vendor, contact_page, NOW) == []
+
+
+def test_extractor_keeps_valid_claims_when_another_draft_is_unsupported(vendor, page):
+    extractor, _ = _extractor(
+        _completed(
+            {
+                "claims": [
+                    {
+                        "kind": "hourly_rate",
+                        "summary": "Moving services start at $149 per hour.",
+                        "advertised_amount": "149.00",
+                        "currency": "USD",
+                        "unit": "hour",
+                        "qualifiers": ["starting at", "two movers"],
+                        "source_excerpt": "Moving services starting at $149/hour for two movers.",
+                    },
+                    {
+                        "kind": "other",
+                        "summary": "Unsupported invented detail.",
+                        "advertised_amount": None,
+                        "currency": None,
+                        "unit": None,
+                        "qualifiers": [],
+                        "source_excerpt": "This exact sentence is not on the webpage.",
+                    },
+                ]
+            }
+        )
+    )
+
+    claims = extractor.extract(vendor, page, NOW)
+
+    assert len(claims) == 1
+    assert claims[0].kind.value == "hourly_rate"
 
 
 def test_extractor_rejects_invalid_structured_output(vendor, page):
@@ -195,4 +227,3 @@ def test_mock_extractor_is_stable_source_backed_and_network_free(vendor, page):
     assert first
     assert all(item.source_excerpt in page.content for item in first)
     assert all(item.classification == "unverified_website_claim" for item in first)
-
