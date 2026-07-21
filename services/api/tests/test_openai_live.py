@@ -226,6 +226,7 @@ def test_document_parser_supports_plain_text_and_enforces_postconditions(fixture
     result["job_spec"]["job_id"] = "model-authored-job-id"
     for index, item in enumerate(result["job_spec"]["inventory"]):
         item["item_id"] = f"model-authored-item-{index}"
+        item["room"] = ""
     model_supplied_job_id = result["job_spec"]["job_id"]
     model_supplied_item_ids = {
         item["item_id"] for item in result["job_spec"]["inventory"]
@@ -252,6 +253,7 @@ def test_document_parser_supports_plain_text_and_enforces_postconditions(fixture
     assert not model_supplied_item_ids.intersection(
         str(item.item_id) for item in parsed.job_spec.inventory
     )
+    assert {item.room for item in parsed.job_spec.inventory} == {"Unspecified"}
 
     second = parser.parse_document(
         b"SYNTHETIC two-bedroom move",

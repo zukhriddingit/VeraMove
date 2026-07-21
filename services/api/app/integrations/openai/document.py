@@ -28,7 +28,8 @@ Return the strict DocumentParseResult schema. Use the same JobSpecV1 contract as
 Never infer or default dates, stairs, elevators, floors, parking, carry distance, inventory,
 services, insurance, fees, or availability. Missing facts must remain null or empty and must be
 listed in missing_fields. Add ambiguous facts to fields_requiring_confirmation and explain them
-in warnings. Attach field-level document provenance where practical. Never mark the JobSpec as
+in warnings. When an inventory item's room is not stated, use the canonical room label
+`Unspecified`. Attach field-level document provenance where practical. Never mark the JobSpec as
 confirmed or locked.
 """
 
@@ -56,6 +57,9 @@ def _normalize_document_result(
         for item in inventory:
             if isinstance(item, dict):
                 item["item_id"] = uuid4()
+                room = item.get("room")
+                if not isinstance(room, str) or not room.strip():
+                    item["room"] = "Unspecified"
 
     job_spec = JobSpecV1.model_validate(model_job_spec)
     payload["job_spec"] = job_spec.model_dump(mode="python")
