@@ -162,11 +162,71 @@ class VendorSuppressionV1(ContractModel):
         return self
 
 
+class VendorCallPlanWebsiteClaimV1(ContractModel):
+    """A bounded unverified website claim supplied as call context, never evidence."""
+
+    claim_id: UUID
+    kind: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    summary: str = Field(min_length=1, max_length=300)
+    source_url: HttpUrl
+    classification: Literal["unverified_website_claim"] = (
+        "unverified_website_claim"
+    )
+
+
+class VendorCallPlanQuestionV1(ContractModel):
+    """One targeted question copied from the deterministic verification plan."""
+
+    question_id: UUID
+    category: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    question: str = Field(min_length=1, max_length=500)
+    reason: Literal[
+        "published_claim",
+        "missing_information",
+        "ambiguous_claim",
+    ]
+    claim_ids: list[UUID] = Field(default_factory=list, max_length=20)
+
+
+class VendorCallPlanV1(ContractModel):
+    """Deterministic, capped quote-call agenda for one locked JobSpec."""
+
+    plan_version: Literal["1.0"] = "1.0"
+    vendor_id: UUID
+    job_spec_version: Literal["1.0"]
+    job_spec_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    website_claims: list[VendorCallPlanWebsiteClaimV1] = Field(
+        default_factory=list,
+        max_length=5,
+    )
+    source_urls: list[HttpUrl] = Field(default_factory=list, max_length=5)
+    questions: list[VendorCallPlanQuestionV1] = Field(
+        min_length=1,
+        max_length=20,
+    )
+
+    @model_validator(mode="after")
+    def validate_plan(self) -> VendorCallPlanV1:
+        if len(self.source_urls) != len({str(url) for url in self.source_urls}):
+            raise ValueError("call plan source URLs must be distinct")
+        if len(self.questions) != len(
+            {question.question_id for question in self.questions}
+        ):
+            raise ValueError("call plan questions must be distinct")
+        payload = repr(self.model_dump(mode="json"))
+        if re.search(r"\+1[2-9]\d{9}", payload):
+            raise ValueError("call plans cannot contain destination numbers")
+        return self
+
+
 __all__ = [
     "CallContext",
     "ConsentMethod",
     "SuppressionReason",
     "VendorCallAuthorizationV1",
+    "VendorCallPlanV1",
+    "VendorCallPlanQuestionV1",
+    "VendorCallPlanWebsiteClaimV1",
     "VendorContactCandidateV1",
     "VendorSuppressionV1",
 ]
