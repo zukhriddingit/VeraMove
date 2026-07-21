@@ -12,11 +12,14 @@ from services.api.app.contracts import (
     CallRecord,
     DataClassification,
     JobRecord,
+    JobState,
     JobVendorResearchV1,
     QuoteV1,
     RecommendationV1,
     TranscriptEvidence,
     Vendor,
+    VendorCallAuthorizationV1,
+    VendorSuppressionV1,
     VerificationStatus,
 )
 from services.api.app.core.errors import (
@@ -26,7 +29,9 @@ from services.api.app.core.errors import (
     ResourceNotFound,
 )
 from services.api.app.orchestration.intake_sessions import (
+    IntakeRecoveryAction,
     IntakeSession,
+    IntakeSessionStatus,
     validate_intake_session_update,
 )
 from services.api.app.orchestration.models import CallAttempt, JobEvent
@@ -153,6 +158,175 @@ class SupabaseRepository:
             on_conflict="id",
         )
         return self._copy_vendor_research(candidate)
+
+    def get_vendor_call_authorization(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+        vendor_id: UUID,
+    ) -> VendorCallAuthorizationV1 | None:
+        rows = self._client.select_many(
+            "vendor_call_authorizations",
+            {
+                "job_id": f"eq.{job_id}",
+                "job_spec_version": f"eq.{job_spec_version}",
+                "vendor_id": f"eq.{vendor_id}",
+            },
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise ProviderRequestError(
+                "Supabase returned duplicate vendor call authorizations"
+            )
+        return self._authorization_from_row(rows[0])
+
+    def list_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> list[VendorCallAuthorizationV1]:
+        rows = self._client.select_many(
+            "vendor_call_authorizations",
+            {
+                "job_id": f"eq.{job_id}",
+                "job_spec_version": f"eq.{job_spec_version}",
+            },
+        )
+        return sorted(
+            (self._authorization_from_row(row) for row in rows),
+            key=lambda item: str(item.vendor_id),
+        )
+
+    def save_vendor_call_authorization(
+        self,
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1:
+        candidate = self._copy_vendor_call_authorization(authorization)
+        job = self._require_job(candidate.job_id)
+        if (
+            not job.job_spec.confirmed
+            or job.job_spec.locked_version != candidate.job_spec_version
+            or job.job_spec.version != candidate.job_spec_version
+        ):
+            raise DomainConflict(
+                "Vendor call authorization requires the locked JobSpec version"
+            )
+        existing = self.get_vendor_call_authorization(
+            candidate.job_id,
+            candidate.job_spec_version,
+            candidate.vendor_id,
+        )
+        if existing is not None:
+            if existing != candidate:
+                raise DomainConflict(
+                    "Vendor call authorization is immutable for this JobSpec"
+                )
+            return existing
+        try:
+            self._client.insert(
+                "vendor_call_authorizations",
+                {
+                    "id": str(candidate.authorization_id),
+                    "job_id": str(candidate.job_id),
+                    "job_spec_version": candidate.job_spec_version,
+                    "job_spec_sha256": candidate.job_spec_sha256,
+                    "vendor_id": str(candidate.vendor_id),
+                    "contact_id": str(candidate.contact_id),
+                    "normalized_number": candidate.normalized_number,
+                    "display_number": candidate.display_number,
+                    "number_hash": candidate.number_hash,
+                    "recipient_timezone": candidate.recipient_timezone,
+                    "consent_method": candidate.consent_method.value,
+                    "consent_evidence_reference": (
+                        candidate.consent_evidence_reference
+                    ),
+                    "consented_at": candidate.consented_at.isoformat(),
+                    "ai_call_consented": candidate.ai_call_consented,
+                    "recording_consented": candidate.recording_consented,
+                    "source_url": str(candidate.source_url),
+                    "created_at": candidate.created_at.isoformat(),
+                },
+            )
+        except SupabaseDuplicate as exc:
+            raise DomainConflict(
+                "Vendor call destination is already authorized for this JobSpec"
+            ) from exc
+        return self._copy_vendor_call_authorization(candidate)
+
+    def clear_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> None:
+        if any(
+            attempt.job_spec_version == job_spec_version
+            and attempt.authorization_id is not None
+            for attempt in self.list_attempts(job_id)
+        ):
+            raise DomainConflict(
+                "Vendor call authorizations cannot change after dispatch begins"
+            )
+        self._client.delete_many(
+            "vendor_call_authorizations",
+            {
+                "job_id": f"eq.{job_id}",
+                "job_spec_version": f"eq.{job_spec_version}",
+            },
+        )
+
+    def get_vendor_suppression(
+        self,
+        number_hash: str,
+    ) -> VendorSuppressionV1 | None:
+        rows = self._client.select_many(
+            "vendor_call_suppressions",
+            {"number_hash": f"eq.{number_hash}"},
+        )
+        if not rows:
+            return None
+        if len(rows) != 1:
+            raise ProviderRequestError("Supabase returned duplicate suppressions")
+        try:
+            return VendorSuppressionV1(
+                number_hash=rows[0]["number_hash"],
+                reason=rows[0]["reason"],
+                created_at=rows[0]["created_at"],
+            )
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError(
+                "Supabase returned an invalid vendor suppression"
+            ) from exc
+
+    def save_vendor_suppression(
+        self,
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1:
+        candidate = self._copy_vendor_suppression(suppression)
+        existing = self.get_vendor_suppression(candidate.number_hash)
+        if existing is not None:
+            return existing
+        try:
+            self._client.insert(
+                "vendor_call_suppressions",
+                {
+                    "id": str(
+                        uuid5(
+                            NAMESPACE_URL,
+                            f"veramove-vendor-suppression:{candidate.number_hash}",
+                        )
+                    ),
+                    **candidate.model_dump(mode="json"),
+                },
+            )
+        except SupabaseDuplicate as exc:
+            existing = self.get_vendor_suppression(candidate.number_hash)
+            if existing is None:
+                raise ProviderRequestError(
+                    "Supabase suppression conflict could not be resolved"
+                ) from exc
+            return existing
+        return self._copy_vendor_suppression(candidate)
 
     def create_attempt(self, attempt: CallAttempt) -> CallAttempt:
         candidate = self._copy_attempt(attempt)
@@ -400,6 +574,7 @@ class SupabaseRepository:
             {
                 "p_idempotency_key": request.idempotency_key,
                 "p_lease_token": str(request.lease_token),
+                "p_schema_version": "2026-07-21.2",
                 "p_kind": candidate.kind,
                 "p_session": session_row,
                 "p_job": job_row,
@@ -596,6 +771,80 @@ class SupabaseRepository:
             raise ProviderRequestError("Supabase returned an invalid intake reservation")
         return self._intake_session_from_row(payload)
 
+    def claim_intake_resume(
+        self,
+        session_id: UUID,
+        child: IntakeSession,
+        now: datetime,
+    ) -> IntakeSession:
+        source = self.get_intake_session(session_id)
+        if source is None:
+            raise ResourceNotFound(f"Intake session {session_id} was not found")
+        if source.recovery_action is IntakeRecoveryAction.RESUME:
+            assert source.recovery_target_id is not None
+            existing = self.get_intake_session(source.recovery_target_id)
+            if existing is None:
+                raise DomainConflict("Intake resume target is missing")
+            return existing
+        if source.recovery_action is not None:
+            raise DomainConflict("Incomplete intake already has a recovery action")
+        _validate_resume_candidate(source, child, now)
+        payload = self._client.rpc(
+            "veramove_claim_intake_resume",
+            {
+                "p_session_id": str(session_id),
+                "p_child": self._intake_session_row(child),
+                "p_now": now.isoformat(),
+            },
+        )
+        if not isinstance(payload, dict):
+            raise ProviderRequestError("Supabase returned an invalid intake resume")
+        try:
+            saved = self._intake_session_from_row(payload)
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError("Supabase returned an invalid intake resume") from exc
+        if saved != child:
+            raise ProviderRequestError("Supabase intake resume did not match the request")
+        return saved
+
+    def finish_intake_manually(
+        self,
+        session_id: UUID,
+        job: JobRecord,
+        now: datetime,
+    ) -> JobRecord:
+        source = self.get_intake_session(session_id)
+        if source is None:
+            raise ResourceNotFound(f"Intake session {session_id} was not found")
+        if source.recovery_action is IntakeRecoveryAction.MANUAL:
+            assert source.recovery_target_id is not None
+            existing = self.get(source.recovery_target_id)
+            if existing is None:
+                raise DomainConflict("Manual intake recovery job is missing")
+            return existing
+        if source.recovery_action is not None:
+            raise DomainConflict("Incomplete intake already has a recovery action")
+        _validate_manual_candidate(source, job, now)
+        payload = self._client.rpc(
+            "veramove_finish_intake_manually",
+            {
+                "p_session_id": str(session_id),
+                "p_job": self._job_row(job),
+                "p_now": now.isoformat(),
+            },
+        )
+        if not isinstance(payload, dict):
+            raise ProviderRequestError("Supabase returned an invalid manual intake job")
+        try:
+            saved = JobRecord.model_validate(deepcopy(payload["payload"]))
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError(
+                "Supabase returned an invalid manual intake job"
+            ) from exc
+        if saved != job:
+            raise ProviderRequestError("Supabase manual intake job did not match the request")
+        return saved
+
     def reset(self) -> None:
         raise RuntimeError("SupabaseRepository reset is disabled")
 
@@ -670,6 +919,51 @@ class SupabaseRepository:
         )
 
     @staticmethod
+    def _copy_vendor_call_authorization(
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1:
+        return VendorCallAuthorizationV1.model_validate(
+            deepcopy(authorization.model_dump(mode="json"))
+        )
+
+    @staticmethod
+    def _copy_vendor_suppression(
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1:
+        return VendorSuppressionV1.model_validate(
+            deepcopy(suppression.model_dump(mode="json"))
+        )
+
+    @staticmethod
+    def _authorization_from_row(
+        row: dict[str, Any],
+    ) -> VendorCallAuthorizationV1:
+        try:
+            return VendorCallAuthorizationV1(
+                authorization_id=row["id"],
+                job_id=row["job_id"],
+                job_spec_version=row["job_spec_version"],
+                job_spec_sha256=row["job_spec_sha256"],
+                vendor_id=row["vendor_id"],
+                contact_id=row["contact_id"],
+                normalized_number=row["normalized_number"],
+                display_number=row["display_number"],
+                number_hash=row["number_hash"],
+                recipient_timezone=row["recipient_timezone"],
+                consent_method=row["consent_method"],
+                consent_evidence_reference=row["consent_evidence_reference"],
+                consented_at=row["consented_at"],
+                ai_call_consented=row["ai_call_consented"],
+                recording_consented=row["recording_consented"],
+                source_url=row["source_url"],
+                created_at=row["created_at"],
+            )
+        except (KeyError, ValueError) as exc:
+            raise ProviderRequestError(
+                "Supabase returned an invalid vendor call authorization"
+            ) from exc
+
+    @staticmethod
     def _attempt_row(attempt: CallAttempt) -> dict[str, Any]:
         return {
             "id": str(attempt.call_id),
@@ -695,6 +989,17 @@ class SupabaseRepository:
                 else {}
             ),
             "provider_version_id": attempt.provider_version_id,
+            "call_context": attempt.call_context.value,
+            "authorization_id": (
+                str(attempt.authorization_id)
+                if attempt.authorization_id is not None
+                else None
+            ),
+            "call_plan": (
+                attempt.call_plan.model_dump(mode="json")
+                if attempt.call_plan is not None
+                else None
+            ),
             "status": attempt.status.value,
             "data_classification": attempt.vendor.data_classification.value,
             "payload": attempt.model_dump(mode="json"),
@@ -711,7 +1016,35 @@ class SupabaseRepository:
             "conversation_id": session.conversation_id,
             "expected_agent_id": session.expected_agent_id,
             "agent_config_version": session.agent_config_version,
+            "data_mode": session.data_mode.value,
             "status": session.status.value,
+            "partial_job_spec": (
+                session.partial_job_spec.model_dump(mode="json")
+                if session.partial_job_spec is not None
+                else None
+            ),
+            "base_job_spec": (
+                session.base_job_spec.model_dump(mode="json")
+                if session.base_job_spec is not None
+                else None
+            ),
+            "missing_fields": list(session.missing_fields),
+            "terminal_reason": session.terminal_reason,
+            "recovery_action": (
+                session.recovery_action.value
+                if session.recovery_action is not None
+                else None
+            ),
+            "recovery_target_id": (
+                str(session.recovery_target_id)
+                if session.recovery_target_id is not None
+                else None
+            ),
+            "resumed_from_session_id": (
+                str(session.resumed_from_session_id)
+                if session.resumed_from_session_id is not None
+                else None
+            ),
             "failure_code": session.failure_code,
             "created_at": session.created_at.isoformat(),
             "updated_at": session.updated_at.isoformat(),
@@ -847,7 +1180,15 @@ class SupabaseRepository:
                 "conversation_id": row.get("conversation_id"),
                 "expected_agent_id": row["expected_agent_id"],
                 "agent_config_version": row["agent_config_version"],
+                "data_mode": row.get("data_mode", "supervised_role_play"),
                 "status": row["status"],
+                "partial_job_spec": row.get("partial_job_spec"),
+                "base_job_spec": row.get("base_job_spec"),
+                "missing_fields": row.get("missing_fields") or [],
+                "terminal_reason": row.get("terminal_reason"),
+                "recovery_action": row.get("recovery_action"),
+                "recovery_target_id": row.get("recovery_target_id"),
+                "resumed_from_session_id": row.get("resumed_from_session_id"),
                 "failure_code": row.get("failure_code"),
                 "created_at": row["created_at"],
                 "updated_at": row["updated_at"],
@@ -857,6 +1198,49 @@ class SupabaseRepository:
                 ),
             }
         )
+
+def _validate_resume_candidate(
+    source: IntakeSession,
+    child: IntakeSession,
+    now: datetime,
+) -> None:
+    if source.status is not IntakeSessionStatus.INCOMPLETE or source.partial_job_spec is None:
+        raise DomainConflict("Only incomplete intake sessions can resume")
+    expected_base = source.partial_job_spec.model_copy(
+        update={"job_id": child.job_id},
+        deep=True,
+    )
+    if (
+        child.status is not IntakeSessionStatus.PENDING
+        or child.resumed_from_session_id != source.intake_session_id
+        or child.base_job_spec != expected_base
+        or child.data_mode is not source.data_mode
+        or child.expected_agent_id != source.expected_agent_id
+        or child.agent_config_version != source.agent_config_version
+        or child.provider_call_key_hash is not None
+        or child.created_at != now
+        or child.updated_at != now
+    ):
+        raise DomainConflict("Intake resume child does not match its source")
+
+
+def _validate_manual_candidate(
+    source: IntakeSession,
+    job: JobRecord,
+    now: datetime,
+) -> None:
+    if source.status is not IntakeSessionStatus.INCOMPLETE or source.partial_job_spec is None:
+        raise DomainConflict("Only incomplete intake sessions can finish manually")
+    if (
+        job.job_spec != source.partial_job_spec
+        or job.state is not JobState.INTAKE_COMPLETE
+        or job.created_at != now
+        or job.updated_at != now
+        or job.calls
+        or job.quotes
+        or job.recommendation is not None
+    ):
+        raise DomainConflict("Manual intake job does not match the partial spec")
 
 
 __all__ = ["SupabaseRepository"]

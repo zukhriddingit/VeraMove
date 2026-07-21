@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from services.api.app.api.dependencies import (
     get_browser_voice_token_issuer,
+    get_intake_recovery_service,
     get_intake_session_service,
     get_integration_status,
     get_live_voice_operator_service,
@@ -20,6 +21,7 @@ from services.api.app.api.integration_status import IntegrationStatusSnapshot
 from services.api.app.api.models import (
     AttachIntakeConversationRequest,
     BrowserVoiceTokenResponse,
+    CreateIntakeSessionRequest,
     DocumentIntakeRequest,
     ElevenLabsConversationInitiationRequest,
     ElevenLabsConversationInitiationResponse,
@@ -32,8 +34,9 @@ from services.api.app.contracts import (
     HealthResponse,
     JobRecord,
     JobSpecV1,
-    JobVendorResearchV1,
+    JobVendorResearchViewV1,
     RecommendationV1,
+    VendorCallAuthorizationRequest,
     VendorDiscoveryResponse,
     VendorShortlistRequest,
     WebhookAck,
@@ -41,7 +44,9 @@ from services.api.app.contracts import (
 from services.api.app.core.config import Settings
 from services.api.app.core.errors import ProviderRequestError, WebhookPayloadError
 from services.api.app.integrations.elevenlabs.tokens import BrowserVoiceTokenIssuer
+from services.api.app.orchestration.intake_recovery import IntakeRecoveryService
 from services.api.app.orchestration.intake_sessions import (
+    IntakeSession,
     IntakeSessionService,
     verify_pre_call_secret,
 )
@@ -59,6 +64,10 @@ VendorResearch = Annotated[
 ]
 RuntimeSettings = Annotated[Settings, Depends(get_settings)]
 IntakeSessions = Annotated[IntakeSessionService, Depends(get_intake_session_service)]
+IntakeRecovery = Annotated[
+    IntakeRecoveryService,
+    Depends(get_intake_recovery_service),
+]
 BrowserVoiceTokens = Annotated[
     BrowserVoiceTokenIssuer,
     Depends(get_browser_voice_token_issuer),
@@ -68,6 +77,25 @@ LiveVoiceOperator = Annotated[
     LiveVoiceOperatorService,
     Depends(get_live_voice_operator_service),
 ]
+
+
+def _intake_dynamic_variables(session: IntakeSession) -> IntakeDynamicVariables:
+    base = session.base_job_spec
+    return IntakeDynamicVariables(
+        job_id=session.job_id,
+        intake_session_id=session.intake_session_id,
+        agent_config_version=session.agent_config_version,
+        intake_data_mode=session.data_mode,
+        resume_mode="structured_partial" if base is not None else "fresh",
+        partial_job_spec_json=(
+            base.model_dump_json(exclude_none=False) if base is not None else "{}"
+        ),
+        missing_fields_json=(
+            json.dumps(base.missing_required_fields(), separators=(",", ":"))
+            if base is not None
+            else "[]"
+        ),
+    )
 
 
 @router.get(
@@ -107,8 +135,18 @@ def create_job_from_document(
     status_code=status.HTTP_201_CREATED,
     tags=["intake"],
 )
-def create_intake_session(sessions: IntakeSessions) -> IntakeSessionResponse:
-    return IntakeSessionResponse.model_validate(sessions.create_web_session().model_dump())
+def create_intake_session(
+    sessions: IntakeSessions,
+    request: CreateIntakeSessionRequest | None = None,
+) -> IntakeSessionResponse:
+    data_mode = (
+        request.data_mode
+        if request is not None
+        else CreateIntakeSessionRequest().data_mode
+    )
+    return IntakeSessionResponse.model_validate(
+        sessions.create_web_session(data_mode=data_mode).model_dump()
+    )
 
 
 @router.get(
@@ -121,6 +159,46 @@ def get_intake_session(
     sessions: IntakeSessions,
 ) -> IntakeSessionResponse:
     return IntakeSessionResponse.model_validate(sessions.get_session(session_id).model_dump())
+
+
+@router.post(
+    "/api/intake/sessions/{session_id}/recover",
+    response_model=IntakeSessionResponse,
+    tags=["intake"],
+)
+def recover_intake_session(
+    session_id: UUID,
+    recovery: IntakeRecovery,
+) -> IntakeSessionResponse:
+    return IntakeSessionResponse.model_validate(
+        recovery.recover(session_id).model_dump()
+    )
+
+
+@router.post(
+    "/api/intake/sessions/{session_id}/resume",
+    response_model=IntakeSessionResponse,
+    tags=["intake"],
+)
+def resume_intake_session(
+    session_id: UUID,
+    recovery: IntakeRecovery,
+) -> IntakeSessionResponse:
+    return IntakeSessionResponse.model_validate(
+        recovery.resume(session_id).model_dump()
+    )
+
+
+@router.post(
+    "/api/intake/sessions/{session_id}/finish-manually",
+    response_model=JobRecord,
+    tags=["intake"],
+)
+def finish_intake_manually(
+    session_id: UUID,
+    recovery: IntakeRecovery,
+) -> JobRecord:
+    return recovery.finish_manually(session_id)
 
 
 @router.get(
@@ -157,11 +235,7 @@ def issue_browser_voice_token(
     response.headers["Cache-Control"] = "no-store"
     return BrowserVoiceTokenResponse(
         conversation_token=token,
-        dynamic_variables=IntakeDynamicVariables(
-            job_id=session.job_id,
-            intake_session_id=session.intake_session_id,
-            agent_config_version=session.agent_config_version,
-        ),
+        dynamic_variables=_intake_dynamic_variables(session),
     )
 
 
@@ -226,6 +300,7 @@ async def elevenlabs_conversation_initiation(
             job_id=session.job_id,
             intake_session_id=session.intake_session_id,
             agent_config_version=session.agent_config_version,
+            intake_data_mode=session.data_mode,
         )
     )
 
@@ -270,65 +345,106 @@ def confirm_job(job_id: UUID, service: Service) -> JobRecord:
 
 @router.get(
     "/api/jobs/{job_id}/vendor-research",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def get_vendor_research(
     job_id: UUID,
     research: VendorResearch,
-) -> JobVendorResearchV1:
-    return research.get(job_id)
+) -> JobVendorResearchViewV1:
+    return research.view(job_id)
 
 
 @router.post(
     "/api/jobs/{job_id}/vendor-research/discover",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def discover_job_vendors(
     job_id: UUID,
     research: VendorResearch,
     refresh: Annotated[bool, Query()] = False,
-) -> JobVendorResearchV1:
-    return research.discover(job_id, refresh=refresh)
+) -> JobVendorResearchViewV1:
+    research.discover(job_id, refresh=refresh)
+    return research.view(job_id)
 
 
 @router.put(
     "/api/jobs/{job_id}/vendor-research/shortlist",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def save_vendor_shortlist(
     job_id: UUID,
     request: VendorShortlistRequest,
     research: VendorResearch,
-) -> JobVendorResearchV1:
-    return research.set_shortlist(job_id, request.vendor_ids)
+) -> JobVendorResearchViewV1:
+    research.set_shortlist(job_id, request.vendor_ids)
+    return research.view(job_id)
 
 
 @router.delete(
     "/api/jobs/{job_id}/vendor-research/shortlist",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def clear_vendor_shortlist(
     job_id: UUID,
     research: VendorResearch,
-) -> JobVendorResearchV1:
-    return research.clear_shortlist(job_id)
+) -> JobVendorResearchViewV1:
+    research.clear_shortlist(job_id)
+    return research.view(job_id)
 
 
 @router.post(
     "/api/jobs/{job_id}/vendor-research/analyze",
-    response_model=JobVendorResearchV1,
+    response_model=JobVendorResearchViewV1,
     tags=["vendors"],
 )
 def analyze_vendor_websites(
     job_id: UUID,
     research: VendorResearch,
     refresh: Annotated[bool, Query()] = False,
-) -> JobVendorResearchV1:
-    return research.analyze(job_id, refresh=refresh)
+) -> JobVendorResearchViewV1:
+    research.analyze(job_id, refresh=refresh)
+    return research.view(job_id)
+
+
+@router.post(
+    "/api/jobs/{job_id}/vendor-research/contacts",
+    response_model=JobVendorResearchViewV1,
+    tags=["vendors"],
+)
+def extract_vendor_contacts(
+    job_id: UUID,
+    research: VendorResearch,
+) -> JobVendorResearchViewV1:
+    return research.extract_contacts(job_id)
+
+
+@router.put(
+    "/api/jobs/{job_id}/vendor-research/call-authorizations",
+    response_model=JobVendorResearchViewV1,
+    tags=["vendors"],
+)
+def authorize_vendor_calls(
+    job_id: UUID,
+    request: VendorCallAuthorizationRequest,
+    research: VendorResearch,
+) -> JobVendorResearchViewV1:
+    return research.authorize_calls(job_id, request)
+
+
+@router.delete(
+    "/api/jobs/{job_id}/vendor-research/call-authorizations",
+    response_model=JobVendorResearchViewV1,
+    tags=["vendors"],
+)
+def clear_vendor_call_authorizations(
+    job_id: UUID,
+    research: VendorResearch,
+) -> JobVendorResearchViewV1:
+    return research.clear_call_authorizations(job_id)
 
 
 @router.post("/api/jobs/{job_id}/calls", response_model=JobRecord, tags=["calls"])

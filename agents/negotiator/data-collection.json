@@ -1,9 +1,14 @@
 {
-  "agent_config_version": "2026-07-20.1",
+  "agent_config_version": "2026-07-21.2",
   "fields": [
     {
-      "description": "Whether the role-play vendor consented to recording.",
+      "description": "Whether the call recipient consented to the AI call and recording before move facts.",
       "identifier": "recording_consent",
+      "type": "boolean"
+    },
+    {
+      "description": "True only when the recipient refuses, revokes consent, or asks VeraMove not to call again.",
+      "identifier": "recipient_opt_out",
       "type": "boolean"
     },
     {

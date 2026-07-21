@@ -12,7 +12,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = ROOT / "configs" / "moving.yaml"
 DEFAULT_OUTPUT_ROOT = ROOT / "agents"
-AGENT_CONFIG_VERSION = "2026-07-20.1"
+AGENT_CONFIG_VERSION = "2026-07-21.2"
 ELEVENLABS_DATA_COLLECTION_TYPES = frozenset({"boolean", "integer", "number", "string"})
 
 GENERATED_ASSET_PATHS = (
@@ -33,7 +33,7 @@ INTAKE_FIELDS = (
     (
         "origin_address_summary",
         "string",
-        "Fictional role-play origin locality/address summary exactly as stated.",
+        "Allowed origin locality summary exactly as stated; city/state only in real_redacted mode.",
     ),
     (
         "origin_dwelling_type",
@@ -56,7 +56,8 @@ INTAKE_FIELDS = (
     (
         "destination_address_summary",
         "string",
-        "Fictional role-play destination locality/address summary exactly as stated.",
+        "Allowed destination locality summary exactly as stated; city/state only in "
+        "real_redacted mode.",
     ),
     (
         "destination_dwelling_type",
@@ -108,7 +109,17 @@ INTAKE_FIELDS = (
 )
 
 OUTBOUND_FIELDS = (
-    ("recording_consent", "boolean", "Whether the role-play vendor consented to recording."),
+    (
+        "recording_consent",
+        "boolean",
+        "Whether the call recipient consented to the AI call and recording before move facts.",
+    ),
+    (
+        "recipient_opt_out",
+        "boolean",
+        "True only when the recipient refuses, revokes consent, or asks VeraMove not to "
+        "call again.",
+    ),
     (
         "outcome_type",
         "string",

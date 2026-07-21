@@ -65,8 +65,8 @@ def _amount_text(claim: WebsiteResearchClaimV1) -> str:
 
 def _claim_question(claim: WebsiteResearchClaimV1) -> str:
     return (
-        f'Please confirm whether this website statement applies to this exact move: '
-        f'"{claim.summary}"{_amount_text(claim)}. What conditions, minimums, '
+        f'Your website lists "{claim.summary}"{_amount_text(claim)}. '
+        "Does that published term apply to this exact move, and what conditions, minimums, "
         "and additional fees apply?"
     )
 

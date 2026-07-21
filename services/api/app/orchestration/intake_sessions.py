@@ -12,7 +12,13 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from services.api.app.contracts import IntakeSource, JobRecord, JobSpecV1, JobState
+from services.api.app.contracts import (
+    DataClassification,
+    IntakeSource,
+    JobRecord,
+    JobSpecV1,
+    JobState,
+)
 from services.api.app.core.errors import (
     DomainConflict,
     ResourceNotFound,
@@ -21,13 +27,37 @@ from services.api.app.core.errors import (
 )
 
 
+class IntakeDataMode(StrEnum):
+    """Explicit privacy boundary selected before starting a browser interview."""
+
+    SUPERVISED_ROLE_PLAY = "supervised_role_play"
+    REAL_REDACTED = "real_redacted"
+
+
+class IntakeRecoveryAction(StrEnum):
+    """The one terminal action claimed by an incomplete intake."""
+
+    RESUME = "resume"
+    MANUAL = "manual"
+
+
 class IntakeSessionStatus(StrEnum):
     """Lifecycle of provider correlation before a normal JobRecord exists."""
 
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
+    INCOMPLETE = "incomplete"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+TERMINAL_INTAKE_STATUSES = frozenset(
+    {
+        IntakeSessionStatus.INCOMPLETE,
+        IntakeSessionStatus.COMPLETED,
+        IntakeSessionStatus.FAILED,
+    }
+)
 
 
 class IntakeSession(BaseModel):
@@ -43,8 +73,20 @@ class IntakeSession(BaseModel):
     )
     expected_agent_id: str = Field(min_length=1, max_length=200)
     agent_config_version: str = Field(min_length=1, max_length=80)
+    data_mode: IntakeDataMode = IntakeDataMode.SUPERVISED_ROLE_PLAY
     status: IntakeSessionStatus = IntakeSessionStatus.PENDING
     conversation_id: str | None = Field(default=None, min_length=1, max_length=200)
+    partial_job_spec: JobSpecV1 | None = None
+    base_job_spec: JobSpecV1 | None = None
+    missing_fields: tuple[str, ...] = Field(default=(), max_length=40)
+    terminal_reason: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9_]+$",
+        max_length=80,
+    )
+    recovery_action: IntakeRecoveryAction | None = None
+    recovery_target_id: UUID | None = None
+    resumed_from_session_id: UUID | None = None
     failure_code: str | None = Field(
         default=None,
         pattern=r"^[a-z0-9_]+$",
@@ -77,6 +119,7 @@ class IntakeSession(BaseModel):
             self.status
             in {
                 IntakeSessionStatus.IN_PROGRESS,
+                IntakeSessionStatus.INCOMPLETE,
                 IntakeSessionStatus.COMPLETED,
             }
             and self.conversation_id is None
@@ -86,6 +129,48 @@ class IntakeSession(BaseModel):
             raise ValueError("completed intake sessions require completed_at")
         if self.status is not IntakeSessionStatus.FAILED and self.failure_code is not None:
             raise ValueError("failure_code requires a failed intake session")
+        if self.status is IntakeSessionStatus.FAILED and self.failure_code is None:
+            raise ValueError("failed intake sessions require failure_code")
+        if self.status is IntakeSessionStatus.INCOMPLETE:
+            if self.partial_job_spec is None:
+                raise ValueError("incomplete intake sessions require partial_job_spec")
+            expected_missing = tuple(self.partial_job_spec.missing_required_fields())
+            if tuple(self.missing_fields) != expected_missing:
+                raise ValueError("missing_fields must match partial_job_spec")
+            if self.terminal_reason is None:
+                raise ValueError("incomplete intake sessions require terminal_reason")
+        elif (
+            self.partial_job_spec is not None
+            or self.missing_fields
+            or self.terminal_reason is not None
+        ):
+            raise ValueError("partial intake fields require an incomplete session")
+        expected_classification = _classification_for_mode(self.data_mode)
+        for field_name, snapshot in (
+            ("partial_job_spec", self.partial_job_spec),
+            ("base_job_spec", self.base_job_spec),
+        ):
+            if snapshot is None:
+                continue
+            if snapshot.job_id != self.job_id:
+                raise ValueError(f"{field_name} must use the intake session job_id")
+            if snapshot.confirmed or snapshot.confirmed_at or snapshot.locked_version:
+                raise ValueError(f"{field_name} must remain unlocked")
+            if snapshot.intake_source is not IntakeSource.VOICE:
+                raise ValueError(f"{field_name} must use voice intake source")
+            if snapshot.data_classification is not expected_classification:
+                raise ValueError(f"{field_name} must match intake data_mode")
+        if (self.base_job_spec is None) != (self.resumed_from_session_id is None):
+            raise ValueError(
+                "base_job_spec and resumed_from_session_id must be set together"
+            )
+        if self.recovery_action is None and self.recovery_target_id is not None:
+            raise ValueError("recovery_target_id requires recovery_action")
+        if self.recovery_action is not None:
+            if self.status is not IntakeSessionStatus.INCOMPLETE:
+                raise ValueError("recovery_action requires an incomplete intake session")
+            if self.recovery_target_id is None:
+                raise ValueError("recovery_action requires recovery_target_id")
         if (
             self.browser_credential_issued_at is not None
             and self.browser_credential_issued_at < self.created_at
@@ -106,9 +191,17 @@ class IntakeSessionView(BaseModel):
 
     intake_session_id: UUID
     job_id: UUID
+    data_mode: IntakeDataMode
     status: IntakeSessionStatus
     conversation_id: str | None = None
     job_spec: JobSpecV1 | None = None
+    partial_job_spec: JobSpecV1 | None = None
+    missing_fields: tuple[str, ...] = ()
+    terminal_reason: str | None = None
+    recovery_action: IntakeRecoveryAction | None = None
+    recovery_target_id: UUID | None = None
+    resumed_from_session_id: UUID | None = None
+    recovery_available: bool = False
 
 
 class IntakeSessionStore(Protocol):
@@ -139,6 +232,7 @@ _ALLOWED_TRANSITIONS = {
         {
             IntakeSessionStatus.PENDING,
             IntakeSessionStatus.IN_PROGRESS,
+            IntakeSessionStatus.INCOMPLETE,
             IntakeSessionStatus.COMPLETED,
             IntakeSessionStatus.FAILED,
         }
@@ -146,10 +240,12 @@ _ALLOWED_TRANSITIONS = {
     IntakeSessionStatus.IN_PROGRESS: frozenset(
         {
             IntakeSessionStatus.IN_PROGRESS,
+            IntakeSessionStatus.INCOMPLETE,
             IntakeSessionStatus.COMPLETED,
             IntakeSessionStatus.FAILED,
         }
     ),
+    IntakeSessionStatus.INCOMPLETE: frozenset({IntakeSessionStatus.INCOMPLETE}),
     IntakeSessionStatus.COMPLETED: frozenset({IntakeSessionStatus.COMPLETED}),
     IntakeSessionStatus.FAILED: frozenset({IntakeSessionStatus.FAILED}),
 }
@@ -188,9 +284,14 @@ def validate_intake_session_update(
         "provider_call_key_hash",
         "expected_agent_id",
         "agent_config_version",
+        "data_mode",
+        "base_job_spec",
+        "resumed_from_session_id",
         "created_at",
     )
     if any(getattr(current, name) != getattr(candidate, name) for name in immutable_fields):
+        if current.data_mode != candidate.data_mode:
+            raise DomainConflict("Intake session intake mode cannot be changed")
         raise DomainConflict("Intake session identity cannot be changed")
     if candidate.status not in _ALLOWED_TRANSITIONS[current.status]:
         raise DomainConflict("Intake session terminal state cannot be changed")
@@ -204,6 +305,17 @@ def validate_intake_session_update(
         raise DomainConflict("Intake session credential reservation cannot be changed")
     if candidate.updated_at < current.updated_at:
         raise DomainConflict("Intake session updated_at cannot move backwards")
+    if current.partial_job_spec is not None and (
+        candidate.partial_job_spec != current.partial_job_spec
+        or candidate.missing_fields != current.missing_fields
+        or candidate.terminal_reason != current.terminal_reason
+    ):
+        raise DomainConflict("Incomplete intake snapshot cannot be changed")
+    if current.recovery_action is not None and (
+        candidate.recovery_action != current.recovery_action
+        or candidate.recovery_target_id != current.recovery_target_id
+    ):
+        raise DomainConflict("Incomplete intake recovery action cannot be changed")
 
 
 class IntakeSessionService:
@@ -229,8 +341,15 @@ class IntakeSessionService:
         )
         self.clock = clock
 
-    def create_web_session(self) -> IntakeSessionView:
-        session = self._create_session(provider_key_hash=None)
+    def create_web_session(
+        self,
+        *,
+        data_mode: IntakeDataMode = IntakeDataMode.SUPERVISED_ROLE_PLAY,
+    ) -> IntakeSessionView:
+        session = self._create_session(
+            provider_key_hash=None,
+            data_mode=data_mode,
+        )
         return self._view(session)
 
     def reserve_browser_credential(self, session_id: UUID | str) -> IntakeSession:
@@ -249,12 +368,25 @@ class IntakeSessionService:
         normalized_agent_id = _bounded_text(agent_id, "agent_id", max_length=200)
         if not hmac.compare_digest(normalized_agent_id, self.expected_agent_id):
             raise WebhookPayloadError("Unexpected ElevenLabs intake agent")
-        return self._create_session(provider_key_hash=provider_call_key_hash(provider_call_key))
+        return self._create_session(
+            provider_key_hash=provider_call_key_hash(provider_call_key),
+            data_mode=IntakeDataMode.SUPERVISED_ROLE_PLAY,
+        )
 
     def get_session(self, session_id: UUID) -> IntakeSessionView:
         session = self.repository.get_intake_session(session_id)
         if session is None:
             raise ResourceNotFound(f"Intake session {session_id} was not found")
+        return self._view(session)
+
+    def require_session(self, session_id: UUID | str) -> IntakeSession:
+        """Return one validated internal session without exposing repository internals."""
+
+        return self._require_session(UUID(str(session_id)))
+
+    def view_session(self, session: IntakeSession) -> IntakeSessionView:
+        """Project an already-loaded internal session through the safe API view."""
+
         return self._view(session)
 
     def get_by_conversation(self, conversation_id: str) -> IntakeSessionView:
@@ -286,6 +418,7 @@ class IntakeSessionService:
         )
         if session.conversation_id == normalized_conversation and session.status in {
             IntakeSessionStatus.IN_PROGRESS,
+            IntakeSessionStatus.INCOMPLETE,
             IntakeSessionStatus.COMPLETED,
         }:
             return session
@@ -351,12 +484,18 @@ class IntakeSessionService:
         )
         return self.repository.save_intake_session(updated)
 
-    def _create_session(self, provider_key_hash: str | None) -> IntakeSession:
+    def _create_session(
+        self,
+        provider_key_hash: str | None,
+        *,
+        data_mode: IntakeDataMode,
+    ) -> IntakeSession:
         now = self.clock()
         candidate = IntakeSession(
             expected_agent_id=self.expected_agent_id,
             agent_config_version=self.agent_config_version,
             provider_call_key_hash=provider_key_hash,
+            data_mode=data_mode,
             created_at=now,
             updated_at=now,
         )
@@ -375,15 +514,39 @@ class IntakeSessionService:
             assert record is not None
             job_spec = record.job_spec
         else:
-            if record is not None:
+            manual_record_expected = (
+                session.status is IntakeSessionStatus.INCOMPLETE
+                and session.recovery_action is IntakeRecoveryAction.MANUAL
+                and session.recovery_target_id == session.job_id
+            )
+            if record is not None and not manual_record_expected:
                 raise DomainConflict("Incomplete intake session cannot own a JobRecord")
+            if manual_record_expected:
+                self._validate_manual_job(session, record)
             job_spec = None
         return IntakeSessionView(
             intake_session_id=session.intake_session_id,
             job_id=session.job_id,
+            data_mode=session.data_mode,
             status=session.status,
             conversation_id=session.conversation_id,
             job_spec=job_spec,
+            partial_job_spec=session.partial_job_spec or session.base_job_spec,
+            missing_fields=(
+                session.missing_fields
+                if session.partial_job_spec is not None
+                else tuple(session.base_job_spec.missing_required_fields())
+                if session.base_job_spec is not None
+                else ()
+            ),
+            terminal_reason=session.terminal_reason,
+            recovery_action=session.recovery_action,
+            recovery_target_id=session.recovery_target_id,
+            resumed_from_session_id=session.resumed_from_session_id,
+            recovery_available=(
+                session.status is IntakeSessionStatus.INCOMPLETE
+                and session.recovery_action is None
+            ),
         )
 
     @staticmethod
@@ -402,6 +565,22 @@ class IntakeSessionService:
         ):
             raise DomainConflict("Completed intake session requires an unconfirmed voice JobSpec")
 
+    @staticmethod
+    def _validate_manual_job(
+        session: IntakeSession,
+        record: JobRecord | None,
+    ) -> None:
+        if (
+            record is None
+            or session.partial_job_spec is None
+            or record.job_spec != session.partial_job_spec
+            or record.state is not JobState.INTAKE_COMPLETE
+            or record.calls
+            or record.quotes
+            or record.recommendation is not None
+        ):
+            raise DomainConflict("Manual intake recovery requires its editable partial JobSpec")
+
 
 def _bounded_text(value: str, field_name: str, *, max_length: int) -> str:
     if not isinstance(value, str) or not value.strip():
@@ -410,3 +589,9 @@ def _bounded_text(value: str, field_name: str, *, max_length: int) -> str:
     if len(normalized) > max_length:
         raise WebhookPayloadError(f"ElevenLabs {field_name} is too long")
     return normalized
+
+
+def _classification_for_mode(mode: IntakeDataMode) -> DataClassification:
+    if mode is IntakeDataMode.REAL_REDACTED:
+        return DataClassification.REAL_REDACTED
+    return DataClassification.ROLE_PLAY

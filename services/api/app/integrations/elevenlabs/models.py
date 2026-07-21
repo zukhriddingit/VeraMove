@@ -24,6 +24,7 @@ class ElevenLabsDynamicVariables(BaseModel):
     intake_session_id: UUID | None = None
     vendor_id: UUID | None = None
     call_mode: Literal["quote", "negotiation"] | None = None
+    call_context: Literal["supervised_role_play", "official_business"] | None = None
     job_spec_version: str | None = Field(default=None, max_length=20)
     agent_config_version: str | None = Field(default=None, max_length=80)
     job_spec_sha256: str | None = Field(

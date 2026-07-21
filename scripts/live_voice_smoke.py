@@ -19,7 +19,7 @@ from scripts.live_voice_preflight import (  # noqa: E402
     redact_identifier,
     run_default_preflight,
 )
-from services.api.app.contracts import JobSpecV1, Vendor  # noqa: E402
+from services.api.app.contracts import JobSpecV1, Vendor, VendorCallPlanV1  # noqa: E402
 from services.api.app.core.config import Settings  # noqa: E402
 from services.api.app.integrations.elevenlabs.live import (  # noqa: E402
     ElevenLabsVoiceProvider,
@@ -27,6 +27,7 @@ from services.api.app.integrations.elevenlabs.live import (  # noqa: E402
 )
 from services.api.app.orchestration.fixtures import DemoFixtures  # noqa: E402
 from services.api.app.orchestration.models import VoiceCallResult  # noqa: E402
+from services.api.app.orchestration.providers import VoiceCallDestination  # noqa: E402
 
 SMOKE_CALL_ID = UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
 SMOKE_CONFIRMED_AT = datetime(2026, 7, 19, 12, 0, tzinfo=UTC)
@@ -38,7 +39,8 @@ class SmokeVoiceProvider(Protocol):
         job_spec: JobSpecV1,
         vendor: Vendor,
         call_id: UUID,
-        destination_slot: int = 0,
+        destination: VoiceCallDestination,
+        call_plan: VendorCallPlanV1 | None,
     ) -> VoiceCallResult: ...
 
 
@@ -90,7 +92,8 @@ def run_supervised_smoke(
         job_spec,
         role_play_vendors[0],
         SMOKE_CALL_ID,
-        destination_slot=0,
+        VoiceCallDestination.supervised_role_play(0),
+        None,
     )
     return {
         "correlation": redact_identifier(SMOKE_CALL_ID),

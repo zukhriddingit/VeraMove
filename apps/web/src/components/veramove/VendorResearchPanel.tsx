@@ -20,11 +20,22 @@ import {
   Search,
   ShieldQuestion,
 } from "lucide-react";
+import { VendorContactReview } from "@/components/veramove/VendorContactReview";
 
 type Candidate = JobVendorResearchV1["candidates"][number];
 type Dossier = NonNullable<JobVendorResearchV1["dossiers"]>[number];
 
-export function VendorResearchPanel({ jobId }: { jobId: string }) {
+export function VendorResearchPanel({
+  jobId,
+  onStartCalls,
+  startPending,
+  canStartCalls,
+}: {
+  jobId: string;
+  onStartCalls: () => void;
+  startPending: boolean;
+  canStartCalls: boolean;
+}) {
   const researchQ = useVendorResearch(jobId);
   const discover = useDiscoverJobVendors();
   const saveShortlist = useSaveVendorShortlist();
@@ -151,6 +162,16 @@ export function VendorResearchPanel({ jobId }: { jobId: string }) {
               </div>
             )}
 
+            {hasSavedShortlist && incompleteCount === 0 && (
+              <VendorContactReview
+                jobId={jobId}
+                research={research}
+                onStartCalls={onStartCalls}
+                startPending={startPending}
+                canStartCalls={canStartCalls}
+              />
+            )}
+
             <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
               {!hasSavedShortlist && (
                 <Button
@@ -165,14 +186,14 @@ export function VendorResearchPanel({ jobId }: { jobId: string }) {
                   Research the selected three
                 </Button>
               )}
-              {hasSavedShortlist && incompleteCount > 0 && (
+              {hasSavedShortlist && incompleteCount > 0 && canStartCalls && (
                 <Button disabled={busy} onClick={() => analyze.mutate({ jobId })}>
                   {analyze.isPending ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
                   Research {incompleteCount} incomplete site
                   {incompleteCount === 1 ? "" : "s"}
                 </Button>
               )}
-              {hasSavedShortlist && incompleteCount === 0 && (
+              {hasSavedShortlist && incompleteCount === 0 && canStartCalls && (
                 <Button
                   variant="outline"
                   disabled={busy}
@@ -182,7 +203,7 @@ export function VendorResearchPanel({ jobId }: { jobId: string }) {
                   Refresh website research
                 </Button>
               )}
-              {hasSavedShortlist && (
+              {hasSavedShortlist && canStartCalls && (
                 <Button
                   variant="ghost"
                   disabled={busy}

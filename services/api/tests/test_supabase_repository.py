@@ -12,6 +12,7 @@ import pytest
 from services.api.app.contracts import (
     CallRecord,
     CallStatus,
+    ConsentMethod,
     DataClassification,
     IntakeSource,
     JobRecord,
@@ -19,7 +20,10 @@ from services.api.app.contracts import (
     JobVendorResearchV1,
     ProvenanceReference,
     ProvenanceType,
+    SuppressionReason,
+    VendorCallAuthorizationV1,
     VendorSearchQuery,
+    VendorSuppressionV1,
     VerificationStatus,
 )
 from services.api.app.core.errors import (
@@ -37,10 +41,12 @@ from services.api.app.orchestration.models import (
     CallKind,
     JobEvent,
     VoiceCallReference,
+    job_spec_sha256,
 )
 from services.api.app.repositories.base import (
     VoiceIntakeCompletion,
     VoiceIntakeFailure,
+    VoiceIntakeIncomplete,
     VoiceWebhookLease,
     VoiceWebhookMaterialization,
 )
@@ -67,6 +73,8 @@ class FakeSupabaseTableClient:
                 "event_log",
                 "intake_sessions",
                 "vendor_research",
+                "vendor_call_authorizations",
+                "vendor_call_suppressions",
             )
         }
         self.operations: list[tuple[str, str, dict[str, Any]]] = []
@@ -88,6 +96,8 @@ class FakeSupabaseTableClient:
                 "processed": True,
                 "duplicate": False,
             },
+            "veramove_claim_intake_resume": {},
+            "veramove_finish_intake_manually": {},
         }
 
     def select_many(
@@ -112,6 +122,22 @@ class FakeSupabaseTableClient:
             raise SupabaseDuplicate("duplicate")
         self.tables[table][key] = deepcopy(row)
         return deepcopy(row)
+
+    def delete_many(
+        self,
+        table: str,
+        filters: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        self._maybe_fail()
+        self.operations.append(("delete", table, deepcopy(filters)))
+        removed = []
+        for key, row in list(self.tables[table].items()):
+            if all(
+                str(row.get(column)) == expression.split(".", 1)[1]
+                for column, expression in filters.items()
+            ):
+                removed.append(self.tables[table].pop(key))
+        return deepcopy(removed)
 
     def upsert(
         self,
@@ -297,6 +323,57 @@ def test_supabase_vendor_research_round_trip_uses_separate_table(
     assert row["data_classification"] == "real_redacted"
     assert "calls" not in row["payload"]
     assert "quotes" not in row["payload"]
+
+
+def test_supabase_vendor_authorization_and_suppression_are_server_only(
+    repository,
+    table_client,
+    confirmed_record,
+    fixtures,
+):
+    repository.create(confirmed_record)
+    vendor = fixtures.load_vendors()[0]
+    authorization = VendorCallAuthorizationV1(
+        job_id=confirmed_record.job_spec.job_id,
+        job_spec_version=confirmed_record.job_spec.version,
+        job_spec_sha256=job_spec_sha256(confirmed_record.job_spec),
+        vendor_id=vendor.vendor_id,
+        contact_id=uuid4(),
+        normalized_number="+16175550101",
+        display_number="(617) 555-0101",
+        number_hash="a" * 64,
+        recipient_timezone="America/New_York",
+        consent_method=ConsentMethod.PROVIDER_TEST_DESTINATION,
+        consent_evidence_reference="consent:synthetic:001",
+        consented_at=FIXED_NOW,
+        ai_call_consented=True,
+        recording_consented=True,
+        source_url="https://vendor.example/contact",
+        created_at=FIXED_NOW,
+    )
+    suppression = VendorSuppressionV1(
+        number_hash=authorization.number_hash,
+        reason=SuppressionReason.MANUAL_BLOCK,
+        created_at=FIXED_NOW,
+    )
+
+    assert repository.save_vendor_call_authorization(authorization) == authorization
+    assert repository.get_vendor_call_authorization(
+        authorization.job_id,
+        authorization.job_spec_version,
+        authorization.vendor_id,
+    ) == authorization
+    assert repository.list_vendor_call_authorizations(
+        authorization.job_id,
+        authorization.job_spec_version,
+    ) == [authorization]
+    assert repository.save_vendor_suppression(suppression) == suppression
+    assert repository.get_vendor_suppression(authorization.number_hash) == suppression
+    row = table_client.tables["vendor_call_authorizations"][
+        str(authorization.authorization_id)
+    ]
+    assert row["normalized_number"] == "+16175550101"
+    assert "normalized_number" not in authorization.model_dump(mode="json")
 
 
 def test_supabase_create_maps_duplicate_job(repository, confirmed_record):
@@ -679,6 +756,7 @@ def test_supabase_voice_intake_finalizer_uses_one_safe_typed_rpc(
     assert set(completion_payload) == {
         "p_idempotency_key",
         "p_lease_token",
+        "p_schema_version",
         "p_kind",
         "p_session",
         "p_job",
@@ -737,6 +815,62 @@ def test_supabase_voice_intake_finalizer_uses_one_safe_typed_rpc(
         assert forbidden not in serialized.lower()
 
 
+def test_supabase_voice_intake_finalizer_serializes_incomplete_without_job(
+    repository,
+    table_client,
+    job_spec,
+):
+    now = datetime(2026, 7, 19, 2, 30, tzinfo=UTC)
+    session = IntakeSession(
+        job_id=job_spec.job_id,
+        expected_agent_id="synthetic-intake-agent",
+        agent_config_version="2026-07-21.2",
+        status=IntakeSessionStatus.IN_PROGRESS,
+        conversation_id="synthetic-incomplete-conversation",
+        created_at=now - timedelta(minutes=1),
+        updated_at=now - timedelta(minutes=1),
+    )
+    repository.create_intake_session(session)
+    partial = job_spec.model_copy(
+        update={
+            "intake_source": IntakeSource.VOICE,
+            "move_date": None,
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+            "data_classification": DataClassification.ROLE_PLAY,
+        },
+        deep=True,
+    )
+    incomplete = VoiceIntakeIncomplete(
+        session=session.model_copy(
+            update={
+                "status": IntakeSessionStatus.INCOMPLETE,
+                "partial_job_spec": partial,
+                "missing_fields": tuple(partial.missing_required_fields()),
+                "terminal_reason": "user_ended_before_summary",
+                "updated_at": now,
+            },
+            deep=True,
+        ),
+        event_type="post_call_transcription",
+    )
+
+    repository.finalize_voice_intake_webhook(
+        "synthetic-intake-incomplete-event",
+        uuid4(),
+        incomplete,
+        now,
+    )
+
+    payload = table_client.operations[-1][2]
+    assert payload["p_kind"] == "incomplete"
+    assert payload["p_job"] is None
+    assert payload["p_session"]["status"] == "incomplete"
+    assert payload["p_session"]["partial_job_spec"]["move_date"] is None
+    assert "'transcript':" not in repr(payload).lower()
+
+
 def test_supabase_intake_session_is_idempotent_and_stores_only_safe_correlation(
     repository,
     table_client,
@@ -793,7 +927,15 @@ def test_supabase_intake_session_is_idempotent_and_stores_only_safe_correlation(
         "conversation_id",
         "expected_agent_id",
         "agent_config_version",
+        "data_mode",
         "status",
+        "partial_job_spec",
+        "base_job_spec",
+        "missing_fields",
+        "terminal_reason",
+        "recovery_action",
+        "recovery_target_id",
+        "resumed_from_session_id",
         "failure_code",
         "created_at",
         "updated_at",
@@ -849,6 +991,98 @@ def test_supabase_reserves_browser_credential_through_atomic_rpc(
     )
 
 
+def test_supabase_resume_and_manual_finish_use_atomic_typed_rpcs(
+    repository,
+    table_client,
+    job_spec,
+) -> None:
+    now = FIXED_NOW
+    resume_job_id = uuid4()
+    partial = job_spec.model_copy(
+        update={
+            "job_id": resume_job_id,
+            "intake_source": IntakeSource.VOICE,
+            "move_date": None,
+            "data_classification": DataClassification.ROLE_PLAY,
+            "confirmed": False,
+            "confirmed_at": None,
+            "locked_version": None,
+        },
+        deep=True,
+    )
+    source = IntakeSession(
+        job_id=resume_job_id,
+        expected_agent_id="synthetic-intake-agent",
+        agent_config_version="2026-07-21.2",
+        status=IntakeSessionStatus.INCOMPLETE,
+        conversation_id="synthetic-resume-source",
+        partial_job_spec=partial,
+        missing_fields=partial.missing_required_fields(),
+        terminal_reason="user_ended_before_summary",
+        created_at=now - timedelta(minutes=1),
+        updated_at=now,
+    )
+    repository.create_intake_session(source)
+    child_job_id = uuid4()
+    child = IntakeSession(
+        job_id=child_job_id,
+        expected_agent_id=source.expected_agent_id,
+        agent_config_version=source.agent_config_version,
+        data_mode=source.data_mode,
+        base_job_spec=partial.model_copy(
+            update={"job_id": child_job_id},
+            deep=True,
+        ),
+        resumed_from_session_id=source.intake_session_id,
+        created_at=now,
+        updated_at=now,
+    )
+    table_client.rpc_responses["veramove_claim_intake_resume"] = (
+        repository._intake_session_row(child)
+    )
+
+    assert repository.claim_intake_resume(source.intake_session_id, child, now) == child
+    resume_rpc = table_client.operations[-1]
+    assert resume_rpc[:2] == ("rpc", "veramove_claim_intake_resume")
+    assert resume_rpc[2]["p_child"]["base_job_spec"]["job_id"] == str(child_job_id)
+
+    manual_job_id = uuid4()
+    manual_partial = partial.model_copy(update={"job_id": manual_job_id}, deep=True)
+    manual_source = source.model_copy(
+        update={
+            "intake_session_id": uuid4(),
+            "job_id": manual_job_id,
+            "conversation_id": "synthetic-manual-source",
+            "partial_job_spec": manual_partial,
+        },
+        deep=True,
+    )
+    repository.create_intake_session(manual_source)
+    manual_job = JobRecord(
+        job_spec=manual_partial,
+        state=JobState.INTAKE_COMPLETE,
+        created_at=now,
+        updated_at=now,
+    )
+    table_client.rpc_responses["veramove_finish_intake_manually"] = (
+        repository._job_row(manual_job)
+    )
+
+    assert (
+        repository.finish_intake_manually(
+            manual_source.intake_session_id,
+            manual_job,
+            now,
+        )
+        == manual_job
+    )
+    manual_rpc = table_client.operations[-1]
+    assert manual_rpc[:2] == ("rpc", "veramove_finish_intake_manually")
+    serialized = repr(resume_rpc[2]) + repr(manual_rpc[2])
+    assert "'transcript':" not in serialized.lower()
+    assert "phone_number" not in serialized.lower()
+
+
 def test_supabase_intake_session_rejects_identity_and_terminal_state_mutation(
     repository,
 ):
@@ -867,13 +1101,22 @@ def test_supabase_intake_session_rejects_identity_and_terminal_state_mutation(
         repository.save_intake_session(pending.model_copy(update={"job_id": uuid4()}, deep=True))
 
     failed = pending.model_copy(
-        update={"status": IntakeSessionStatus.FAILED},
+        update={
+            "status": IntakeSessionStatus.FAILED,
+            "failure_code": "synthetic_failure",
+        },
         deep=True,
     )
     repository.save_intake_session(failed)
     with pytest.raises(DomainConflict, match="terminal"):
         repository.save_intake_session(
-            failed.model_copy(update={"status": IntakeSessionStatus.PENDING}, deep=True)
+            failed.model_copy(
+                update={
+                    "status": IntakeSessionStatus.PENDING,
+                    "failure_code": None,
+                },
+                deep=True,
+            )
         )
 
 

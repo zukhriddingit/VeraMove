@@ -3,8 +3,9 @@
 Owner: Prathmesh (GitHub handle pending; see `AGENTS.md`).
 
 This directory is the reviewed source package for the **VeraMove Outbound Negotiator** ElevenLabs
-agent. One agent handles both initial quote and evidence-gated negotiation calls. VeraMove selects
-the branch through the verified `call_mode` dynamic variable; this is not two separate agents.
+agent. One agent handles both initial quote and evidence-gated negotiation calls, in either
+supervised role-play or consented official-business context. VeraMove selects branches through the
+verified `call_mode` and `call_context` dynamic variables; this is not two separate agents.
 
 ## Files
 
@@ -12,7 +13,8 @@ the branch through the verified `call_mode` dynamic variable; this is not two se
   message, and success evaluation.
 - `prompt.md` defines disclosure, role-play boundaries, quote and negotiation branches, and exact
   supported outcomes.
-- `data-collection.json` is the generated 14-field post-call collection definition.
+- `data-collection.json` is the generated 15-field post-call collection definition, including a
+  dedicated recipient opt-out flag.
 - `generated-fee-probes.md` is generated exclusively from
   `configs/moving.yaml:mandatory_fee_questions` and must be appended to the dashboard prompt.
 

@@ -1,5 +1,5 @@
 version: 1
-agent_config_version: "2026-07-20.1"
+agent_config_version: "2026-07-21.2"
 agent:
   name: veramove-intake
   display_name: VeraMove Intake
@@ -11,7 +11,7 @@ agent:
   provider_tool_ids: []
   provider_tools_status: omitted_until_reviewed_ids_exist
   provider_version:
-    version_description: "VeraMove 2026-07-20.1"
+    version_description: "VeraMove 2026-07-21.2"
     capture_after_save: [version_id, branch_id]
     provider_ids_committed: false
   structured_output: JobSpecV1
@@ -28,6 +28,24 @@ agent:
       required: true
       source: verified_conversation_initiation
     - name: agent_config_version
+      type: string
+      required: true
+      source: verified_conversation_initiation
+    - name: intake_data_mode
+      type: string
+      required: true
+      allowed_values: [supervised_role_play, real_redacted]
+      source: verified_conversation_initiation
+    - name: resume_mode
+      type: string
+      required: true
+      allowed_values: [fresh, structured_partial]
+      source: verified_conversation_initiation
+    - name: partial_job_spec_json
+      type: string
+      required: true
+      source: verified_conversation_initiation
+    - name: missing_fields_json
       type: string
       required: true
       source: verified_conversation_initiation

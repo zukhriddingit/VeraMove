@@ -2,9 +2,10 @@
 
 VeraMove is a standalone, mock-first AI moving-services negotiator. **VeraMove Intake** and document
 intake both produce one versioned job specification. After explicit confirmation, one **VeraMove
-Outbound Negotiator** calls exactly three fictional role-play vendors with the same locked JobSpec,
-uses verified evidence for one negotiation, and explains the final ranking with transcript and
-recording references.
+Outbound Negotiator** calls exactly three recipients with the same locked JobSpec, uses verified
+evidence for one negotiation, and explains the final ranking with transcript and recording
+references. The default path is synthetic role-play; the separately gated live path can use three
+official-site contacts only after each recipient explicitly authorizes the AI call and recording.
 
 This public repository is a minimal hackathon starter for parallel development—not a production
 moving, calling, or booking product.
@@ -68,7 +69,7 @@ docs/submission/             Project Summary, video scripts, claim ledger, submi
 ## Prerequisites
 
 - Python 3.11 or newer
-- Node.js 20.19 or newer with npm
+- Node.js 22.13 or newer with npm
 - Git
 
 No API credentials, Supabase project, telephony account, or local database is required.
@@ -100,6 +101,9 @@ Copy `.env.example` only if you want to override safe defaults.
 | `VITE_DEMO_MODE` | `false` | Explicitly selects the synthetic browser demo adapter when `true` |
 | `CORS_ALLOW_ORIGINS` | Lovable production + local Vite origins | Comma-separated exact browser origins allowed to call the API |
 | `LIVE_CALLS_ENABLED` | `false` | Independent switch required before a controlled live call |
+| `REAL_VENDOR_CALLS_ENABLED` | `false` | Separate fail-closed switch for reviewed official-business recipients |
+| `VENDOR_CONTACT_HASH_SECRET` | empty | Strong backend-only HMAC secret for destination matching and suppression |
+| `VENDOR_CONSENT_MAX_AGE_DAYS` | `30` | Maximum age of a recipient authorization, from 1 through 365 days |
 | `ELEVENLABS_API_KEY` | empty | Backend-only ElevenLabs credential |
 | `ELEVENLABS_INTAKE_AGENT_ID` | empty | Reviewed VeraMove Intake agent identifier |
 | `ELEVENLABS_OUTBOUND_AGENT_ID` | empty | One shared quote/negotiation agent identifier |
@@ -153,11 +157,8 @@ but never OpenAI, Tavily, Supabase, ElevenLabs, or Twilio credentials.
 
 Activate the non-voice providers one at a time while `LIVE_CALLS_ENABLED=false`:
 
-1. Run `supabase/migrations/202607180001_initial_schema.sql`,
-   `supabase/migrations/202607190002_live_persistence_hardening.sql`,
-   `supabase/migrations/202607190003_live_voice_materialization.sql`,
-   `supabase/migrations/202607190004_atomic_voice_intake.sql`, and
-   `supabase/migrations/202607190005_browser_voice_intake.sql` in that order in the Supabase SQL editor.
+1. Run every file in `supabase/migrations/` in filename order, through
+   `202607210007_resumable_intake_vendor_calls.sql`, in the Supabase SQL editor.
    Enter `SUPABASE_URL` and the backend-only `SUPABASE_SECRET_KEY`, set
    `SUPABASE_ENABLED=true`, and verify a synthetic job survives one Render redeploy.
 2. Enter `TAVILY_API_KEY`, set `TAVILY_ENABLED=true`, and verify
@@ -209,11 +210,18 @@ destinations, and the complete reviewed configuration in `docs/backend-voice-run
 | POST | `/api/intake/sessions/{session_id}/voice-token` | Atomically issues one ephemeral browser conversation credential |
 | POST | `/api/intake/sessions/{session_id}/conversation` | Attaches the SDK conversation ID to its durable intake session |
 | GET | `/api/intake/conversations/{conversation_id}` | Resolves a safe intake session by provider conversation |
+| POST | `/api/intake/sessions/{session_id}/resume` | Starts a new voice session containing only structured partial facts |
+| POST | `/api/intake/sessions/{session_id}/finish-manually` | Materializes an incomplete intake as an editable draft |
 | POST | `/api/jobs` | Creates a job at `intake_complete` through the selected repository |
 | GET | `/api/jobs/{job_id}` | Returns the typed job aggregate |
 | GET | `/api/jobs/{job_id}/events` | Returns safe normalized provider events |
 | POST | `/api/jobs/{job_id}/confirm` | Locks the JobSpec and advances to `confirmed` |
 | POST | `/api/jobs/{job_id}/calls` | Creates three completed synthetic calls and quotes |
+| GET | `/api/jobs/{job_id}/vendor-research` | Returns safe Tavily research, contact display data, plans, and readiness |
+| POST | `/api/jobs/{job_id}/vendor-research/discover` | Finds route-relevant mover candidates through the configured boundary |
+| PUT | `/api/jobs/{job_id}/vendor-research/shortlist` | Saves exactly three reviewed candidates |
+| POST | `/api/jobs/{job_id}/vendor-research/analyze` | Extracts official-site claims and contact candidates |
+| PUT | `/api/jobs/{job_id}/vendor-research/call-authorizations` | Saves exactly three consent records by server-issued contact ID |
 | POST | `/api/jobs/{job_id}/negotiate` | Adds a measurably improved synthetic quote |
 | GET | `/api/jobs/{job_id}/report` | Returns the evidence-backed final recommendation |
 | POST | `/api/webhooks/elevenlabs` | Authenticates, normalizes, and deduplicates a signed webhook |
@@ -235,10 +243,11 @@ including the product-narrative and submission ownership in `docs/submission/`.
 
 ## Known limitations
 
-- Live voice is a supervised fictional role-play, not a production customer or moving-company
-  calling system. Provider dashboard synchronization and consent checks remain manual.
-- Tavily supplies vendor identity and provenance only; it does not supply verified quotes or direct
-  phone contacts.
+- Official-business calling remains supervised and fail-closed. It requires separate per-recipient
+  AI/recording consent, a permitted local call window, no suppression, and an explicit final Start;
+  website publication alone is never treated as consent.
+- Tavily supplies vendor identity, official-site provenance, public business contacts, and
+  unverified pricing/fee leads. Only the recorded call can turn a lead into quote evidence.
 - Supabase persistence has no end-user authentication, multi-tenant authorization, or production
   operator policy layer.
 - No payment or booking workflow is implemented.

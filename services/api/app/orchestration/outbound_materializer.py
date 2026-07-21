@@ -19,7 +19,6 @@ from services.api.app.contracts import (
     CallOutcome,
     CallOutcomeType,
     CallStatus,
-    DataClassification,
     FeeCategory,
     FeeLineItem,
     QuoteV1,
@@ -78,6 +77,7 @@ class MaterializedOutboundOutcome:
     outcome: CallOutcome
     recording_url: HttpUrl | None
     provider_version_id: str | None
+    recipient_opt_out: bool
 
 
 def materialize_outbound_event(
@@ -92,7 +92,13 @@ def materialize_outbound_event(
 
     _validate_correlation(event, attempt)
     data = event.collected_data
+    raw_opt_out = data.get("recipient_opt_out")
+    if raw_opt_out not in {None, True, False}:
+        raise DomainConflict("recipient_opt_out must be a boolean")
+    recipient_opt_out = raw_opt_out is True
     outcome_type = _outcome_type(data.get("outcome_type"))
+    if recipient_opt_out and outcome_type is not CallOutcomeType.DOCUMENTED_DECLINE:
+        raise DomainConflict("A recipient opt-out must be a documented decline")
     _validate_outcome_data_exclusive(outcome_type, data)
     audio_url = (
         recording_url
@@ -122,6 +128,7 @@ def materialize_outbound_event(
         outcome=outcome,
         recording_url=audio_url,
         provider_version_id=event.version_id,
+        recipient_opt_out=recipient_opt_out,
     )
 
 
@@ -141,6 +148,11 @@ def _validate_correlation(
         "job": variables.job_id != attempt.job_id,
         "vendor": variables.vendor_id != attempt.vendor.vendor_id,
         "mode": variables.call_mode != attempt.call_mode,
+        "context": (
+            variables.call_context != attempt.call_context
+            if attempt.authorization_id is not None
+            else variables.call_context not in {None, attempt.call_context}
+        ),
         "version": variables.job_spec_version != attempt.job_spec_version,
         "agent_config": variables.agent_config_version != attempt.agent_config_version,
         "snapshot": variables.job_spec_sha256 != attempt.job_spec_sha256,
@@ -208,7 +220,7 @@ def _materialize_quote(
         recording_url=recording_url,
         transcript_turns=event.transcript_turns,
         claims=claims,
-        data_classification=DataClassification.ROLE_PLAY,
+        data_classification=attempt.job_spec_snapshot.data_classification,
     )
     evidence_by_claim = {item.claim: item.evidence_id for item in evidence}
     supported_fees = [
@@ -250,7 +262,7 @@ def _materialize_quote(
         transcript_evidence=[],
         recording_url=recording_url,
         manually_fabricated=False,
-        data_classification=DataClassification.ROLE_PLAY,
+        data_classification=attempt.job_spec_snapshot.data_classification,
     )
     facts = TranscriptQuoteFacts(
         fee_line_items=supported_fees,

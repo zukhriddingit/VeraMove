@@ -20,7 +20,15 @@ if str(ROOT) not in sys.path:
 from services.api.app.core.config import LiveVoiceConfig, Settings, SupabaseConfig  # noqa: E402
 
 EXPECTED_AGENT_NAMES = ("VeraMove Intake", "VeraMove Outbound Negotiator")
-INTAKE_PROMPT_VARIABLES = ("job_id", "intake_session_id", "agent_config_version")
+INTAKE_PROMPT_VARIABLES = (
+    "job_id",
+    "intake_session_id",
+    "agent_config_version",
+    "intake_data_mode",
+    "resume_mode",
+    "partial_job_spec_json",
+    "missing_fields_json",
+)
 OUTBOUND_PROMPT_VARIABLES = (
     "job_id",
     "call_id",
@@ -30,10 +38,57 @@ OUTBOUND_PROMPT_VARIABLES = (
     "job_spec_json",
     "call_mode",
     "agent_config_version",
+    "call_context",
+    "vendor_call_plan_json",
+    "website_claims_json",
+    "verification_questions_json",
     "verified_competitor_quote_id",
     "verified_competitor_total",
     "verified_competitor_evidence_json",
     "negotiation_objective",
+)
+INTAKE_DATA_COLLECTION_FIELDS = (
+    "recording_consent",
+    "summary_confirmed",
+    "move_date",
+    "date_flexible",
+    "origin_address_summary",
+    "origin_dwelling_type",
+    "origin_floors",
+    "origin_stairs",
+    "origin_elevator_access",
+    "origin_parking_distance_feet",
+    "destination_address_summary",
+    "destination_dwelling_type",
+    "destination_floors",
+    "destination_stairs",
+    "destination_elevator_access",
+    "destination_parking_distance_feet",
+    "bedroom_count",
+    "inventory_json",
+    "special_items_json",
+    "packing",
+    "disassembly",
+    "storage",
+    "storage_days",
+    "insurance_preference",
+)
+OUTBOUND_DATA_COLLECTION_FIELDS = (
+    "recording_consent",
+    "recipient_opt_out",
+    "outcome_type",
+    "callback_at",
+    "outcome_reason",
+    "headline_total",
+    "deposit",
+    "original_total",
+    "negotiated_total",
+    "binding_type",
+    "availability_status",
+    "availability",
+    "fee_items_json",
+    "addressed_fee_categories_json",
+    "concessions_json",
 )
 MIN_INITIAL_CALLS = 3
 MAX_DEMO_RETENTION_DAYS = 7
@@ -58,6 +113,7 @@ class ProviderReadiness:
     provider_version_ids_present: bool = False
     provider_version_descriptions_match: bool = False
     prompt_dynamic_variables_match: bool = False
+    data_collection_fields_match: bool = False
     provider_tools_omitted: bool = False
     intake_pre_call_enabled: bool = False
     workspace_pre_call_configured: bool = False
@@ -199,6 +255,14 @@ class HttpElevenLabsPreflightClient:
                 strict=True,
             )
         )
+        data_collection_fields_match = all(
+            _data_collection_matches(agent, required)
+            for agent, required in zip(
+                agents,
+                (INTAKE_DATA_COLLECTION_FIELDS, OUTBOUND_DATA_COLLECTION_FIELDS),
+                strict=True,
+            )
+        )
         provider_tools_omitted = all(_provider_tools_omitted(agent) for agent in agents)
         intake_pre_call_enabled = (
             _conversation_initiation_enabled(agents[0]) is True
@@ -279,6 +343,7 @@ class HttpElevenLabsPreflightClient:
             provider_version_ids_present=provider_version_ids_present,
             provider_version_descriptions_match=provider_versions_match,
             prompt_dynamic_variables_match=prompt_variables_match,
+            data_collection_fields_match=data_collection_fields_match,
             provider_tools_omitted=provider_tools_omitted,
             intake_pre_call_enabled=intake_pre_call_enabled,
             workspace_pre_call_configured=_workspace_pre_call_configured(
@@ -432,6 +497,7 @@ def run_preflight(
             provider_state.provider_version_descriptions_match
         ),
         "prompt_dynamic_variables": provider_state.prompt_dynamic_variables_match,
+        "data_collection_fields": provider_state.data_collection_fields_match,
         "no_unreviewed_provider_tools": provider_state.provider_tools_omitted,
         "intake_only_pre_call_enablement": provider_state.intake_pre_call_enabled,
         "workspace_pre_call_secret_locator": (
@@ -558,6 +624,28 @@ def _prompt_contains_variables(
     return prompt is not None and all(
         f"{{{{{variable}}}}}" in prompt for variable in required_variables
     )
+
+
+def _data_collection_matches(
+    agent: dict[str, Any],
+    required_fields: tuple[str, ...],
+) -> bool:
+    collection = _dig(agent, ("platform_settings", "data_collection"))
+    if isinstance(collection, dict):
+        identifiers = set(collection)
+    elif isinstance(collection, list):
+        identifiers = {
+            identifier
+            for item in collection
+            if isinstance(item, dict)
+            and isinstance(
+                identifier := item.get("data_collection_id") or item.get("identifier"),
+                str,
+            )
+        }
+    else:
+        return False
+    return identifiers == set(required_fields)
 
 
 def _provider_tools_omitted(agent: dict[str, Any]) -> bool:

@@ -9,12 +9,15 @@ import pytest
 from pydantic import HttpUrl
 
 from services.api.app.contracts import (
+    ConsentMethod,
     DataClassification,
     FeeCategory,
     JobRecord,
     JobState,
     ProvenanceReference,
     ProvenanceType,
+    VendorCallAuthorizationRequest,
+    VendorCallAuthorizationSelectionV1,
     VendorSearchQuery,
     WebsiteClaimKind,
     WebsiteResearchClaimV1,
@@ -25,6 +28,7 @@ from services.api.app.orchestration.vendor_research import VendorResearchService
 from services.api.app.repositories.memory import InMemoryRepository
 
 NOW = datetime(2026, 7, 21, 19, 0, tzinfo=UTC)
+CONTACT_HASH_SECRET = "synthetic-contact-hash-secret-32-bytes-minimum"
 REQUIRED_FEES = {
     FeeCategory.BASE_SERVICE,
     FeeCategory.HOURLY_MINIMUM,
@@ -102,6 +106,7 @@ def _confirmed_record(job_spec) -> JobRecord:
             "destination": job_spec.destination.model_copy(
                 update={"address_summary": "Boston, MA"}
             ),
+            "data_classification": DataClassification.REAL_REDACTED,
             "confirmed": True,
             "confirmed_at": NOW,
             "locked_version": job_spec.version,
@@ -158,11 +163,14 @@ def research_stack(fixtures, job_spec):
     service = VendorResearchService(
         jobs=repository,
         research=repository,
+        authorizations=repository,
+        calls=repository,
         discovery=discovery,
         extract=extract,
         claim_extractor=claim_extractor,
         required_fee_categories=REQUIRED_FEES,
         clock=lambda: NOW,
+        contact_hash_secret=CONTACT_HASH_SECRET,
     )
     return service, repository, job, vendors, discovery, extract, claim_extractor
 
@@ -203,6 +211,8 @@ def test_discovery_requires_confirmed_safe_city_state(fixtures, job_spec):
     service = VendorResearchService(
         jobs=repository,
         research=repository,
+        authorizations=repository,
+        calls=repository,
         discovery=RecordingDiscovery(_real_vendors(fixtures)),
         extract=RecordingExtract({}),
         claim_extractor=RecordingClaimExtractor(),
@@ -226,6 +236,8 @@ def test_discovery_requires_confirmed_safe_city_state(fixtures, job_spec):
     service = VendorResearchService(
         jobs=repository,
         research=repository,
+        authorizations=repository,
+        calls=repository,
         discovery=RecordingDiscovery(_real_vendors(fixtures)),
         extract=RecordingExtract({}),
         claim_extractor=RecordingClaimExtractor(),
@@ -296,6 +308,87 @@ def test_analysis_persists_claims_questions_and_never_mutates_job_evidence(resea
     assert stored_job.calls == []
     assert stored_job.quotes == []
     assert stored_job.recommendation is None
+
+
+def test_analysis_persists_reconstructable_official_contact_candidates(research_stack):
+    service, repository, job, vendors, _, extract, _ = research_stack
+    for index, vendor in enumerate(vendors):
+        url = vendor.provenance[0].location
+        extract.pages[url] = ExtractedWebPage(
+            url=HttpUrl(url),
+            content=f"Moving services start at $149/hour. Call (617) 555-010{index}.",
+            truncated=False,
+        )
+    service.discover(job.job_spec.job_id)
+    service.set_shortlist(
+        job.job_spec.job_id,
+        [vendor.vendor_id for vendor in vendors],
+    )
+
+    analyzed = service.analyze(job.job_spec.job_id)
+    stored = repository.get_vendor_research(job.job_spec.job_id, "1.0")
+
+    assert stored is not None
+    assert [
+        dossier.contact_candidates[0].normalized_number
+        for dossier in analyzed.dossiers
+    ] == ["+16175550100", "+16175550101", "+16175550102"]
+    assert stored == analyzed
+    safe_payload = analyzed.model_dump(mode="json")
+    assert "normalized_number" not in repr(safe_payload)
+
+
+def test_authorization_resolves_exactly_three_server_contacts_and_exposes_safe_view(
+    research_stack,
+):
+    service, _, job, vendors, _, extract, _ = research_stack
+    for index, vendor in enumerate(vendors):
+        url = vendor.provenance[0].location
+        extract.pages[url] = ExtractedWebPage(
+            url=HttpUrl(url),
+            content=f"Moving services start at $149/hour. Call (617) 555-010{index}.",
+            truncated=False,
+        )
+    service.discover(job.job_spec.job_id)
+    service.set_shortlist(
+        job.job_spec.job_id,
+        [vendor.vendor_id for vendor in vendors],
+    )
+    analyzed = service.analyze(job.job_spec.job_id)
+    selections = [
+        VendorCallAuthorizationSelectionV1(
+            vendor_id=dossier.vendor.vendor_id,
+            contact_id=dossier.contact_candidates[0].contact_id,
+            recipient_timezone="America/New_York",
+            consent_method=ConsentMethod.DIRECT_RECIPIENT_OPT_IN,
+            consent_evidence_reference=f"synthetic-consent:{index}",
+            consented_at=NOW,
+            ai_call_consented=True,
+            recording_consented=True,
+        )
+        for index, dossier in enumerate(analyzed.dossiers)
+    ]
+
+    view = service.authorize_calls(
+        job.job_spec.job_id,
+        VendorCallAuthorizationRequest(
+            selections=selections,
+            batch_acknowledged=True,
+        ),
+    )
+
+    assert view.authorization_ready is True
+    assert len(view.call_authorizations) == 3
+    assert len(view.call_plans) == 3
+    assert all(item.ready for item in view.call_authorizations)
+    safe = view.model_dump_json()
+    assert "+1617555" not in safe
+    assert "number_hash" not in safe
+    assert "normalized_number" not in safe
+
+    cleared = service.clear_call_authorizations(job.job_spec.job_id)
+    assert cleared.authorization_ready is False
+    assert cleared.call_authorizations == []
 
 
 def test_analysis_keeps_partial_success_and_retries_only_non_complete_dossiers(

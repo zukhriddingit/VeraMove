@@ -1,5 +1,5 @@
 {
-  "agent_config_version": "2026-07-20.1",
+  "agent_config_version": "2026-07-21.2",
   "fields": [
     {
       "description": "Whether the caller explicitly consented to recording.",
@@ -22,7 +22,7 @@
       "type": "boolean"
     },
     {
-      "description": "Fictional role-play origin locality/address summary exactly as stated.",
+      "description": "Allowed origin locality summary exactly as stated; city/state only in real_redacted mode.",
       "identifier": "origin_address_summary",
       "type": "string"
     },
@@ -52,7 +52,7 @@
       "type": "integer"
     },
     {
-      "description": "Fictional role-play destination locality/address summary exactly as stated.",
+      "description": "Allowed destination locality summary exactly as stated; city/state only in real_redacted mode.",
       "identifier": "destination_address_summary",
       "type": "string"
     },

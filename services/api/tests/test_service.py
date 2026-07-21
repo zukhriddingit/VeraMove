@@ -38,8 +38,8 @@ class StaticDiscoveryGateway:
 class FailingDomainVoice:
     initial_call_limit = 3
 
-    def initiate_quote_call(self, job_spec, vendor, call_id, destination_slot):
-        del job_spec, vendor, call_id, destination_slot
+    def initiate_quote_call(self, job_spec, vendor, call_id, destination, call_plan):
+        del job_spec, vendor, call_id, destination, call_plan
         raise ResourceNotFound("Synthetic provider-domain failure")
 
 

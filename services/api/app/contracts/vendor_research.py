@@ -17,6 +17,11 @@ from services.api.app.contracts.models import (
     Vendor,
     VendorSearchQuery,
 )
+from services.api.app.contracts.vendor_calls import (
+    VendorCallAuthorizationSummaryV1,
+    VendorCallPlanV1,
+    VendorContactCandidateV1,
+)
 
 
 class WebsiteClaimKind(StrEnum):
@@ -114,6 +119,10 @@ class VendorResearchDossierV1(ContractModel):
     vendor: Vendor
     status: Literal["pending", "complete", "partial", "failed"]
     claims: list[WebsiteResearchClaimV1] = Field(default_factory=list, max_length=20)
+    contact_candidates: list[VendorContactCandidateV1] = Field(
+        default_factory=list,
+        max_length=5,
+    )
     missing_fee_categories: list[FeeCategory] = Field(
         default_factory=list,
         max_length=len(FeeCategory),
@@ -135,6 +144,7 @@ class VendorResearchDossierV1(ContractModel):
 
         has_research = bool(
             self.claims
+            or self.contact_candidates
             or self.missing_fee_categories
             or self.verification_questions
             or self.researched_at
@@ -147,13 +157,29 @@ class VendorResearchDossierV1(ContractModel):
         if self.status == "complete" and self.safe_failure_reason is not None:
             raise ValueError("complete dossiers cannot contain a failure reason")
         if self.status == "partial" and (
-            not self.claims or not self.safe_failure_reason
+            not (self.claims or self.contact_candidates)
+            or not self.safe_failure_reason
         ):
-            raise ValueError("partial dossiers require claims and a failure reason")
+            raise ValueError(
+                "partial dossiers require research results and a failure reason"
+            )
         if self.status == "failed" and (
-            self.claims or not self.safe_failure_reason
+            self.claims or self.contact_candidates or not self.safe_failure_reason
         ):
             raise ValueError("failed dossiers require only a safe failure reason")
+        contact_ids = [item.contact_id for item in self.contact_candidates]
+        normalized_numbers = [
+            item.normalized_number for item in self.contact_candidates
+        ]
+        if len(contact_ids) != len(set(contact_ids)) or len(normalized_numbers) != len(
+            set(normalized_numbers)
+        ):
+            raise ValueError("vendor contact candidates must be distinct")
+        if any(
+            item.vendor_id != self.vendor.vendor_id
+            for item in self.contact_candidates
+        ):
+            raise ValueError("vendor contact candidates must match the dossier vendor")
         return self
 
 
@@ -218,6 +244,29 @@ class JobVendorResearchV1(ContractModel):
         return self
 
 
+class JobVendorResearchViewV1(JobVendorResearchV1):
+    """API-safe research state enriched from protected authorization storage."""
+
+    authorization_ready: bool = False
+    call_authorizations: list[VendorCallAuthorizationSummaryV1] = Field(
+        default_factory=list,
+        max_length=3,
+    )
+    call_plans: list[VendorCallPlanV1] = Field(default_factory=list, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_authorization_view(self) -> JobVendorResearchViewV1:
+        if self.authorization_ready and (
+            len(self.call_authorizations) != 3
+            or not all(item.ready for item in self.call_authorizations)
+            or len(self.call_plans) != 3
+        ):
+            raise ValueError(
+                "authorization_ready requires three ready authorizations and plans"
+            )
+        return self
+
+
 class WebsiteClaimExtractionResult(ContractModel):
     """Strict provider-facing envelope; orchestration adds trusted IDs and source metadata."""
 
@@ -226,6 +275,7 @@ class WebsiteClaimExtractionResult(ContractModel):
 
 __all__ = [
     "JobVendorResearchV1",
+    "JobVendorResearchViewV1",
     "VendorResearchDossierV1",
     "VendorShortlistRequest",
     "VendorVerificationQuestionV1",

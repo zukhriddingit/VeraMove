@@ -12,11 +12,15 @@ export type JobEventsResponse = Schemas["JobEventsResponse"];
 export type VendorDiscoveryResponse = Schemas["VendorDiscoveryResponse"];
 export type HealthResponse = Schemas["HealthResponse"] | Schemas["RuntimeHealthResponse"];
 export type IntakeSessionResponse = Schemas["IntakeSessionResponse"];
+export type IntakeDataMode = Schemas["IntakeDataMode"];
+export type CreateIntakeSessionRequest = Schemas["CreateIntakeSessionRequest"];
 export type BrowserVoiceTokenResponse = Schemas["BrowserVoiceTokenResponse"];
 export type AttachIntakeConversationRequest = Schemas["AttachIntakeConversationRequest"];
 export type IntegrationStatusSnapshot = Schemas["IntegrationStatusSnapshot"];
-export type JobVendorResearchV1 = Schemas["JobVendorResearchV1"];
+export type JobVendorResearchV1 = Schemas["JobVendorResearchViewV1"];
 export type VendorShortlistRequest = Schemas["VendorShortlistRequest"];
+export type VendorCallAuthorizationRequest = Schemas["VendorCallAuthorizationRequest"];
+export type VendorCallAuthorizationSelectionV1 = Schemas["VendorCallAuthorizationSelectionV1"];
 export type RuntimeMode = "demo" | "live";
 export type FieldErrors = Record<string, string>;
 export type ApiErrorKind = "http" | "network" | "aborted" | "malformed";
@@ -221,8 +225,11 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 export const apiClient = {
   health: () => apiFetch<HealthResponse>("/health"),
   integrationStatus: () => apiFetch<IntegrationStatusSnapshot>("/api/integrations/status"),
-  createIntakeSession: () =>
-    apiFetch<IntakeSessionResponse>("/api/intake/sessions", { method: "POST" }),
+  createIntakeSession: (dataMode: IntakeDataMode) =>
+    apiFetch<IntakeSessionResponse>("/api/intake/sessions", {
+      method: "POST",
+      body: JSON.stringify({ data_mode: dataMode } satisfies CreateIntakeSessionRequest),
+    }),
   issueBrowserVoiceToken: (sessionId: string) =>
     apiFetch<BrowserVoiceTokenResponse>(`/api/intake/sessions/${sessionId}/voice-token`, {
       method: "POST",
@@ -234,6 +241,18 @@ export const apiClient = {
     }),
   getIntakeSession: (sessionId: string) =>
     apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}`),
+  recoverIntakeSession: (sessionId: string) =>
+    apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}/recover`, {
+      method: "POST",
+    }),
+  resumeIntakeSession: (sessionId: string) =>
+    apiFetch<IntakeSessionResponse>(`/api/intake/sessions/${sessionId}/resume`, {
+      method: "POST",
+    }),
+  finishIntakeManually: (sessionId: string) =>
+    apiFetch<JobRecord>(`/api/intake/sessions/${sessionId}/finish-manually`, {
+      method: "POST",
+    }),
   createJob: (jobSpec: JobSpecV1) =>
     apiFetch<JobRecord>("/api/jobs", { method: "POST", body: JSON.stringify(jobSpec) }),
   createJobFromDocument: (documentText: string) =>
@@ -277,6 +296,19 @@ export const apiClient = {
       `/api/jobs/${jobId}/vendor-research/analyze${refresh ? "?refresh=true" : ""}`,
       { method: "POST" },
     ),
+  extractVendorContacts: (jobId: string) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/contacts`, {
+      method: "POST",
+    }),
+  saveVendorCallAuthorizations: (jobId: string, request: VendorCallAuthorizationRequest) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/call-authorizations`, {
+      method: "PUT",
+      body: JSON.stringify(request),
+    }),
+  clearVendorCallAuthorizations: (jobId: string) =>
+    apiFetch<JobVendorResearchV1>(`/api/jobs/${jobId}/vendor-research/call-authorizations`, {
+      method: "DELETE",
+    }),
 };
 
 export type { components as OpenAPIComponents, paths as OpenAPIPaths } from "./schema";

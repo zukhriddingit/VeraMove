@@ -86,6 +86,20 @@ describe("job vendor research client", () => {
       vendor_ids: ["vendor-1", "vendor-2", "vendor-3"],
     });
     await apiClient.analyzeVendorWebsites("job-1");
+    await apiClient.extractVendorContacts("job-1");
+    await apiClient.saveVendorCallAuthorizations("job-1", {
+      batch_acknowledged: true,
+      selections: ["1", "2", "3"].map((suffix) => ({
+        vendor_id: `vendor-${suffix}`,
+        contact_id: `contact-${suffix}`,
+        recipient_timezone: "America/New_York",
+        consent_method: "direct_recipient_opt_in",
+        consent_evidence_reference: `consent:${suffix}`,
+        consented_at: "2026-07-21T19:00:00Z",
+        ai_call_consented: true,
+        recording_consented: true,
+      })),
+    });
 
     expect(fetchMock.mock.calls[0][0]).toBe(
       `${API_BASE_URL}/api/jobs/job-1/vendor-research/discover`,
@@ -100,6 +114,14 @@ describe("job vendor research client", () => {
     expect(fetchMock.mock.calls[2][0]).toBe(
       `${API_BASE_URL}/api/jobs/job-1/vendor-research/analyze`,
     );
+    expect(fetchMock.mock.calls[3][0]).toBe(
+      `${API_BASE_URL}/api/jobs/job-1/vendor-research/contacts`,
+    );
+    expect(fetchMock.mock.calls[4][0]).toBe(
+      `${API_BASE_URL}/api/jobs/job-1/vendor-research/call-authorizations`,
+    );
+    expect(fetchMock.mock.calls[4][1]).toEqual(expect.objectContaining({ method: "PUT" }));
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body)).not.toHaveProperty("phone_number");
   });
 });
 

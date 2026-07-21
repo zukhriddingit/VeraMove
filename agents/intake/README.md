@@ -3,8 +3,9 @@
 Owner: Prathmesh (GitHub handle pending; see `AGENTS.md`).
 
 This directory is the reviewed source package for the **VeraMove Intake** ElevenLabs agent. The
-agent interviews a customer using fictional role-play facts and produces an unconfirmed voice
-`JobSpecV1`. It never confirms the draft, locks a version, calls vendors, or performs a transaction.
+agent supports supervised fictional role-play and privacy-minimized real intake, including structured
+resume from an interrupted interview. Both modes produce an unconfirmed voice `JobSpecV1`. The
+agent never confirms the draft, locks a version, calls vendors, or performs a transaction.
 
 ## Files
 

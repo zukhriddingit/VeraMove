@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal, Protocol, TypeAlias
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from services.api.app.contracts import (
     CallRecord,
@@ -16,6 +16,8 @@ from services.api.app.contracts import (
     JobState,
     JobVendorResearchV1,
     QuoteV1,
+    VendorCallAuthorizationV1,
+    VendorSuppressionV1,
 )
 from services.api.app.orchestration.intake_sessions import (
     IntakeSession,
@@ -179,8 +181,38 @@ class VoiceIntakeFailure(BaseModel):
         return self
 
 
+class VoiceIntakeIncomplete(BaseModel):
+    """Canonical structured-only result for an interview ended before confirmation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["incomplete"] = "incomplete"
+    session: IntakeSession
+    event_type: str = Field(min_length=1, max_length=120)
+
+    @field_validator("session", mode="before")
+    @classmethod
+    def normalize_session(cls, value: Any) -> IntakeSession:
+        if isinstance(value, IntakeSession):
+            value = value.model_dump(mode="json")
+        return IntakeSession.model_validate(value)
+
+    @model_validator(mode="after")
+    def validate_incomplete(self) -> VoiceIntakeIncomplete:
+        if (
+            self.session.status is not IntakeSessionStatus.INCOMPLETE
+            or self.session.partial_job_spec is None
+            or self.session.conversation_id is None
+            or self.session.failure_code is not None
+            or self.session.completed_at is not None
+        ):
+            raise ValueError("Voice intake incomplete session is not canonical")
+        _assert_safe_materialization(self.model_dump(mode="json"))
+        return self
+
+
 VoiceIntakeMaterialization: TypeAlias = Annotated[
-    VoiceIntakeCompletion | VoiceIntakeFailure,
+    VoiceIntakeCompletion | VoiceIntakeIncomplete | VoiceIntakeFailure,
     Field(discriminator="kind"),
 ]
 
@@ -374,6 +406,44 @@ class VendorResearchRepository(Protocol):
     ) -> JobVendorResearchV1: ...
 
 
+class VendorCallAuthorizationRepository(Protocol):
+    """Server-only consent and hashed suppression persistence."""
+
+    def get_vendor_call_authorization(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+        vendor_id: UUID,
+    ) -> VendorCallAuthorizationV1 | None: ...
+
+    def list_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> list[VendorCallAuthorizationV1]: ...
+
+    def save_vendor_call_authorization(
+        self,
+        authorization: VendorCallAuthorizationV1,
+    ) -> VendorCallAuthorizationV1: ...
+
+    def clear_vendor_call_authorizations(
+        self,
+        job_id: UUID,
+        job_spec_version: str,
+    ) -> None: ...
+
+    def get_vendor_suppression(
+        self,
+        number_hash: str,
+    ) -> VendorSuppressionV1 | None: ...
+
+    def save_vendor_suppression(
+        self,
+        suppression: VendorSuppressionV1,
+    ) -> VendorSuppressionV1: ...
+
+
 class IntakeSessionRepository(Protocol):
     def create_intake_session(self, session: IntakeSession) -> IntakeSession: ...
 
@@ -396,6 +466,20 @@ class IntakeSessionRepository(Protocol):
         session_id: UUID,
         issued_at: datetime,
     ) -> IntakeSession: ...
+
+    def claim_intake_resume(
+        self,
+        session_id: UUID,
+        child: IntakeSession,
+        now: datetime,
+    ) -> IntakeSession: ...
+
+    def finish_intake_manually(
+        self,
+        session_id: UUID,
+        job: JobRecord,
+        now: datetime,
+    ) -> JobRecord: ...
 
 
 class VoiceMaterializationRepository(Protocol):
